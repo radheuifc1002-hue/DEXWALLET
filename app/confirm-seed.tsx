@@ -18,23 +18,35 @@ export default function ConfirmSeed() {
 
   const testIndices = [2, 5, 8, 11];
   const [selected, setSelected] = useState<Record<number, string>>({});
-  const [shuffled] = useState(() => {
-    // Always include the correct words for each test position
+  const [shuffled, setShuffled] = useState<string[]>([]);
+
+  useEffect(() => {
+    // Wait for the mnemonic before building choices; a one-time initializer
+    // can capture an empty phrase and permanently omit the correct answers.
+    if (seedPhrase.length !== 12 || testIndices.some((i) => !seedPhrase[i])) {
+      setShuffled([]);
+      setSelected({});
+      return;
+    }
+
     const correct = testIndices.map((i) => seedPhrase[i]);
-    // Fill remaining slots with random wrong words (those not in correct set)
-    const wrong = seedPhrase.filter((w) => !correct.includes(w));
+    const correctSet = new Set(correct);
+    const wrong = seedPhrase.filter((word) => !correctSet.has(word));
     for (let i = wrong.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [wrong[i], wrong[j]] = [wrong[j], wrong[i]];
     }
-    const pool = [...correct, ...wrong.slice(0, 4)];
-    // Shuffle the pool so correct answers aren't always first
+
+    // Correct answers are inserted first, so all are retained in the 8 choices.
+    const pool = [...new Set([...correct, ...wrong])].slice(0, 8);
     for (let i = pool.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [pool[i], pool[j]] = [pool[j], pool[i]];
     }
-    return pool;
-  });
+    setShuffled(pool);
+    setSelected({});
+    setError('');
+  }, [seedPhrase]);
   const [error, setError] = useState('');
   const [verified, setVerified] = useState(false);
 
