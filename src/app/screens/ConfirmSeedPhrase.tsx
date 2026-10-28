@@ -29,8 +29,9 @@ export function ConfirmSeedPhrase() {
       return;
     }
 
-    const wordsToVerify = positions.map((pos) => seedPhrase[pos]);
-    const shuffled = [...wordsToVerify];
+    // Offer the full generated phrase as choices so no required word can be
+    // accidentally omitted from the option pool.
+    const shuffled = [...seedPhrase];
     // Fisher-Yates shuffle keeps every required answer in the option pool.
     for (let i = shuffled.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
