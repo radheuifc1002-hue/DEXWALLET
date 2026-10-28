@@ -1,0 +1,50 @@
+# Dependencies - will be installed fresh on EAS servers
+node_modules/
+
+# Web app source - not needed for React Native build
+src/
+dist/
+public/
+index.html
+vite.config.ts
+tailwind.config.*
+
+# Expo local caches
+.expo/
+.expo-tmp/
+.expo-cache/
+.cache/
+
+# Build artifacts
+android/
+ios/
+*.apk
+*.ipa
+*.aab
+
+# Backend (not part of the mobile app)
+xu-wallet-backend/
+
+# Logs & temp files
+*.log
+npm-debug.log*
+.tmp/
+tmp/
+
+# IDE & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Replit-specific files (must not be sent to EAS build servers)
+.local/
+.agents/
+.upm/
+.replit
+replit.nix

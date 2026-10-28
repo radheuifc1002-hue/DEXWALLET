@@ -1,0 +1,52 @@
+{
+  "expo": {
+    "name": "XU Wallet",
+    "slug": "xu-wallet",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "xuwallet",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.xuwallet.app",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "XU Wallet uses Face ID to unlock your wallet securely.",
+        "NSCameraUsageDescription": "XU Wallet uses the camera to scan QR codes."
+      }
+    },
+    "android": {
+      "package": "com.xuwallet.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#0F0E17"
+      },
+      "permissions": [
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "XU Wallet uses Face ID to unlock your wallet securely."
+        }
+      ],
+      "expo-secure-store",
+      "expo-web-browser"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "9e96fad3-bc39-49d9-b5a7-ae16531c425c"
+      }
+    }
+  }
+}
