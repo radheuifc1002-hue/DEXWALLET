@@ -9,9 +9,12 @@ import {
   Platform,
   KeyboardAvoidingView,
   Image,
+  Alert,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
+import { ethers } from 'ethers';
+import { useWallet } from '../../context/WalletContext';
 
 type DAppShortcut = {
   name: string;
@@ -56,13 +59,61 @@ function DAppLogo({ domain, name }: { domain: string; name: string }) {
   );
 }
 
+const EIP1193_INJECT = '(function(){
+if(window.ethereum&&window.ethereum.isXUWallet)return;
+var n=1,p={},l={};
+function emit(e,v){(l[e]||[]).forEach(function(f){try{f(v)}catch(_){}})}
+function request(a){if(!a||typeof a.method!=="string")return Promise.reject({code:-32600,message:"Invalid request"});return new Promise(function(resolve,reject){var id=n++;p[id]={resolve:resolve,reject:reject};window.ReactNativeWebView.postMessage(JSON.stringify({type:"xu_eip1193_request",id:id,method:a.method,params:a.params||[],origin:location.origin}));})}
+window.__xuWalletResolve=function(id,r,e){var x=p[id];if(!x)return;delete p[id];e?x.reject(e):x.resolve(r)};
+var w={isXUWallet:true,request:request,on:function(e,f){(l[e]||(l[e]=[])).push(f);return w},removeListener:function(e,f){l[e]=(l[e]||[]).filter(function(x){return x!==f});return w},off:function(e,f){return w.removeListener(e,f)},emit:emit,isConnected:function(){return true}};
+Object.defineProperty(w,"selectedAddress",{get:function(){return w.__selectedAddress||null}});Object.defineProperty(w,"chainId",{get:function(){return w.__chainId||null}});
+window.ethereum=w;window.dispatchEvent(new Event("ethereum#initialized"));
+})(); true;';
+
 export default function Browser() {
+  const { selectedBlockchain, network, walletAddresses, isLocked } = useWallet();
+  const [connectedOrigin, setConnectedOrigin] = useState<string | null>(null);
+  const connectedOriginRef = useRef<string | null>(null);
+  const pageUrlRef = useRef('');
   const [url, setUrl] = useState('');
   const [inputUrl, setInputUrl] = useState('');
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
   const [loading, setLoading] = useState(false);
   const webRef = useRef<WebView>(null);
+  const handleProviderMessage = async (event: any) => {
+    let m: any; try { m = JSON.parse(event.nativeEvent.data); } catch { return; }
+    if (m?.type !== 'xu_eip1193_request' || !Number.isInteger(m.id)) return;
+    const actualUrl = event.nativeEvent.url || pageUrlRef.current || url;
+    let origin = ''; try { origin = new URL(actualUrl).origin; } catch {}
+    const respond = (result: any, error: any = null) => webRef.current?.injectJavaScript('window.__xuWalletResolve&&window.__xuWalletResolve(' + m.id + ',' + JSON.stringify(result ?? null) + ',' + JSON.stringify(error) + ');true;');
+    if (!origin.startsWith('https://') || (m.origin && m.origin !== origin)) { respond(null, {code:4100,message:'Invalid DApp origin'}); return; }
+    try {
+      if (isLocked) throw Object.assign(new Error('Unlock XU Wallet first.'), {code:4100});
+      const chains: any = { ethereum:{id:1,rpc:'https://ethereum-rpc.publicnode.com',name:'Ethereum'}, bnb:{id:56,rpc:'https://bsc-rpc.publicnode.com',name:'BNB Chain'}, polygon:{id:137,rpc:'https://polygon-bor-rpc.publicnode.com',name:'Polygon'} };
+      const cfg = chains[selectedBlockchain]; if (!cfg) throw Object.assign(new Error('EIP-1193 supports EVM chains only.'), {code:4200});
+      const test = network === 'testnet'; const chainId = test ? (selectedBlockchain === 'ethereum' ? 11155111 : selectedBlockchain === 'bnb' ? 97 : 80002) : cfg.id;
+      const rpc = test ? (selectedBlockchain === 'ethereum' ? 'https://ethereum-sepolia-rpc.publicnode.com' : selectedBlockchain === 'bnb' ? 'https://bsc-testnet-rpc.publicnode.com' : 'https://polygon-amoy-bor-rpc.publicnode.com') : cfg.rpc;
+      const provider = new ethers.JsonRpcProvider(rpc); const address = walletAddresses?.[selectedBlockchain]; let result: any;
+      switch (m.method) {
+        case 'eth_accounts': result = connectedOriginRef.current === origin && address ? [address] : []; break;
+        case 'eth_requestAccounts': {
+          if (!address) throw Object.assign(new Error('Wallet address unavailable.'), {code:4100});
+          if (connectedOriginRef.current !== origin) {
+            const ok = await new Promise<boolean>(resolve => Alert.alert('Connect to DApp?', origin + '\\n\\nAllow this site to see your public address on ' + cfg.name + '? This does not authorize transactions.', [{text:'Cancel',style:'cancel',onPress:()=>resolve(false)},{text:'Connect',onPress:()=>resolve(true)}], {cancelable:false}));
+            if (!ok) throw Object.assign(new Error('User rejected connection.'), {code:4001}); connectedOriginRef.current=origin; setConnectedOrigin(origin);
+          }
+          result=[address]; webRef.current?.injectJavaScript('if(window.ethereum){window.ethereum.__selectedAddress=' + JSON.stringify(address) + ';window.ethereum.__chainId=' + JSON.stringify('0x'+chainId.toString(16)) + ';window.ethereum.emit("connect",{chainId:' + JSON.stringify('0x'+chainId.toString(16)) + '});window.ethereum.emit("accountsChanged",' + JSON.stringify([address]) + ')}true;'); break;
+        }
+        case 'eth_chainId': result='0x'+chainId.toString(16); break;
+        case 'net_version': result=String(chainId); break;
+        case 'wallet_getPermissions': result=connectedOriginRef.current===origin?[{parentCapability:'eth_accounts'}]:[]; break;
+        case 'eth_sendTransaction': case 'eth_sign': case 'personal_sign': case 'eth_signTypedData': case 'eth_signTypedData_v3': case 'eth_signTypedData_v4': case 'wallet_switchEthereumChain': case 'wallet_addEthereumChain': throw Object.assign(new Error('Signing and chain switching are not enabled yet; this request was not signed.'), {code:4200});
+        default: result=await provider.send(m.method, Array.isArray(m.params)?m.params:[]);
+      }
+      respond(result);
+    } catch (e: any) { respond(null, {code:typeof e?.code==='number'?e.code:-32603,message:String(e?.shortMessage||e?.message||'Request failed')}); }
+  };
 
   const navigate = (target: string) => {
     const trimmed = target.trim();
@@ -180,6 +231,7 @@ export default function Browser() {
           source={{ uri: url }}
           style={{ flex: 1, backgroundColor: '#0F0E17' }}
           onNavigationStateChange={(state) => {
+            pageUrlRef.current = state.url;
             setCanGoBack(state.canGoBack);
             setCanGoForward(state.canGoForward);
             setInputUrl(state.url);
@@ -191,8 +243,13 @@ export default function Browser() {
           domStorageEnabled
           sharedCookiesEnabled
           setSupportMultipleWindows={false}
+          injectedJavaScriptBeforeContentLoaded={EIP1193_INJECT}
+          onMessage={handleProviderMessage}
+          originWhitelist={['https://*', 'http://*']}
+          onShouldStartLoadWithRequest={(request) => request.url.startsWith('https://') || request.url.startsWith('http://')}
         />
 
+        {connectedOrigin ? <View style={styles.connectionBadge}><Ionicons name="checkmark-circle" size={15} color="#34D399" /><Text style={styles.connectionText}>Connected to {connectedOrigin}</Text><TouchableOpacity onPress={() => { connectedOriginRef.current = null; setConnectedOrigin(null); webRef.current?.injectJavaScript('if(window.ethereum){window.ethereum.emit("accountsChanged",[])}true;'); }}><Text style={styles.disconnectText}>Disconnect</Text></TouchableOpacity></View> : null}
         <View style={styles.navBar}>
           <TouchableOpacity onPress={() => webRef.current?.goBack()} disabled={!canGoBack} style={[styles.navBtn, !canGoBack && styles.navBtnDisabled]} accessibilityLabel="Go back">
             <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
@@ -270,6 +327,9 @@ const styles = StyleSheet.create({
   logoInitial: { color: '#C8BFFF', fontSize: 20, fontWeight: '800' },
   dappName: { color: '#F7F6FC', fontSize: 10, fontWeight: '700', textAlign: 'center' },
   dappCategory: { color: '#858198', fontSize: 9, textAlign: 'center' },
+  connectionBadge: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: '#10251F', borderTopWidth: 1, borderTopColor: '#1D3B31' },
+  connectionText: { color: '#A7F3D0', fontSize: 10, flex: 1 },
+  disconnectText: { color: '#FCA5A5', fontSize: 10, fontWeight: '700' },
   navBar: {
     flexDirection: 'row',
     justifyContent: 'space-around',
