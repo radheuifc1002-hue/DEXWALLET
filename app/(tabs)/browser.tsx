@@ -479,7 +479,7 @@ export default function Browser() {
                 ';window.ethereum.emit("connect",{chainId:' + JSON.stringify(hex) + '});}true;'
               );
             }
-          }
+          }}
           javaScriptEnabled
           domStorageEnabled
           sharedCookiesEnabled
