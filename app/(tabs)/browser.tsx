@@ -59,7 +59,7 @@ function DAppLogo({ domain, name }: { domain: string; name: string }) {
   );
 }
 
-const EIP1193_INJECT = '(function(){
+const EIP1193_INJECT = `(function(){
 if(window.ethereum&&window.ethereum.isXUWallet)return;
 var n=1,p={},l={};
 function emit(e,v){(l[e]||[]).forEach(function(f){try{f(v)}catch(_){}})}
@@ -68,7 +68,7 @@ window.__xuWalletResolve=function(id,r,e){var x=p[id];if(!x)return;delete p[id];
 var w={isXUWallet:true,request:request,on:function(e,f){(l[e]||(l[e]=[])).push(f);return w},removeListener:function(e,f){l[e]=(l[e]||[]).filter(function(x){return x!==f});return w},off:function(e,f){return w.removeListener(e,f)},emit:emit,isConnected:function(){return true}};
 Object.defineProperty(w,"selectedAddress",{get:function(){return w.__selectedAddress||null}});Object.defineProperty(w,"chainId",{get:function(){return w.__chainId||null}});
 window.ethereum=w;window.dispatchEvent(new Event("ethereum#initialized"));
-})(); true;';
+})(); true;`;
 
 export default function Browser() {
   const { selectedBlockchain, network, walletAddresses, isLocked } = useWallet();
