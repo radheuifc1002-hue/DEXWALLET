@@ -188,7 +188,9 @@ export default function Browser() {
           if (!address) throw Object.assign(new Error('Wallet address unavailable.'), {code:4100});
           const ok = connectedOriginRef.current === origin || await askApproval({kind:'connect',title:'Connect wallet',origin,chainName:cfg.name,details:['Allow this website to view your public address.',address]});
           if (!ok) throw Object.assign(new Error('User rejected connection.'), {code:4001});
-          connectedOriginRef.current = origin; setConnectedOrigin(origin); result = [{parentCapability:'eth_accounts'}]; break;
+          connectedOriginRef.current = origin; setConnectedOrigin(origin);
+          webRef.current?.injectJavaScript('if(window.ethereum){window.ethereum.__selectedAddress='+JSON.stringify(address)+';window.ethereum.__chainId='+JSON.stringify('0x'+chainId.toString(16))+';window.ethereum.emit("connect",{chainId:'+JSON.stringify('0x'+chainId.toString(16))+'});window.ethereum.emit("accountsChanged",'+JSON.stringify([address])+')}true;');
+          result = [{parentCapability:'eth_accounts'}]; break;
         }
         case 'wallet_switchEthereumChain': {
           const id = Number.parseInt(String(params[0]?.chainId || ''), 16);
@@ -217,7 +219,7 @@ export default function Browser() {
           if (!ethers.isHexString(data)) throw Object.assign(new Error('Invalid transaction data.'), {code:-32602});
           const value = tx.value == null ? 0n : BigInt(String(tx.value));
           if (value < 0n) throw Object.assign(new Error('Negative transaction value.'), {code:-32602});
-          const request: ethers.TransactionRequest = {to,data,value};
+          const request: any = {to,data,value};
           const feeData = await provider.getFeeData();
           request.gasLimit = tx.gas ? BigInt(String(tx.gas)) : await provider.estimateGas({...request,from:address});
           if (tx.maxFeePerGas) request.maxFeePerGas = BigInt(String(tx.maxFeePerGas));
