@@ -9,7 +9,8 @@ import {
   Platform,
   KeyboardAvoidingView,
   Image,
-  Alert,
+  Modal,
+  ScrollView,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
@@ -71,8 +72,10 @@ window.ethereum=w;window.dispatchEvent(new Event("ethereum#initialized"));
 })(); true;`;
 
 export default function Browser() {
-  const { selectedBlockchain, network, walletAddresses, isLocked } = useWallet();
+  const { selectedBlockchain, setSelectedBlockchain, network, setNetwork, walletAddresses, isLocked } = useWallet();
   const [connectedOrigin, setConnectedOrigin] = useState<string | null>(null);
+  const [pendingApproval, setPendingApproval] = useState<any>(null);
+  const approvalResolver = useRef<((approved: boolean) => void) | null>(null);
   const connectedOriginRef = useRef<string | null>(null);
   const pageUrlRef = useRef('');
   const [url, setUrl] = useState('');
@@ -81,38 +84,174 @@ export default function Browser() {
   const [canGoForward, setCanGoForward] = useState(false);
   const [loading, setLoading] = useState(false);
   const webRef = useRef<WebView>(null);
+
+  const askApproval = (request: any) => new Promise<boolean>((resolve) => {
+    approvalResolver.current = resolve;
+    setPendingApproval(request);
+  });
+
+  const finishApproval = (approved: boolean) => {
+    const resolve = approvalResolver.current;
+    approvalResolver.current = null;
+    setPendingApproval(null);
+    resolve?.(approved);
+  };
+
   const handleProviderMessage = async (event: any) => {
-    let m: any; try { m = JSON.parse(event.nativeEvent.data); } catch { return; }
+    let m: any;
+    try { m = JSON.parse(event.nativeEvent.data); } catch { return; }
     if (m?.type !== 'xu_eip1193_request' || !Number.isInteger(m.id)) return;
     const actualUrl = event.nativeEvent.url || pageUrlRef.current || url;
-    let origin = ''; try { origin = new URL(actualUrl).origin; } catch {}
-    const respond = (result: any, error: any = null) => webRef.current?.injectJavaScript('window.__xuWalletResolve&&window.__xuWalletResolve(' + m.id + ',' + JSON.stringify(result ?? null) + ',' + JSON.stringify(error) + ');true;');
-    if (!origin.startsWith('https://') || (m.origin && m.origin !== origin)) { respond(null, {code:4100,message:'Invalid DApp origin'}); return; }
+    let origin = '';
+    try { origin = new URL(actualUrl).origin; } catch {}
+    const respond = (result: any, error: any = null) => {
+      const r = JSON.stringify(result === undefined ? null : result).replace(/</g, '\\u003c');
+      const e = JSON.stringify(error).replace(/</g, '\\u003c');
+      webRef.current?.injectJavaScript('window.__xuWalletResolve&&window.__xuWalletResolve(' + m.id + ',' + r + ',' + e + ');true;');
+    };
+    if (!origin.startsWith('https://') || (m.origin && m.origin !== origin)) {
+      respond(undefined, { code: 4100, message: 'Invalid DApp origin.' }); return;
+    }
+    const chains: Record<string, any> = {
+      ethereum: { id: 1, rpc: 'https://ethereum-rpc.publicnode.com', name: 'Ethereum Mainnet', testId: 11155111, testRpc: 'https://ethereum-sepolia-rpc.publicnode.com' },
+      bnb: { id: 56, rpc: 'https://bsc-rpc.publicnode.com', name: 'BNB Smart Chain', testId: 97, testRpc: 'https://bsc-testnet-rpc.publicnode.com' },
+      polygon: { id: 137, rpc: 'https://polygon-bor-rpc.publicnode.com', name: 'Polygon', testId: 80002, testRpc: 'https://polygon-amoy-bor-rpc.publicnode.com' },
+    };
+    const chainById: Record<number, any> = {
+      1:{blockchain:'ethereum',network:'mainnet'},11155111:{blockchain:'ethereum',network:'testnet'},
+      56:{blockchain:'bnb',network:'mainnet'},97:{blockchain:'bnb',network:'testnet'},
+      137:{blockchain:'polygon',network:'mainnet'},80002:{blockchain:'polygon',network:'testnet'},
+    };
     try {
-      if (isLocked) throw Object.assign(new Error('Unlock XU Wallet first.'), {code:4100});
-      const chains: any = { ethereum:{id:1,rpc:'https://ethereum-rpc.publicnode.com',name:'Ethereum'}, bnb:{id:56,rpc:'https://bsc-rpc.publicnode.com',name:'BNB Chain'}, polygon:{id:137,rpc:'https://polygon-bor-rpc.publicnode.com',name:'Polygon'} };
-      const cfg = chains[selectedBlockchain]; if (!cfg) throw Object.assign(new Error('EIP-1193 supports EVM chains only.'), {code:4200});
-      const test = network === 'testnet'; const chainId = test ? (selectedBlockchain === 'ethereum' ? 11155111 : selectedBlockchain === 'bnb' ? 97 : 80002) : cfg.id;
-      const rpc = test ? (selectedBlockchain === 'ethereum' ? 'https://ethereum-sepolia-rpc.publicnode.com' : selectedBlockchain === 'bnb' ? 'https://bsc-testnet-rpc.publicnode.com' : 'https://polygon-amoy-bor-rpc.publicnode.com') : cfg.rpc;
-      const provider = new ethers.JsonRpcProvider(rpc); const address = walletAddresses?.[selectedBlockchain]; let result: any;
+      if (isLocked) throw Object.assign(new Error('Unlock XU Wallet before using DApps.'), {code:4100});
+      if (!chains[selectedBlockchain]) throw Object.assign(new Error('EIP-1193 supports Ethereum, BNB Chain and Polygon only.'), {code:4200});
+      const cfg = chains[selectedBlockchain];
+      const chainId = network === 'testnet' ? cfg.testId : cfg.id;
+      const provider = new ethers.JsonRpcProvider(network === 'testnet' ? cfg.testRpc : cfg.rpc);
+      const address = walletAddresses?.[selectedBlockchain];
+      const params = Array.isArray(m.params) ? m.params : [];
+      let result: any;
       switch (m.method) {
-        case 'eth_accounts': result = connectedOriginRef.current === origin && address ? [address] : []; break;
+        case 'eth_accounts':
+          result = connectedOriginRef.current === origin && address ? [address] : [];
+          break;
         case 'eth_requestAccounts': {
           if (!address) throw Object.assign(new Error('Wallet address unavailable.'), {code:4100});
           if (connectedOriginRef.current !== origin) {
-            const ok = await new Promise<boolean>(resolve => Alert.alert('Connect to DApp?', origin + '\\n\\nAllow this site to see your public address on ' + cfg.name + '? This does not authorize transactions.', [{text:'Cancel',style:'cancel',onPress:()=>resolve(false)},{text:'Connect',onPress:()=>resolve(true)}], {cancelable:false}));
-            if (!ok) throw Object.assign(new Error('User rejected connection.'), {code:4001}); connectedOriginRef.current=origin; setConnectedOrigin(origin);
+            const ok = await askApproval({kind:'connect',title:'Connect wallet',origin,chainName:cfg.name,details:['Share your public address with this website.',address,'This does not authorize transactions.']});
+            if (!ok) throw Object.assign(new Error('User rejected connection.'), {code:4001});
+            connectedOriginRef.current = origin; setConnectedOrigin(origin);
           }
-          result=[address]; webRef.current?.injectJavaScript('if(window.ethereum){window.ethereum.__selectedAddress=' + JSON.stringify(address) + ';window.ethereum.__chainId=' + JSON.stringify('0x'+chainId.toString(16)) + ';window.ethereum.emit("connect",{chainId:' + JSON.stringify('0x'+chainId.toString(16)) + '});window.ethereum.emit("accountsChanged",' + JSON.stringify([address]) + ')}true;'); break;
+          result = [address];
+          webRef.current?.injectJavaScript('if(window.ethereum){window.ethereum.__selectedAddress='+JSON.stringify(address)+';window.ethereum.__chainId='+JSON.stringify('0x'+chainId.toString(16))+';window.ethereum.emit("connect",{chainId:'+JSON.stringify('0x'+chainId.toString(16))+'});window.ethereum.emit("accountsChanged",'+JSON.stringify([address])+')}true;');
+          break;
         }
-        case 'eth_chainId': result='0x'+chainId.toString(16); break;
-        case 'net_version': result=String(chainId); break;
-        case 'wallet_getPermissions': result=connectedOriginRef.current===origin?[{parentCapability:'eth_accounts'}]:[]; break;
-        case 'eth_sendTransaction': case 'eth_sign': case 'personal_sign': case 'eth_signTypedData': case 'eth_signTypedData_v3': case 'eth_signTypedData_v4': case 'wallet_switchEthereumChain': case 'wallet_addEthereumChain': throw Object.assign(new Error('Signing and chain switching are not enabled yet; this request was not signed.'), {code:4200});
-        default: result=await provider.send(m.method, Array.isArray(m.params)?m.params:[]);
+        case 'eth_chainId': result = '0x' + chainId.toString(16); break;
+        case 'net_version': result = String(chainId); break;
+        case 'wallet_getPermissions': result = connectedOriginRef.current === origin ? [{parentCapability:'eth_accounts'}] : []; break;
+        case 'wallet_requestPermissions': {
+          if (!params[0]?.eth_accounts) throw Object.assign(new Error('Only eth_accounts permission is supported.'), {code:4200});
+          if (!address) throw Object.assign(new Error('Wallet address unavailable.'), {code:4100});
+          const ok = connectedOriginRef.current === origin || await askApproval({kind:'connect',title:'Connect wallet',origin,chainName:cfg.name,details:['Allow this website to view your public address.',address]});
+          if (!ok) throw Object.assign(new Error('User rejected connection.'), {code:4001});
+          connectedOriginRef.current = origin; setConnectedOrigin(origin); result = [{parentCapability:'eth_accounts'}]; break;
+        }
+        case 'wallet_switchEthereumChain': {
+          const id = Number.parseInt(String(params[0]?.chainId || ''), 16);
+          const target = chainById[id];
+          if (!target) throw Object.assign(new Error('Network not supported.'), {code:4902});
+          const ok = await askApproval({kind:'network',title:'Switch network',origin,chainName:chains[target.blockchain].name,details:['Switch active network to '+chains[target.blockchain].name+'.','Chain ID: '+id]});
+          if (!ok) throw Object.assign(new Error('User rejected network switch.'), {code:4001});
+          setSelectedBlockchain(target.blockchain); setNetwork(target.network);
+          webRef.current?.injectJavaScript('if(window.ethereum){window.ethereum.__chainId='+JSON.stringify('0x'+id.toString(16))+';window.ethereum.emit("chainChanged",'+JSON.stringify('0x'+id.toString(16))+')}true;');
+          result = null; break;
+        }
+        case 'wallet_addEthereumChain':
+          throw Object.assign(new Error('Custom networks cannot be added from a DApp.'), {code:4200});
+        case 'eth_sendTransaction': {
+          if (connectedOriginRef.current !== origin) throw Object.assign(new Error('Connect this DApp first.'), {code:4100});
+          const tx = params[0];
+          if (!tx || typeof tx !== 'object') throw Object.assign(new Error('Invalid transaction.'), {code:-32602});
+          if (!address || !tx.from || String(tx.from).toLowerCase() !== address.toLowerCase()) throw Object.assign(new Error('Transaction sender does not match selected wallet.'), {code:4100});
+          if (tx.chainId && Number.parseInt(String(tx.chainId),16) !== chainId && Number(tx.chainId) !== chainId) throw Object.assign(new Error('Transaction chain mismatch.'), {code:4901});
+          const to = tx.to ? ethers.getAddress(String(tx.to)) : null;
+          const data = tx.data ? String(tx.data) : '0x';
+          if (!ethers.isHexString(data)) throw Object.assign(new Error('Invalid transaction data.'), {code:-32602});
+          const value = tx.value == null ? 0n : BigInt(String(tx.value));
+          if (value < 0n) throw Object.assign(new Error('Negative transaction value.'), {code:-32602});
+          const request: ethers.TransactionRequest = {to,data,value};
+          const feeData = await provider.getFeeData();
+          request.gasLimit = tx.gas ? BigInt(String(tx.gas)) : await provider.estimateGas({...request,from:address});
+          if (tx.maxFeePerGas) request.maxFeePerGas = BigInt(String(tx.maxFeePerGas));
+          if (tx.maxPriorityFeePerGas) request.maxPriorityFeePerGas = BigInt(String(tx.maxPriorityFeePerGas));
+          if (tx.gasPrice) request.gasPrice = BigInt(String(tx.gasPrice));
+          if (request.maxFeePerGas == null && request.gasPrice == null && feeData.maxFeePerGas != null) {
+            request.maxFeePerGas = feeData.maxFeePerGas;
+            request.maxPriorityFeePerGas = tx.maxPriorityFeePerGas ? BigInt(String(tx.maxPriorityFeePerGas)) : (feeData.maxPriorityFeePerGas ?? 0n);
+          } else if (request.gasPrice == null && request.maxFeePerGas == null && feeData.gasPrice != null) request.gasPrice = feeData.gasPrice;
+          const balance = await provider.getBalance(address);
+          const maxFee = request.maxFeePerGas ?? request.gasPrice ?? 0n;
+          const maxCost = value + BigInt(request.gasLimit || 0n) * maxFee;
+          const selector = data.slice(0,10).toLowerCase();
+          const details = [
+            'Network: '+cfg.name+(network==='testnet'?' Testnet':''),
+            'From: '+address,
+            'To: '+(to || '(contract creation)'),
+            'Native value: '+ethers.formatEther(value)+' '+(selectedBlockchain==='ethereum'?'ETH':selectedBlockchain==='bnb'?'BNB':'POL/MATIC'),
+            'Gas limit: '+String(request.gasLimit),
+            'Estimated maximum total: '+ethers.formatEther(maxCost)+' native token',
+            selector==='0x095ea7b3'?'WARNING: token approval call. Check spender and allowance carefully.':'',
+            selector==='0xa9059cbb'?'Token transfer detected; token amount is encoded in contract data.':'',
+            data!=='0x'?'Contract selector: '+selector+'; calldata: '+((data.length-2)/2)+' bytes. Generic contract calls are not fully decoded.':'',
+          ].filter(Boolean);
+          if (balance < maxCost) throw Object.assign(new Error('Insufficient native-token balance for value and estimated fee.'), {code:-32000});
+          const ok = await askApproval({kind:'transaction',title:'Review transaction',origin,chainName:cfg.name,details});
+          if (!ok) throw Object.assign(new Error('User rejected transaction.'), {code:4001});
+          const mnemonic = await getMnemonic();
+          if (!mnemonic) throw Object.assign(new Error('Wallet secret unavailable. Restore wallet.'), {code:4100});
+          const signer = ethers.Wallet.fromPhrase(mnemonic).connect(provider);
+          const sent = await signer.sendTransaction(request);
+          result = sent.hash; break;
+        }
+        case 'personal_sign':
+        case 'eth_sign':
+        case 'eth_signTypedData':
+        case 'eth_signTypedData_v3':
+        case 'eth_signTypedData_v4': {
+          if (connectedOriginRef.current !== origin) throw Object.assign(new Error('Connect this DApp first.'), {code:4100});
+          const typed = String(m.method).startsWith('eth_signTypedData');
+          const rawSign = m.method === 'eth_sign';
+          const signerAddress = rawSign || typed ? String(params[0] || '') : (ethers.isAddress(String(params[0] || '')) ? String(params[0]) : String(params[1] || ''));
+          if (!address || signerAddress.toLowerCase() !== address.toLowerCase()) throw Object.assign(new Error('Signature account mismatch.'), {code:4100});
+          let typedData: any = null;
+          let messageData: any = null;
+          let preview = '';
+          if (typed) {
+            try { typedData = typeof params[1] === 'string' ? JSON.parse(params[1]) : params[1]; } catch { throw Object.assign(new Error('Invalid typed data.'), {code:-32602}); }
+            if (!typedData?.domain || !typedData?.types || !typedData?.message || !typedData?.primaryType) throw Object.assign(new Error('Malformed typed data.'), {code:-32602});
+            preview = JSON.stringify({domain:typedData.domain,primaryType:typedData.primaryType,message:typedData.message},null,2);
+          } else {
+            messageData = rawSign ? params[1] : (ethers.isAddress(String(params[0] || '')) ? params[1] : params[0]);
+            if (typeof messageData !== 'string') throw Object.assign(new Error('Invalid message.'), {code:-32602});
+            preview = messageData.startsWith('0x') ? 'Hex data: '+messageData.slice(0,180)+(messageData.length>180?'…':'') : messageData.slice(0,240);
+          }
+          const ok = await askApproval({kind:'signature',title:rawSign?'Sign raw data':typed?'Review typed-data signature':'Sign message',origin,chainName:cfg.name,details:['Account: '+address,typed?'Typed data: '+preview:(rawSign?'Raw hash/data: ':'Message: ')+preview,'A signature can authorize off-chain actions. Only approve if you understand the request.']});
+          if (!ok) throw Object.assign(new Error('User rejected signature.'), {code:4001});
+          const mnemonic = await getMnemonic();
+          if (!mnemonic) throw Object.assign(new Error('Wallet secret unavailable.'), {code:4100});
+          const signer = ethers.Wallet.fromPhrase(mnemonic);
+          if (typed) { const types = {...typedData.types}; delete types.EIP712Domain; result = await signer.signTypedData(typedData.domain,types,typedData.message); }
+          else if (rawSign) { if (!ethers.isHexString(messageData,32)) throw Object.assign(new Error('eth_sign requires a 32-byte hash.'), {code:-32602}); result = signer.signingKey.sign(messageData).serialized; }
+          else result = await signer.signMessage(messageData.startsWith('0x') && ethers.isHexString(messageData) ? ethers.getBytes(messageData) : messageData);
+          break;
+        }
+        default:
+          result = await provider.send(m.method, params);
       }
       respond(result);
-    } catch (e: any) { respond(null, {code:typeof e?.code==='number'?e.code:-32603,message:String(e?.shortMessage||e?.message||'Request failed')}); }
+    } catch (e: any) {
+      respond(undefined,{code:typeof e?.code==='number'?e.code:-32603,message:String(e?.shortMessage||e?.message||'Request failed')});
+    }
   };
 
   const navigate = (target: string) => {
