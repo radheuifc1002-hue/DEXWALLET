@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build standalone Android APK
 
 on:
   push:
@@ -9,6 +9,7 @@ on:
       - "context/**"
       - "hooks/**"
       - "services/**"
+      - "mobile/**"
       - "package.json"
       - "package-lock.json"
       - "app.json"
@@ -27,7 +28,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build installable Android debug APK
+    name: Build standalone Android release APK
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -49,7 +50,7 @@ jobs:
           java-version: "17"
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --prefer-offline --no-audit --no-fund
 
       - name: Cache Gradle and Android native build outputs
         uses: actions/cache@v4
@@ -59,29 +60,32 @@ jobs:
             ~/.gradle/wrapper
             node_modules/react-native-reanimated/android/.cxx
             node_modules/react-native-worklets/android/.cxx
-          key: android-gradle-${{ runner.os }}-${{ hashFiles('package-lock.json', 'app.json') }}-${{ github.sha }}
+          key: android-release-${{ runner.os }}-${{ hashFiles('package-lock.json', 'app.json') }}-${{ github.sha }}
           restore-keys: |
-            android-gradle-${{ runner.os }}-${{ hashFiles('package-lock.json', 'app.json') }}-
-            android-gradle-${{ runner.os }}-
+            android-release-${{ runner.os }}-${{ hashFiles('package-lock.json', 'app.json') }}-
+            android-release-${{ runner.os }}-
 
       - name: Generate native Android project
         run: npx expo prebuild --platform android --no-install
 
-      - name: Build APK
+      - name: Build standalone release APK
         working-directory: android
         timeout-minutes: 35
         env:
           CMAKE_BUILD_PARALLEL_LEVEL: "2"
-          GRADLE_OPTS: "-Dorg.gradle.workers.max=2 -Dorg.gradle.parallel=false"
+          GRADLE_OPTS: "-Dorg.gradle.workers.max=2 -Dorg.gradle.parallel=false -Dorg.gradle.caching=true"
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon --max-workers=2 --stacktrace --info -PreactNativeArchitectures=arm64-v8a assembleDebug
+          ./gradlew --max-workers=2 --stacktrace --build-cache -PreactNativeArchitectures=arm64-v8a assembleRelease
 
-      - name: Upload APK artifact
+      - name: Verify APK exists and is non-empty
+        run: test -s android/app/build/outputs/apk/release/app-release.apk
+
+      - name: Upload standalone APK artifact
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.2
         with:
-          name: xu-wallet-android-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: xu-wallet-standalone-android-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
 
@@ -93,6 +97,10 @@ jobs:
           GITHUB_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          APK="android/app/build/outputs/apk/debug/app-debug.apk"
-          TAG="android-test-${GITHUB_RUN_NUMBER}"
-          gh release create "$TAG" "$APK"             --repo "$GITHUB_REPOSITORY"             --title "XU Wallet Android test build ${GITHUB_RUN_NUMBER}"             --notes "Installable debug-signed APK built from commit ${GITHUB_SHA}. This is a test build, not a security-audited production release."             --prerelease
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          TAG="android-release-test-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" "$APK" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "XU Wallet standalone Android test build ${GITHUB_RUN_NUMBER}" \
+            --notes "Standalone release-variant APK from commit ${GITHUB_SHA}. Test build only; not security-audited for real funds." \
+            --prerelease
