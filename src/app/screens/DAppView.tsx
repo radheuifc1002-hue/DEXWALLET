@@ -242,10 +242,10 @@ export function DAppView() {
           If this page is blank, the site may block embedded previews. Opening it separately won't connect this wallet.
         </p>
         <button
-          onClick={() => window.open(currentUrl, "_blank", "noopener,noreferrer")}
+          onClick={() => window.location.assign(currentUrl)}
           className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-primary/10 px-2.5 py-2 text-xs font-medium text-primary hover:bg-primary/20"
         >
-          Open site <ExternalLink className="h-3.5 w-3.5" />
+          Open full page <ExternalLink className="h-3.5 w-3.5" />
         </button>
       </div>
 
@@ -264,8 +264,7 @@ export function DAppView() {
           className="w-full h-full border-0"
           onLoad={() => setLoading(false)}
           onError={() => setLoading(false)}
-          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-top-navigation-by-user-activation"
-          allow="camera; microphone; clipboard-read; clipboard-write"
+          allow="camera; microphone; clipboard-read; clipboard-write; fullscreen; payment"
           title="DApp Browser"
         />
       </div>
