@@ -16,6 +16,7 @@ import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
 import { ethers } from 'ethers';
 import { useWallet } from '../../context/WalletContext';
+import { getMnemonic } from '../../mobile/services/walletService';
 
 type DAppShortcut = {
   name: string;
@@ -388,6 +389,40 @@ export default function Browser() {
           onShouldStartLoadWithRequest={(request) => request.url.startsWith('https://') || request.url.startsWith('http://')}
         />
 
+
+        <Modal visible={!!pendingApproval} transparent animationType="slide" onRequestClose={() => finishApproval(false)}>
+          <View style={styles.modalBackdrop}>
+            <View style={styles.approvalSheet}>
+              <View style={styles.modalHandle} />
+              <View style={styles.approvalHeader}>
+                <View style={styles.approvalIcon}>
+                  <Ionicons name={pendingApproval?.kind === 'transaction' ? 'swap-horizontal' : pendingApproval?.kind === 'signature' ? 'finger-print' : pendingApproval?.kind === 'network' ? 'git-network-outline' : 'wallet-outline'} size={22} color="#C8BFFF" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.approvalTitle}>{pendingApproval?.title || 'Wallet approval'}</Text>
+                  <Text style={styles.approvalOrigin} numberOfLines={1}>{pendingApproval?.origin}</Text>
+                </View>
+              </View>
+              <Text style={styles.approvalWarning}>Review carefully. Approval may move assets or authorize an off-chain action.</Text>
+              <ScrollView style={styles.approvalDetails} contentContainerStyle={{ paddingBottom: 10 }}>
+                {(pendingApproval?.details || []).map((line: string, index: number) => (
+                  <View key={index} style={styles.approvalDetailRow}>
+                    <Text selectable style={styles.approvalDetail}>{line}</Text>
+                  </View>
+                ))}
+              </ScrollView>
+              <View style={styles.approvalActions}>
+                <TouchableOpacity style={styles.rejectButton} onPress={() => finishApproval(false)}>
+                  <Text style={styles.rejectText}>Reject</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.approveButton} onPress={() => finishApproval(true)}>
+                  <Text style={styles.approveText}>Approve</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
         {connectedOrigin ? <View style={styles.connectionBadge}><Ionicons name="checkmark-circle" size={15} color="#34D399" /><Text style={styles.connectionText}>Connected to {connectedOrigin}</Text><TouchableOpacity onPress={() => { connectedOriginRef.current = null; setConnectedOrigin(null); webRef.current?.injectJavaScript('if(window.ethereum){window.ethereum.emit("accountsChanged",[])}true;'); }}><Text style={styles.disconnectText}>Disconnect</Text></TouchableOpacity></View> : null}
         <View style={styles.navBar}>
           <TouchableOpacity onPress={() => webRef.current?.goBack()} disabled={!canGoBack} style={[styles.navBtn, !canGoBack && styles.navBtnDisabled]} accessibilityLabel="Go back">
@@ -466,6 +501,22 @@ const styles = StyleSheet.create({
   logoInitial: { color: '#C8BFFF', fontSize: 20, fontWeight: '800' },
   dappName: { color: '#F7F6FC', fontSize: 10, fontWeight: '700', textAlign: 'center' },
   dappCategory: { color: '#858198', fontSize: 9, textAlign: 'center' },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.72)', justifyContent: 'flex-end' },
+  approvalSheet: { backgroundColor: '#141622', borderTopLeftRadius: 26, borderTopRightRadius: 26, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 28, maxHeight: '85%', borderWidth: 1, borderColor: '#343044' },
+  modalHandle: { width: 42, height: 4, borderRadius: 3, backgroundColor: '#4C4A5B', alignSelf: 'center', marginBottom: 18 },
+  approvalHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
+  approvalIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: '#28213F', alignItems: 'center', justifyContent: 'center' },
+  approvalTitle: { color: '#FFFFFF', fontSize: 18, fontWeight: '800' },
+  approvalOrigin: { color: '#A99AFB', fontSize: 12, marginTop: 4 },
+  approvalWarning: { color: '#FBBF24', backgroundColor: '#2B2414', borderRadius: 10, padding: 10, fontSize: 11, lineHeight: 16, marginBottom: 12 },
+  approvalDetails: { maxHeight: 350, borderRadius: 12, backgroundColor: '#0D0F17', paddingHorizontal: 12, paddingVertical: 4 },
+  approvalDetailRow: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#242634' },
+  approvalDetail: { color: '#E3E1EE', fontSize: 12, lineHeight: 18 },
+  approvalActions: { flexDirection: 'row', gap: 10, marginTop: 16 },
+  rejectButton: { flex: 1, borderRadius: 13, borderWidth: 1, borderColor: '#484352', paddingVertical: 14, alignItems: 'center' },
+  rejectText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
+  approveButton: { flex: 1, borderRadius: 13, backgroundColor: '#6C4CF1', paddingVertical: 14, alignItems: 'center' },
+  approveText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
   connectionBadge: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: '#10251F', borderTopWidth: 1, borderTopColor: '#1D3B31' },
   connectionText: { color: '#A7F3D0', fontSize: 10, flex: 1 },
   disconnectText: { color: '#FCA5A5', fontSize: 10, fontWeight: '700' },
