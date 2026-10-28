@@ -113,6 +113,7 @@ export default function Browser() {
     if (isLocked) {
       connectedOriginRef.current = null;
       setConnectedOrigin(null);
+      if (approvalResolver.current) finishApproval(false);
       webRef.current?.injectJavaScript('if(window.ethereum){window.ethereum.__selectedAddress=null;window.ethereum.emit("accountsChanged",[])}true;');
       return;
     }
