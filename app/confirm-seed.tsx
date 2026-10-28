@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -29,21 +29,14 @@ export default function ConfirmSeed() {
       return;
     }
 
-    const correct = testIndices.map((i) => seedPhrase[i]);
-    const correctSet = new Set(correct);
-    const wrong = seedPhrase.filter((word) => !correctSet.has(word));
-    for (let i = wrong.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [wrong[i], wrong[j]] = [wrong[j], wrong[i]];
-    }
-
-    // Correct answers are inserted first, so all are retained in the 8 choices.
-    const pool = [...new Set([...correct, ...wrong])].slice(0, 8);
+    // Use the complete generated phrase as the answer pool. This guarantees
+    // every requested word exists in the choices, including repeated words.
+    const pool = seedPhrase.map((word, originalIndex) => ({ word, originalIndex }));
     for (let i = pool.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [pool[i], pool[j]] = [pool[j], pool[i]];
     }
-    setShuffled(pool);
+    setShuffled(pool.map((item) => item.word));
     setSelected({});
     setError('');
   }, [seedPhrase]);
