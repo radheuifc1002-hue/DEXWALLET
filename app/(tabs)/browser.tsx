@@ -185,6 +185,10 @@ export default function Browser() {
         }
         case 'wallet_addEthereumChain':
           throw Object.assign(new Error('Custom networks cannot be added from a DApp.'), {code:4200});
+        case 'eth_sendRawTransaction':
+        case 'eth_signTransaction':
+        case 'wallet_sendCalls':
+          throw Object.assign(new Error('This transaction method is not supported. Submit transactions through the wallet approval flow.'), {code:4200});
         case 'eth_sendTransaction': {
           if (connectedOriginRef.current !== origin) throw Object.assign(new Error('Connect this DApp first.'), {code:4100});
           const tx = params[0];
@@ -209,25 +213,58 @@ export default function Browser() {
           const balance = await provider.getBalance(address);
           const maxFee = request.maxFeePerGas ?? request.gasPrice ?? 0n;
           const maxCost = value + BigInt(request.gasLimit || 0n) * maxFee;
+          if (request.gasPrice != null && (request.maxFeePerGas != null || request.maxPriorityFeePerGas != null)) {
+            throw Object.assign(new Error('Transaction mixes legacy gasPrice and EIP-1559 fee fields.'), {code:-32602});
+          }
+          if (request.maxFeePerGas != null && request.maxPriorityFeePerGas != null && request.maxPriorityFeePerGas > request.maxFeePerGas) {
+            throw Object.assign(new Error('Priority fee cannot exceed maximum fee.'), {code:-32602});
+          }
           const selector = data.slice(0,10).toLowerCase();
+          const nativeSymbol = selectedBlockchain==='ethereum'?'ETH':selectedBlockchain==='bnb'?'BNB':'POL';
+          const decodedDetails: string[] = [];
+          try {
+            if (selector === '0xa9059cbb') {
+              const [recipient, amount] = ethers.AbiCoder.defaultAbiCoder().decode(['address','uint256'], '0x'+data.slice(10));
+              decodedDetails.push('ERC-20 transfer recipient: '+recipient, 'ERC-20 amount (raw units): '+amount.toString());
+            } else if (selector === '0x095ea7b3') {
+              const [spender, amount] = ethers.AbiCoder.defaultAbiCoder().decode(['address','uint256'], '0x'+data.slice(10));
+              decodedDetails.push('TOKEN APPROVAL — spender: '+spender, 'Allowance (raw token units): '+(amount === ethers.MaxUint256 ? 'UNLIMITED (maximum uint256)' : amount.toString()));
+            } else if (selector === '0x23b872dd') {
+              const [from, recipient, amount] = ethers.AbiCoder.defaultAbiCoder().decode(['address','address','uint256'], '0x'+data.slice(10));
+              decodedDetails.push('ERC-20 transferFrom source: '+from, 'ERC-20 transferFrom recipient: '+recipient, 'Amount (raw token units): '+amount.toString());
+            }
+          } catch {
+            decodedDetails.push('Could not decode token call parameters. Treat this as an opaque contract interaction.');
+          }
+          const dataPreview = data === '0x' ? [] : [
+            'Function selector: '+selector,
+            'Calldata length: '+((data.length-2)/2)+' bytes',
+            'Calldata preview: '+data.slice(0,2050)+(data.length>2050?'… [truncated in preview]':''),
+            'WARNING: contract calldata is not fully decoded; verify the contract and expected action on an independent source.',
+          ];
           const details = [
             'Network: '+cfg.name+(network==='testnet'?' Testnet':''),
+            'Chain ID: '+chainId,
+            'Origin: '+origin,
             'From: '+address,
             'To: '+(to || '(contract creation)'),
-            'Native value: '+ethers.formatEther(value)+' '+(selectedBlockchain==='ethereum'?'ETH':selectedBlockchain==='bnb'?'BNB':'POL/MATIC'),
+            'Native value: '+ethers.formatEther(value)+' '+nativeSymbol,
             'Gas limit: '+String(request.gasLimit),
-            'Estimated maximum total: '+ethers.formatEther(maxCost)+' native token',
-            selector==='0x095ea7b3'?'WARNING: token approval call. Check spender and allowance carefully.':'',
-            selector==='0xa9059cbb'?'Token transfer detected; token amount is encoded in contract data.':'',
-            data!=='0x'?'Contract selector: '+selector+'; calldata: '+((data.length-2)/2)+' bytes. Generic contract calls are not fully decoded.':'',
-          ].filter(Boolean);
+            'Maximum gas fee: '+ethers.formatEther(BigInt(request.gasLimit || 0n)*(request.maxFeePerGas ?? request.gasPrice ?? 0n))+' '+nativeSymbol,
+            'Estimated maximum total: '+ethers.formatEther(maxCost)+' '+nativeSymbol,
+            ...decodedDetails,
+            ...dataPreview,
+          ];
           if (balance < maxCost) throw Object.assign(new Error('Insufficient native-token balance for value and estimated fee.'), {code:-32000});
           const ok = await askApproval({kind:'transaction',title:'Review transaction',origin,chainName:cfg.name,details});
           if (!ok) throw Object.assign(new Error('User rejected transaction.'), {code:4001});
           const mnemonic = await getMnemonic();
           if (!mnemonic) throw Object.assign(new Error('Wallet secret unavailable. Restore wallet.'), {code:4100});
-          const signer = ethers.Wallet.fromPhrase(mnemonic).connect(provider);
-          const sent = await signer.sendTransaction(request);
+          const signer = ethers.Wallet.fromPhrase(mnemonic);
+          if (signer.address.toLowerCase() !== address.toLowerCase()) {
+            throw Object.assign(new Error('Derived signing account does not match the displayed wallet address. Transaction blocked.'), {code:4100});
+          }
+          const sent = await signer.connect(provider).sendTransaction(request);
           result = sent.hash; break;
         }
         case 'personal_sign':
@@ -257,6 +294,12 @@ export default function Browser() {
           const mnemonic = await getMnemonic();
           if (!mnemonic) throw Object.assign(new Error('Wallet secret unavailable.'), {code:4100});
           const signer = ethers.Wallet.fromPhrase(mnemonic);
+          if (signer.address.toLowerCase() !== address.toLowerCase()) {
+            throw Object.assign(new Error('Derived signing account does not match the connected wallet. Signature blocked.'), {code:4100});
+          }
+          if (typed && typedData.domain.chainId != null && Number(typedData.domain.chainId) !== chainId) {
+            throw Object.assign(new Error('Typed-data domain chain ID does not match the active network.'), {code:4901});
+          }
           if (typed) { const types = {...typedData.types}; delete types.EIP712Domain; result = await signer.signTypedData(typedData.domain,types,typedData.message); }
           else if (rawSign) { if (!ethers.isHexString(messageData,32)) throw Object.assign(new Error('eth_sign requires a 32-byte hash.'), {code:-32602}); result = signer.signingKey.sign(messageData).serialized; }
           else result = await signer.signMessage(messageData.startsWith('0x') && ethers.isHexString(messageData) ? ethers.getBytes(messageData) : messageData);
