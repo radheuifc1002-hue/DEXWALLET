@@ -21,9 +21,24 @@ export function ConfirmSeedPhrase() {
   });
 
   useEffect(() => {
+    // Wait for the generated phrase before building the answer choices.
+    // This prevents the verifier from capturing empty/stale words on mount.
+    if (seedPhrase.length !== 12 || positions.some((pos) => !seedPhrase[pos])) {
+      setShuffledWords([]);
+      setSelectedWords([]);
+      return;
+    }
+
     const wordsToVerify = positions.map((pos) => seedPhrase[pos]);
-    const shuffled = [...wordsToVerify].sort(() => Math.random() - 0.5);
+    const shuffled = [...wordsToVerify];
+    // Fisher-Yates shuffle keeps every required answer in the option pool.
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
     setShuffledWords(shuffled);
+    setSelectedWords([]);
+    setError(false);
   }, [positions, seedPhrase]);
 
   const handleWordSelect = (_word: string, index: number) => {
@@ -35,11 +50,18 @@ export function ConfirmSeedPhrase() {
   };
 
   const handleVerify = async () => {
-    const isCorrect = selectedWords.every((wordIndex, i) => {
-      return shuffledWords[wordIndex] === seedPhrase[positions[i]];
-    });
+    if (seedPhrase.length !== 12 || shuffledWords.length !== 3) {
+      setError(true);
+      return;
+    }
 
-    if (isCorrect && selectedWords.length === 3) {
+    const isCorrect =
+      selectedWords.length === 3 &&
+      selectedWords.every((wordIndex, i) =>
+        shuffledWords[wordIndex] === seedPhrase[positions[i]]
+      );
+
+    if (isCorrect) {
       setVerifying(true);
       try {
         await initWallet(seedPhrase.join(" "));
@@ -84,7 +106,11 @@ export function ConfirmSeedPhrase() {
           Select the words in the correct order
         </p>
         {error && (
-          <p className="text-destructive mt-2">Incorrect order. Try again.</p>
+          <p className="text-destructive mt-2">
+            {shuffledWords.length !== 3
+              ? "Seed phrase is not ready. Go back and reopen verification."
+              : "Incorrect order. Try again."}
+          </p>
         )}
       </div>
 
@@ -130,7 +156,7 @@ export function ConfirmSeedPhrase() {
 
       <Button
         onClick={handleVerify}
-        disabled={selectedWords.length !== 3}
+        disabled={selectedWords.length !== 3 || shuffledWords.length !== 3}
         className="h-12"
       >
         Verify & Create Wallet
