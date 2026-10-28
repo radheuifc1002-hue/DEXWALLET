@@ -51,7 +51,7 @@ export function ConfirmSeedPhrase() {
   };
 
   const handleVerify = async () => {
-    if (seedPhrase.length !== 12 || shuffledWords.length !== 3) {
+    if (seedPhrase.length !== 12 || shuffledWords.length !== 12) {
       setError(true);
       return;
     }
@@ -108,7 +108,7 @@ export function ConfirmSeedPhrase() {
         </p>
         {error && (
           <p className="text-destructive mt-2">
-            {shuffledWords.length !== 3
+            {shuffledWords.length !== 12
               ? "Seed phrase is not ready. Go back and reopen verification."
               : "Incorrect order. Try again."}
           </p>
