@@ -86,6 +86,23 @@ export default function Browser() {
   const [loading, setLoading] = useState(false);
   const webRef = useRef<WebView>(null);
 
+  useEffect(() => {
+    const ids: Record<string, number> = {
+      ethereum: network === 'testnet' ? 11155111 : 1,
+      bnb: network === 'testnet' ? 97 : 56,
+      polygon: network === 'testnet' ? 80002 : 137,
+    };
+    const id = ids[selectedBlockchain];
+    if (!id || !pageUrlRef.current.startsWith('https://')) return;
+    const hex = '0x' + id.toString(16);
+    webRef.current?.injectJavaScript(
+      'if(window.ethereum){var old=window.ethereum.__chainId;window.ethereum.__chainId=' +
+      JSON.stringify(hex) +
+      ';if(old&&old!==' + JSON.stringify(hex) + ')window.ethereum.emit("chainChanged",' +
+      JSON.stringify(hex) + ');}true;'
+    );
+  }, [selectedBlockchain, network]);
+
   const askApproval = (request: any) => new Promise<boolean>((resolve) => {
     if (approvalResolver.current) { resolve(false); return; }
     approvalResolver.current = resolve;
@@ -445,7 +462,22 @@ export default function Browser() {
             setLoading(state.loading);
           }}
           onLoadStart={() => setLoading(true)}
-          onLoadEnd={() => setLoading(false)}
+          onLoadEnd={() => {
+            setLoading(false);
+            const ids: Record<string, number> = {
+              ethereum: network === 'testnet' ? 11155111 : 1,
+              bnb: network === 'testnet' ? 97 : 56,
+              polygon: network === 'testnet' ? 80002 : 137,
+            };
+            const id = ids[selectedBlockchain];
+            if (id) {
+              const hex = '0x' + id.toString(16);
+              webRef.current?.injectJavaScript(
+                'if(window.ethereum){window.ethereum.__chainId=' + JSON.stringify(hex) +
+                ';window.ethereum.emit("connect",{chainId:' + JSON.stringify(hex) + '});}true;'
+              );
+            }
+          }
           javaScriptEnabled
           domStorageEnabled
           sharedCookiesEnabled
@@ -490,7 +522,7 @@ export default function Browser() {
           </View>
         </Modal>
 
-        {connectedOrigin ? <View style={styles.connectionBadge}><Ionicons name="checkmark-circle" size={15} color="#34D399" /><Text style={styles.connectionText}>Connected to {connectedOrigin}</Text><TouchableOpacity onPress={() => { connectedOriginRef.current = null; setConnectedOrigin(null); webRef.current?.injectJavaScript('if(window.ethereum){window.ethereum.emit("accountsChanged",[])}true;'); }}><Text style={styles.disconnectText}>Disconnect</Text></TouchableOpacity></View> : null}
+        {connectedOrigin ? <View style={styles.connectionBadge}><Ionicons name="checkmark-circle" size={15} color="#34D399" /><Text style={styles.connectionText}>Connected to {connectedOrigin}</Text><TouchableOpacity onPress={() => { connectedOriginRef.current = null; setConnectedOrigin(null); webRef.current?.injectJavaScript('if(window.ethereum){window.ethereum.__selectedAddress=null;window.ethereum.emit("accountsChanged",[])}true;'); }}><Text style={styles.disconnectText}>Disconnect</Text></TouchableOpacity></View> : null}
         <View style={styles.navBar}>
           <TouchableOpacity onPress={() => webRef.current?.goBack()} disabled={!canGoBack} style={[styles.navBtn, !canGoBack && styles.navBtnDisabled]} accessibilityLabel="Go back">
             <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
