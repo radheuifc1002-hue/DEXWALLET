@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -87,9 +87,25 @@ export default function Browser() {
   const webRef = useRef<WebView>(null);
 
   const askApproval = (request: any) => new Promise<boolean>((resolve) => {
+    if (approvalResolver.current) { resolve(false); return; }
     approvalResolver.current = resolve;
     setPendingApproval(request);
   });
+
+  useEffect(() => {
+    if (isLocked) {
+      connectedOriginRef.current = null;
+      setConnectedOrigin(null);
+      webRef.current?.injectJavaScript('if(window.ethereum){window.ethereum.__selectedAddress=null;window.ethereum.emit("accountsChanged",[])}true;');
+      return;
+    }
+    const chainConfig = selectedBlockchain === 'ethereum' ? [1,11155111] : selectedBlockchain === 'bnb' ? [56,97] : selectedBlockchain === 'polygon' ? [137,80002] : null;
+    if (!chainConfig) return;
+    const id = network === 'testnet' ? chainConfig[1] : chainConfig[0];
+    const chainHex = '0x' + id.toString(16);
+    const account = connectedOriginRef.current ? walletAddresses?.[selectedBlockchain] : null;
+    webRef.current?.injectJavaScript('if(window.ethereum){window.ethereum.__chainId=' + JSON.stringify(chainHex) + ';window.ethereum.__selectedAddress=' + JSON.stringify(account || null) + ';window.ethereum.emit("chainChanged",' + JSON.stringify(chainHex) + ');window.ethereum.emit("accountsChanged",' + JSON.stringify(account ? [account] : []) + ')}true;');
+  }, [selectedBlockchain, network, walletAddresses, isLocked]);
 
   const finishApproval = (approved: boolean) => {
     const resolve = approvalResolver.current;
@@ -371,6 +387,14 @@ export default function Browser() {
           source={{ uri: url }}
           style={{ flex: 1, backgroundColor: '#0F0E17' }}
           onNavigationStateChange={(state) => {
+            let oldOrigin = ''; let newOrigin = '';
+            try { oldOrigin = new URL(pageUrlRef.current).origin; } catch {}
+            try { newOrigin = new URL(state.url).origin; } catch {}
+            if (oldOrigin && newOrigin && oldOrigin !== newOrigin) {
+              connectedOriginRef.current = null;
+              setConnectedOrigin(null);
+              if (approvalResolver.current) finishApproval(false);
+            }
             pageUrlRef.current = state.url;
             setCanGoBack(state.canGoBack);
             setCanGoForward(state.canGoForward);
