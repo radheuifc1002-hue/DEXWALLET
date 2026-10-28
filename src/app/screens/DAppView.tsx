@@ -12,6 +12,7 @@ import {
   X,
   Home,
   Loader2,
+  ExternalLink,
 } from "lucide-react";
 import { PinInput } from "../components/PinInput";
 import { addToHistory } from "../services/browserHistory";
@@ -232,6 +233,20 @@ export function DAppView() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Embedded DApps may block iframe rendering through their security headers. */}
+      <div className="flex items-center gap-3 border-b border-border bg-secondary/30 px-3 py-2.5">
+        <AlertTriangle className="h-4 w-4 shrink-0 text-yellow-500" />
+        <p className="min-w-0 flex-1 text-xs text-muted-foreground">
+          If this page is blank, the site may block embedded previews. Opening it separately won't connect this wallet.
+        </p>
+        <button
+          onClick={() => window.open(currentUrl, "_blank", "noopener,noreferrer")}
+          className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-primary/10 px-2.5 py-2 text-xs font-medium text-primary hover:bg-primary/20"
+        >
+          Open site <ExternalLink className="h-3.5 w-3.5" />
+        </button>
       </div>
 
       {/* iframe Content */}
