@@ -69,7 +69,13 @@ function request(a){if(!a||typeof a.method!=="string")return Promise.reject({cod
 window.__xuWalletResolve=function(id,r,e){var x=p[id];if(!x)return;delete p[id];e?x.reject(e):x.resolve(r)};
 var w={isXUWallet:true,request:request,on:function(e,f){(l[e]||(l[e]=[])).push(f);return w},removeListener:function(e,f){l[e]=(l[e]||[]).filter(function(x){return x!==f});return w},off:function(e,f){return w.removeListener(e,f)},emit:emit,isConnected:function(){return true}};
 Object.defineProperty(w,"selectedAddress",{get:function(){return w.__selectedAddress||null}});Object.defineProperty(w,"chainId",{get:function(){return w.__chainId||null}});
-window.ethereum=w;window.dispatchEvent(new Event("ethereum#initialized"));
+window.ethereum=w;
+window.dispatchEvent(new Event("ethereum#initialized"));
+var uuid="xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g,function(c){var r=Math.random()*16|0;return(c==="x"?r:(r&3|8)).toString(16)});
+var info={uuid:uuid,name:"XU Wallet",icon:"data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2216%22 fill=%22%236c4cf1%22/%3E%3Ctext x=%2232%22 y=%2243%22 font-size=%2236%22 text-anchor=%22middle%22 fill=%22white%22%3EX%3C/text%3E%3C/svg%3E",rdns:"com.xuwallet.app"};
+function announce(){window.dispatchEvent(new CustomEvent("eip6963:announceProvider",{detail:{info:info,provider:w}}))}
+window.addEventListener("eip6963:requestProvider",announce);
+announce();
 })(); true;`;
 
 export default function Browser() {
