@@ -109,7 +109,7 @@ export default function PinLock() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0B0D12' },
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
   content: {
     flex: 1,
     alignItems: 'center',
@@ -127,12 +127,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: '800',
-    color: '#F7F6FC',
+    color: '#211B35',
     marginBottom: 4,
   },
   subtitle: {
     fontSize: 14,
-    color: '#A7A3B8',
+    color: '#777286',
     marginBottom: 40,
   },
   bioBtn: {
