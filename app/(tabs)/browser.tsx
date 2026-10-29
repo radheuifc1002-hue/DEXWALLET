@@ -369,7 +369,7 @@ export default function Browser() {
   if (!url) {
     return (
       <SafeAreaContextView edges={["top"]} style={styles.container}>
-        <ScrollView style={styles.landingScroll} contentContainerStyle={styles.landingContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <ScrollView style={styles.landingScroll} contentContainerStyle={styles.landingContent} showsVerticalScrollIndicator={true} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
         <View style={styles.pageHeader}>
           <View>
             <Text style={styles.eyebrow}>EXPLORE WEB3</Text>
@@ -589,6 +589,8 @@ export default function Browser() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFFFFF', paddingHorizontal: 14 },
+  landingScroll: { flex: 1, minHeight: 0 },
+  landingContent: { flexGrow: 1, paddingBottom: 36 },
   pageHeader: {
     flexDirection: 'row',
     alignItems: 'center',
