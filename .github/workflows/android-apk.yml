@@ -26,7 +26,7 @@ permissions:
 
 concurrency:
   group: android-apk-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -78,14 +78,43 @@ jobs:
           node -e "const p=require('./package.json'); if (p.main !== 'index.js') process.exit(1); console.log('Native entry:', p.main)"
           npx expo config --type public
 
+      - name: Start with a clean generated Android project
+        run: rm -rf android
+
+      # Cache the entire generated Android project, including Gradle history,
+      # intermediates, native build outputs, and the packaged APK.
+      - name: Restore complete Android project and build outputs
+        id: android-project-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: android
+          key: android-project-v1-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'app.json', 'babel.config.cjs', 'metro.config.cjs', 'metro.config.js', 'assets/icon.svg', 'assets/splash.svg') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            android-project-v1-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'app.json', 'babel.config.cjs', 'metro.config.cjs', 'metro.config.js', 'assets/icon.svg', 'assets/splash.svg') }}-
+
+      - name: Check whether Android project was restored
+        id: android-project-state
+        shell: bash
+        run: |
+          if [[ -f android/gradlew && -f android/app/build.gradle ]]; then
+            echo "restored=true" >> "$GITHUB_OUTPUT"
+            echo "Compatible Android project cache found; skipping Expo prebuild."
+          else
+            echo "restored=false" >> "$GITHUB_OUTPUT"
+            echo "No compatible Android project cache; generating the Android project."
+          fi
+
       - name: Generate native Android project
+        if: steps.android-project-state.outputs.restored != 'true'
         env:
           EXPO_ROUTER_APP_ROOT: app
         run: npx expo prebuild --platform android --no-install
 
-      # Restore native outputs only after prebuild, which recreates the android/ directory.
-      - name: Cache Gradle and Android native build outputs
-        uses: actions/cache@v4
+      # Keep this path list unchanged so it can restore the existing v2 cache.
+      # Restore it after prebuild because prebuild recreates android/.
+      - name: Restore Gradle and native CMake dependency cache
+        id: gradle-native-cache
+        uses: actions/cache/restore@v4
         with:
           path: |
             ~/.gradle/caches
@@ -97,9 +126,17 @@ jobs:
             android-release-v2-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
             android-release-v2-${{ runner.os }}-
             android-release-${{ runner.os }}-
-          save-always: true
 
+      - name: Restore native module Gradle outputs
+        id: native-module-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: node_modules/**/android/build
+          key: android-module-build-v1-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            android-module-build-v1-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json') }}-
       - name: Build standalone release APK
+        id: android-build
         working-directory: android
         timeout-minutes: 55
         env:
@@ -111,6 +148,30 @@ jobs:
           chmod +x gradlew
           ./gradlew --max-workers=4 --parallel --stacktrace --build-cache -PreactNativeArchitectures=arm64-v8a assembleRelease -x lintVitalAnalyzeRelease -x lintVitalRelease
 
+      - name: Save complete Android project and build outputs
+        if: ${{ always() && steps.android-build.outcome == 'success' }}
+        uses: actions/cache/save@v4
+        with:
+          path: android
+          key: ${{ steps.android-project-cache.outputs.cache-primary-key }}
+
+      - name: Save Gradle and native CMake dependency cache
+        if: ${{ always() && steps.android-build.outcome == 'success' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            android/app/.cxx
+            node_modules/*/android/.cxx
+          key: ${{ steps.gradle-native-cache.outputs.cache-primary-key }}
+
+      - name: Save native module Gradle outputs
+        if: ${{ always() && steps.android-build.outcome == 'success' }}
+        uses: actions/cache/save@v4
+        with:
+          path: node_modules/**/android/build
+          key: ${{ steps.native-module-cache.outputs.cache-primary-key }}
       - name: Verify APK contains a bundled native application
         run: |
           set -euo pipefail
@@ -146,26 +207,3 @@ jobs:
             --title "XU Wallet standalone Android test build ${GITHUB_RUN_NUMBER}" \
             --notes "Standalone release-variant APK from commit ${GITHUB_SHA}. Test build only; not security-audited for real funds." \
             --prerelease
-
-      - name: Persist Expo-normalized package manifest and lockfile
-        if: github.ref == 'refs/heads/main'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          for FILE in package.json package-lock.json; do
-            if git diff --quiet -- "$FILE"; then
-              echo "$FILE already matches the installed dependency graph."
-              continue
-            fi
-            base64 -w 0 "$FILE" > "$RUNNER_TEMP/file-content.b64"
-            SHA="$(gh api "repos/${GITHUB_REPOSITORY}/contents/$FILE?ref=main" --jq .sha)"
-            jq -n \
-              --arg message "Align dependency lockfile with Expo SDK 55 [skip ci]" \
-              --rawfile content "$RUNNER_TEMP/file-content.b64" \
-              --arg sha "$SHA" \
-              --arg branch "main" \
-              '{message:$message,content:$content,sha:$sha,branch:$branch}' > "$RUNNER_TEMP/manifest-update.json"
-            gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/$FILE" \
-              --input "$RUNNER_TEMP/manifest-update.json"
-          done
