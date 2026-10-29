@@ -60,18 +60,21 @@ jobs:
             ~/.gradle/wrapper
             node_modules/react-native-reanimated/android/.cxx
             node_modules/react-native-worklets/android/.cxx
-          key: android-release-${{ runner.os }}-${{ hashFiles('package-lock.json', 'app.json') }}-${{ github.sha }}
+          key: android-release-${{ runner.os }}-${{ hashFiles('package-lock.json', 'app.json', 'babel.config.cjs', 'metro.config.cjs') }}
           restore-keys: |
-            android-release-${{ runner.os }}-${{ hashFiles('package-lock.json', 'app.json') }}-
+            android-release-${{ runner.os }}-${{ hashFiles('package-lock.json', 'app.json', 'babel.config.cjs', 'metro.config.cjs') }}
             android-release-${{ runner.os }}-
 
       - name: Generate native Android project
+        env:
+          EXPO_ROUTER_APP_ROOT: app
         run: npx expo prebuild --platform android --no-install
 
       - name: Build standalone release APK
         working-directory: android
         timeout-minutes: 35
         env:
+          EXPO_ROUTER_APP_ROOT: app
           CMAKE_BUILD_PARALLEL_LEVEL: "2"
           GRADLE_OPTS: "-Dorg.gradle.workers.max=2 -Dorg.gradle.parallel=false -Dorg.gradle.caching=true"
         run: |
