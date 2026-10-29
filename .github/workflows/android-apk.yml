@@ -58,18 +58,6 @@ jobs:
           npx expo install --check
           node -e "const r=require('react/package.json').version; const d=require('react-dom/package.json').version; const rn=require('react-native/package.json').version; console.log('Resolved runtime:', {react:r, reactDom:d, reactNative:rn}); if(r!=='19.2.0'||d!=='19.2.0'||!rn.startsWith('0.83.')) process.exit(1)"
 
-      - name: Cache Gradle and Android native build outputs
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            android/app/.cxx
-            node_modules/*/android/.cxx
-          key: android-release-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'app.json', 'babel.config.cjs', 'metro.config.cjs') }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            android-release-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'app.json', 'babel.config.cjs', 'metro.config.cjs') }}-
-            android-release-${{ runner.os }}-
 
       - name: Generate Android icon and splash PNG assets
         run: |
@@ -94,6 +82,22 @@ jobs:
         env:
           EXPO_ROUTER_APP_ROOT: app
         run: npx expo prebuild --platform android --no-install
+
+      # Restore native outputs only after prebuild, which recreates the android/ directory.
+      - name: Cache Gradle and Android native build outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            android/app/.cxx
+            node_modules/*/android/.cxx
+          key: android-release-v2-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            android-release-v2-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
+            android-release-v2-${{ runner.os }}-
+            android-release-${{ runner.os }}-
+          save-always: true
 
       - name: Build standalone release APK
         working-directory: android
@@ -156,9 +160,12 @@ jobs:
             fi
             CONTENT="$(base64 -w 0 "$FILE")"
             SHA="$(gh api "repos/${GITHUB_REPOSITORY}/contents/$FILE?ref=main" --jq .sha)"
+            jq -n \
+              --arg message "Align dependency lockfile with Expo SDK 55 [skip ci]" \
+              --arg content "$CONTENT" \
+              --arg sha "$SHA" \
+              --arg branch "main" \
+              '{message:$message,content:$content,sha:$sha,branch:$branch}' > "$RUNNER_TEMP/manifest-update.json"
             gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/$FILE" \
-              -f message="Align dependency lockfile with Expo SDK 55 [skip ci]" \
-              -f content="$CONTENT" \
-              -f sha="$SHA" \
-              -f branch=main
+              --input "$RUNNER_TEMP/manifest-update.json"
           done
