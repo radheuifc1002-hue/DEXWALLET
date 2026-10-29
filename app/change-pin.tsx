@@ -130,7 +130,7 @@ export default function ChangePin() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' },
+  container: { flex: 1, backgroundColor: '#0B0D12' },
   header: { paddingHorizontal: 20, paddingTop: 12 },
   backText: { color: '#6C4CF1', fontSize: 16 },
   content: {
@@ -149,13 +149,13 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: '#F3F0FF',
+    backgroundColor: '#1B1D2A',
     borderWidth: 2,
     borderColor: '#6C4CF1',
   },
   stepDotActive: { backgroundColor: '#6C4CF1' },
   stepDotDone: { backgroundColor: '#10B981', borderColor: '#10B981' },
-  stepLine: { width: 32, height: 2, backgroundColor: '#F3F0FF', marginHorizontal: 4 },
-  title: { fontSize: 28, fontWeight: '800', color: '#211B35', marginBottom: 32 },
+  stepLine: { width: 32, height: 2, backgroundColor: '#1B1D2A', marginHorizontal: 4 },
+  title: { fontSize: 28, fontWeight: '800', color: '#F7F6FC', marginBottom: 32 },
   success: { fontSize: 18, color: '#10B981', fontWeight: '700' },
 });
