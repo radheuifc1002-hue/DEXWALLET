@@ -51,8 +51,12 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Install dependencies
-        run: npm ci --prefer-offline --no-audit --no-fund
+      - name: Install and align Expo SDK dependencies
+        run: |
+          npm install --no-audit --no-fund
+          npx expo install --fix
+          npx expo install --check
+          node -e "const r=require('react/package.json').version; const d=require('react-dom/package.json').version; const rn=require('react-native/package.json').version; console.log('Resolved runtime:', {react:r, reactDom:d, reactNative:rn}); if(r!=='19.2.0'||d!=='19.2.0'||!rn.startsWith('0.83.')) process.exit(1)"
 
       - name: Cache Gradle and Android native build outputs
         uses: actions/cache@v4
@@ -62,9 +66,9 @@ jobs:
             ~/.gradle/wrapper
             node_modules/react-native-reanimated/android/.cxx
             node_modules/react-native-worklets/android/.cxx
-          key: android-release-${{ runner.os }}-${{ hashFiles('package-lock.json', 'app.json', 'babel.config.cjs', 'metro.config.cjs') }}
+          key: android-release-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'app.json', 'babel.config.cjs', 'metro.config.cjs') }}
           restore-keys: |
-            android-release-${{ runner.os }}-${{ hashFiles('package-lock.json', 'app.json', 'babel.config.cjs', 'metro.config.cjs') }}
+            android-release-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'app.json', 'babel.config.cjs', 'metro.config.cjs') }}
             android-release-${{ runner.os }}-
 
       - name: Generate Android icon and splash PNG assets
@@ -97,6 +101,7 @@ jobs:
         env:
           EXPO_ROUTER_APP_ROOT: app
           CMAKE_BUILD_PARALLEL_LEVEL: "2"
+          NODE_ENV: production
           GRADLE_OPTS: "-Dorg.gradle.workers.max=2 -Dorg.gradle.parallel=false -Dorg.gradle.caching=true"
         run: |
           chmod +x gradlew
@@ -137,3 +142,23 @@ jobs:
             --title "XU Wallet standalone Android test build ${GITHUB_RUN_NUMBER}" \
             --notes "Standalone release-variant APK from commit ${GITHUB_SHA}. Test build only; not security-audited for real funds." \
             --prerelease
+
+      - name: Persist Expo-normalized package manifest and lockfile
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for FILE in package.json package-lock.json; do
+            if git diff --quiet -- "$FILE"; then
+              echo "$FILE already matches the installed dependency graph."
+              continue
+            fi
+            CONTENT="$(base64 -w 0 "$FILE")"
+            SHA="$(gh api "repos/${GITHUB_REPOSITORY}/contents/$FILE?ref=main" --jq .sha)"
+            gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/$FILE" \
+              -f message="Align dependency lockfile with Expo SDK 55 [skip ci]" \
+              -f content="$CONTENT" \
+              -f sha="$SHA" \
+              -f branch=main
+          done

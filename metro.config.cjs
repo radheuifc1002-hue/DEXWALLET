@@ -18,13 +18,24 @@ config.resolver.extraNodeModules = {
   events: path.resolve(__dirname, 'node_modules/events'),
 };
 
-// The native app is rooted exclusively in ./app and ./mobile.
-// Vite/React web source is intentionally kept outside Metro's resolver graph.
-// Block both historical web source (./src) and the separated web app (./web-app)
-// so native bundling cannot accidentally resolve a web entry or web-only module.
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Keep web-only project directories out of Metro without excluding any
+// dependency folder named "src" elsewhere in node_modules.
+const webOnlyRoots = ['src', 'web-app'].map((folder) => path.resolve(__dirname, folder));
+const webOnlyPatterns = webOnlyRoots.map(
+  (root) => new RegExp('^' + escapeRegExp(root) + '[/\\\\].*')
+);
+const viteConfigPattern = new RegExp(
+  '^' + escapeRegExp(path.resolve(__dirname, 'vite.config.ts')) + '$'
+);
+
 config.resolver.blockList = [
-  /[/\\](?:web-app|src)[/\\].*/,
-  /[/\\]vite\.config\.(?:ts|js|mjs|cjs)$/,
+  ...(config.resolver.blockList || []),
+  ...webOnlyPatterns,
+  viteConfigPattern,
 ];
 
 module.exports = config;
