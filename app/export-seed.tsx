@@ -120,7 +120,7 @@ export default function ExportSeed() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0F0E17' },
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -128,11 +128,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#1A1825',
+    borderBottomColor: '#E8E4F3',
   },
   back: {},
   backText: { color: '#6C4CF1', fontSize: 16 },
-  headerTitle: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
+  headerTitle: { fontSize: 16, fontWeight: '700', color: '#211B35' },
   pinContent: {
     flex: 1,
     alignItems: 'center',
@@ -140,8 +140,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingBottom: 40,
   },
-  title: { fontSize: 24, fontWeight: '800', color: '#FFFFFF', marginBottom: 8, textAlign: 'center' },
-  subtitle: { fontSize: 14, color: '#9B97B2', marginBottom: 32, textAlign: 'center' },
+  title: { fontSize: 24, fontWeight: '800', color: '#211B35', marginBottom: 8, textAlign: 'center' },
+  subtitle: { fontSize: 14, color: '#777286', marginBottom: 32, textAlign: 'center' },
   scroll: { padding: 20, paddingBottom: 40 },
   dangerBanner: {
     flexDirection: 'row',
@@ -159,7 +159,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#1A1825',
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: 28,
     paddingVertical: 16,
     borderRadius: 14,
@@ -177,7 +177,7 @@ const styles = StyleSheet.create({
   },
   wordCard: {
     width: '30%',
-    backgroundColor: '#1A1825',
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 10,
     flexDirection: 'row',
@@ -185,7 +185,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   wordNum: { color: '#6C4CF1', fontSize: 11, fontWeight: '700', width: 18 },
-  word: { color: '#FFFFFF', fontSize: 13, fontWeight: '600', flex: 1 },
+  word: { color: '#211B35', fontSize: 13, fontWeight: '600', flex: 1 },
   copyBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -193,5 +193,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 8,
   },
-  copyText: { color: '#9B97B2', fontSize: 14 },
+  copyText: { color: '#777286', fontSize: 14 },
 });
