@@ -1,15 +1,32 @@
 import { View, ActivityIndicator, Text, StyleSheet } from 'react-native';
+import { Redirect } from 'expo-router';
+import { useWallet } from '../context/WalletContext';
+import Onboarding from './onboarding';
 
-// NavigationGuard in app/_layout.tsx is the single source of truth for the
-// initial route. Do not redirect here as well: two simultaneous redirects
-// during WalletProvider hydration can leave the release app on a blank screen.
+// Render the first-run screen directly. The previous version rendered only
+// an endless XU spinner and relied on a second component to redirect away.
+// Keeping initial routing here makes the release APK show real app content.
 export default function Index() {
-  return (
-    <View style={styles.container}>
-      <Text style={styles.logo}>XU</Text>
-      <ActivityIndicator color="#6C4CF1" size="large" style={{ marginTop: 32 }} />
-    </View>
-  );
+  const { isWalletCreated, isLocked, isLoading } = useWallet();
+
+  if (isLoading) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.logo}>XU</Text>
+        <ActivityIndicator color="#6C4CF1" size="large" style={{ marginTop: 32 }} />
+      </View>
+    );
+  }
+
+  if (!isWalletCreated) {
+    return <Onboarding />;
+  }
+
+  if (isLocked) {
+    return <Redirect href="/pin-lock" />;
+  }
+
+  return <Redirect href="/(tabs)/home" />;
 }
 
 const styles = StyleSheet.create({
