@@ -139,19 +139,19 @@ export default function ConfirmSeed() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0F0E17' },
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
   scroll: { padding: 24, paddingBottom: 40 },
   back: { marginBottom: 20 },
   backText: { color: '#6C4CF1', fontSize: 16 },
   title: {
     fontSize: 28,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: '#211B35',
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 14,
-    color: '#9B97B2',
+    color: '#777286',
     lineHeight: 20,
     marginBottom: 28,
   },
@@ -159,7 +159,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   questionLabel: {
-    color: '#9B97B2',
+    color: '#777286',
     fontSize: 13,
     marginBottom: 8,
     fontWeight: '600',
@@ -170,12 +170,12 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   option: {
-    backgroundColor: '#1A1825',
+    backgroundColor: '#FFFFFF',
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderWidth: 1,
-    borderColor: '#24223A',
+    borderColor: '#E8E4F3',
   },
   optionSelected: {
     backgroundColor: '#6C4CF1',
@@ -185,8 +185,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#10B981',
     borderColor: '#10B981',
   },
-  optionText: { color: '#9B97B2', fontSize: 14, fontWeight: '500' },
-  optionTextSelected: { color: '#FFFFFF' },
+  optionText: { color: '#777286', fontSize: 14, fontWeight: '500' },
+  optionTextSelected: { color: '#211B35' },
   error: {
     color: '#EF4444',
     fontSize: 13,
