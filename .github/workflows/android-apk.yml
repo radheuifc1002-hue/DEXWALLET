@@ -88,9 +88,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: android
-          key: android-project-v1-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'app.json', 'babel.config.cjs', 'metro.config.cjs', 'metro.config.js', 'assets/icon.svg', 'assets/splash.svg') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: android-project-v2-${{ runner.os }}-${{ hashFiles('package.json', 'app.json', 'babel.config.cjs', 'assets/icon.svg', 'assets/splash.svg') }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            android-project-v1-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'app.json', 'babel.config.cjs', 'metro.config.cjs', 'metro.config.js', 'assets/icon.svg', 'assets/splash.svg') }}-
+            android-project-v2-${{ runner.os }}-${{ hashFiles('package.json', 'app.json', 'babel.config.cjs', 'assets/icon.svg', 'assets/splash.svg') }}-
 
       - name: Check whether Android project was restored
         id: android-project-state
@@ -135,6 +135,18 @@ jobs:
           key: android-module-build-v1-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             android-module-build-v1-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json') }}-
+      - name: Install required Android SDK native toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager -print -quit)"
+          fi
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" --install "ndk;27.1.12297006" "cmake;3.22.1"
+          test -d "$ANDROID_HOME/ndk/27.1.12297006"
       - name: Build standalone release APK
         id: android-build
         working-directory: android
