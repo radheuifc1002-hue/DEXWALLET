@@ -38,9 +38,9 @@ class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryStat
 }
 
 const errStyles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0B0D12', padding: 20, paddingTop: 60 },
+  container: { flex: 1, backgroundColor: '#FFFFFF', padding: 20, paddingTop: 60 },
   title: { color: '#FF4444', fontSize: 20, fontWeight: 'bold', marginBottom: 12 },
-  message: { color: '#F7F6FC', fontSize: 14, marginBottom: 12 },
+  message: { color: '#211B35', fontSize: 14, marginBottom: 12 },
   stack: { color: '#AAAAAA', fontSize: 11 },
 });
 
@@ -81,7 +81,7 @@ function AppStack() {
       <Stack
         screenOptions={{
           headerShown: false,
-          contentStyle: { backgroundColor: '#0B0D12' },
+          contentStyle: { backgroundColor: '#FFFFFF' },
           animation: 'fade',
         }}
       >
@@ -132,7 +132,7 @@ export default function RootLayout() {
       <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaProvider>
           <WalletProvider>
-            <StatusBar style="light" />
+            <StatusBar style="dark" />
             <AppStack />
           </WalletProvider>
         </SafeAreaProvider>
