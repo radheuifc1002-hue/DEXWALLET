@@ -74,7 +74,7 @@ export default function Receive() {
               <Text
                 style={[
                   styles.chainTabText,
-                  selectedBlockchain === chain && { color: '#211B35' },
+                  selectedBlockchain === chain && { color: '#F7F6FC' },
                 ]}
               >
                 {CHAIN_SYMBOLS[chain]}
@@ -141,7 +141,7 @@ export default function Receive() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' },
+  container: { flex: 1, backgroundColor: '#0B0D12' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -149,10 +149,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#E8E4F3',
+    borderBottomColor: '#2B2E3B',
   },
   back: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: '#211B35' },
+  headerTitle: { fontSize: 18, fontWeight: '700', color: '#F7F6FC' },
   scroll: { padding: 20, paddingBottom: 40, alignItems: 'center' },
   chainTabs: {
     flexDirection: 'row',
@@ -165,17 +165,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#151720',
     borderWidth: 1,
-    borderColor: '#E8E4F3',
+    borderColor: '#2B2E3B',
   },
   chainTabActive: {
     backgroundColor: '#6C4CF1',
     borderColor: '#6C4CF1',
   },
-  chainTabText: { color: '#777286', fontSize: 13, fontWeight: '700' },
+  chainTabText: { color: '#A7A3B8', fontSize: 13, fontWeight: '700' },
   qrCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#151720',
     borderRadius: 20,
     padding: 24,
     alignItems: 'center',
@@ -187,22 +187,22 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 2,
     marginBottom: 12,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#151720',
   },
   chainLabel: {
-    color: '#777286',
+    color: '#A7A3B8',
     fontSize: 14,
     fontWeight: '600',
   },
   addressCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#151720',
     borderRadius: 16,
     padding: 16,
     width: '100%',
     marginBottom: 14,
   },
   addressText: {
-    color: '#211B35',
+    color: '#F7F6FC',
     fontSize: 13,
     fontFamily: 'monospace',
     textAlign: 'center',
@@ -218,14 +218,14 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 12,
   },
-  copyBtnText: { color: '#211B35', fontSize: 15, fontWeight: '700' },
+  copyBtnText: { color: '#F7F6FC', fontSize: 15, fontWeight: '700' },
   warning: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 8,
     width: '100%',
   },
-  warningText: { color: '#777286', fontSize: 12, flex: 1, lineHeight: 18 },
+  warningText: { color: '#A7A3B8', fontSize: 12, flex: 1, lineHeight: 18 },
   empty: { padding: 40, alignItems: 'center' },
-  emptyText: { color: '#9A95A8', fontSize: 15 },
+  emptyText: { color: '#858198', fontSize: 15 },
 });
