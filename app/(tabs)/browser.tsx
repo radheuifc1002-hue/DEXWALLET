@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   TouchableOpacity,
   TextInput,
   Platform,
@@ -13,6 +12,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
+import { SafeAreaView as SafeAreaContextView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { ethers } from 'ethers';
 import { useWallet } from '../../context/WalletContext';
@@ -358,7 +358,7 @@ export default function Browser() {
 
   if (!url) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaContextView edges={["top"]} style={styles.container}>
         <View style={styles.pageHeader}>
           <View>
             <Text style={styles.eyebrow}>EXPLORE WEB3</Text>
@@ -418,12 +418,12 @@ export default function Browser() {
             </TouchableOpacity>
           ))}
         </View>
-      </SafeAreaView>
+      </SafeAreaContextView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaContextView edges={["top"]} style={styles.container}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
@@ -454,7 +454,7 @@ export default function Browser() {
         <WebView
           ref={webRef}
           source={{ uri: url }}
-          style={{ flex: 1, backgroundColor: '#FFFFFF' }}
+          style={{ flex: 1, backgroundColor: '#151720' }}
           onNavigationStateChange={(state) => {
             let oldOrigin = ''; let newOrigin = '';
             try { oldOrigin = new URL(pageUrlRef.current).origin; } catch {}
@@ -547,7 +547,7 @@ export default function Browser() {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </SafeAreaContextView>
   );
 }
 
@@ -561,7 +561,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   eyebrow: { color: '#B7A5FF', fontSize: 10, fontWeight: '800', letterSpacing: 2 },
-  pageTitle: { color: '#211B35', fontSize: 26, fontWeight: '800', marginTop: 5, letterSpacing: -0.5 },
+  pageTitle: { color: '#F7F6FC', fontSize: 26, fontWeight: '800', marginTop: 5, letterSpacing: -0.5 },
   subtitle: { color: '#9290A5', fontSize: 12, marginTop: 5 },
   headerIcon: {
     width: 44, height: 44, borderRadius: 15, alignItems: 'center', justifyContent: 'center',
@@ -579,16 +579,16 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     minHeight: 48,
   },
-  urlInput: { flex: 1, color: '#211B35', fontSize: 13, paddingVertical: 12 },
+  urlInput: { flex: 1, color: '#F7F6FC', fontSize: 13, paddingVertical: 12 },
   safetyNote: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 22, paddingHorizontal: 2 },
   safetyText: { color: '#77748C', fontSize: 10, flex: 1 },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 13 },
-  sectionTitle: { color: '#211B35', fontSize: 17, fontWeight: '800' },
+  sectionTitle: { color: '#F7F6FC', fontSize: 17, fontWeight: '800' },
   sectionSubtitle: { color: '#77748C', fontSize: 11, marginTop: 4 },
   countBadge: { color: '#B7A5FF', fontSize: 10, backgroundColor: '#201B37', overflow: 'hidden', borderRadius: 10, paddingHorizontal: 9, paddingVertical: 5 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 10, paddingBottom: 20 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignContent: 'center', gap: 10, paddingBottom: 20 },
   dappCard: {
-    width: '31.5%',
+    width: '30%',
     minHeight: 116,
     backgroundColor: '#151720',
     borderWidth: 1,
@@ -614,7 +614,7 @@ const styles = StyleSheet.create({
   modalHandle: { width: 42, height: 4, borderRadius: 3, backgroundColor: '#4C4A5B', alignSelf: 'center', marginBottom: 18 },
   approvalHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
   approvalIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: '#28213F', alignItems: 'center', justifyContent: 'center' },
-  approvalTitle: { color: '#211B35', fontSize: 18, fontWeight: '800' },
+  approvalTitle: { color: '#F7F6FC', fontSize: 18, fontWeight: '800' },
   approvalOrigin: { color: '#A99AFB', fontSize: 12, marginTop: 4 },
   approvalWarning: { color: '#FBBF24', backgroundColor: '#2B2414', borderRadius: 10, padding: 10, fontSize: 11, lineHeight: 16, marginBottom: 12 },
   approvalDetails: { maxHeight: 350, borderRadius: 12, backgroundColor: '#0D0F17', paddingHorizontal: 12, paddingVertical: 4 },
@@ -622,9 +622,9 @@ const styles = StyleSheet.create({
   approvalDetail: { color: '#E3E1EE', fontSize: 12, lineHeight: 18 },
   approvalActions: { flexDirection: 'row', gap: 10, marginTop: 16 },
   rejectButton: { flex: 1, borderRadius: 13, borderWidth: 1, borderColor: '#484352', paddingVertical: 14, alignItems: 'center' },
-  rejectText: { color: '#211B35', fontSize: 14, fontWeight: '700' },
+  rejectText: { color: '#F7F6FC', fontSize: 14, fontWeight: '700' },
   approveButton: { flex: 1, borderRadius: 13, backgroundColor: '#6C4CF1', paddingVertical: 14, alignItems: 'center' },
-  approveText: { color: '#211B35', fontSize: 14, fontWeight: '800' },
+  approveText: { color: '#F7F6FC', fontSize: 14, fontWeight: '800' },
   connectionBadge: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: '#10251F', borderTopWidth: 1, borderTopColor: '#1D3B31' },
   connectionText: { color: '#A7F3D0', fontSize: 10, flex: 1 },
   disconnectText: { color: '#FCA5A5', fontSize: 10, fontWeight: '700' },
