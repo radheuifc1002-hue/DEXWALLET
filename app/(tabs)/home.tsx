@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
   TouchableOpacity,
   RefreshControl,
@@ -14,6 +13,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useWallet } from '../../context/WalletContext';
+import { SafeAreaView as SafeAreaContextView } from 'react-native-safe-area-context';
 
 const CHAIN_COLORS: Record<string, string> = {
   ethereum: '#627EEA',
@@ -80,7 +80,7 @@ export default function Home() {
   ];
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaContextView edges={["top"]} style={styles.container}>
       <ScrollView
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
@@ -164,7 +164,7 @@ export default function Home() {
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Select network</Text>
                 <TouchableOpacity onPress={() => setChainPickerVisible(false)} hitSlop={10}>
-                  <Ionicons name="close" size={22} color="#777286" />
+                  <Ionicons name="close" size={22} color="#A7A3B8" />
                 </TouchableOpacity>
               </View>
               <Text style={styles.modalSubtitle}>Choose which blockchain to view</Text>
@@ -234,12 +234,12 @@ export default function Home() {
           ))
         )}
       </ScrollView>
-    </SafeAreaView>
+    </SafeAreaContextView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' },
+  container: { flex: 1, backgroundColor: '#0B0D12' },
   scroll: { padding: 20, paddingBottom: 32 },
   headerRow: {
     flexDirection: 'row',
@@ -250,21 +250,21 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 22,
     fontWeight: '800',
-    color: '#211B35',
+    color: '#F7F6FC',
   },
   chainPicker: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#F3F0FF',
+    backgroundColor: '#1B1D2A',
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#E8E4F3',
+    borderColor: '#2B2E3B',
   },
   chainPickerDot: { width: 8, height: 8, borderRadius: 4 },
-  chainPickerText: { color: '#211B35', fontSize: 13, fontWeight: '800' },
+  chainPickerText: { color: '#F7F6FC', fontSize: 13, fontWeight: '800' },
   modalOverlay: {
     flex: 1,
     justifyContent: 'center',
@@ -276,45 +276,45 @@ const styles = StyleSheet.create({
   chainModal: {
     width: '100%',
     maxWidth: 420,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#151720',
     borderRadius: 24,
     padding: 20,
     borderWidth: 1,
-    borderColor: '#E8E4F3',
+    borderColor: '#2B2E3B',
     elevation: 12,
   },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  modalTitle: { color: '#211B35', fontSize: 20, fontWeight: '800' },
-  modalSubtitle: { color: '#777286', fontSize: 13, marginTop: 5, marginBottom: 14 },
+  modalTitle: { color: '#F7F6FC', fontSize: 20, fontWeight: '800' },
+  modalSubtitle: { color: '#A7A3B8', fontSize: 13, marginTop: 5, marginBottom: 14 },
   chainOption: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 12,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#F0EDF7',
+    borderColor: '#2B2E3B',
     marginTop: 8,
   },
-  chainOptionActive: { backgroundColor: '#F8F6FF', borderColor: '#6C4CF1' },
+  chainOptionActive: { backgroundColor: '#28213F', borderColor: '#6C4CF1' },
   chainOptionIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   chainOptionTextWrap: { flex: 1 },
-  chainOptionName: { color: '#211B35', fontSize: 15, fontWeight: '700' },
-  chainOptionSymbol: { color: '#777286', fontSize: 12, marginTop: 2 },
+  chainOptionName: { color: '#F7F6FC', fontSize: 15, fontWeight: '700' },
+  chainOptionSymbol: { color: '#A7A3B8', fontSize: 12, marginTop: 2 },
   balanceCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#151720',
     borderRadius: 20,
     padding: 20,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#E8E4F3',
-    shadowColor: '#211B35',
+    borderColor: '#2B2E3B',
+    shadowColor: '#F7F6FC',
     shadowOpacity: 0.04,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
     elevation: 2,
   },
   balanceLabel: {
-    color: '#777286',
+    color: '#A7A3B8',
     fontSize: 13,
     fontWeight: '600',
     marginBottom: 4,
@@ -322,14 +322,14 @@ const styles = StyleSheet.create({
   balanceAmount: {
     fontSize: 40,
     fontWeight: '900',
-    color: '#211B35',
+    color: '#F7F6FC',
     marginBottom: 12,
   },
   addressRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#F3F0FF',
+    backgroundColor: '#1B1D2A',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 10,
@@ -337,7 +337,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   address: {
-    color: '#777286',
+    color: '#A7A3B8',
     fontSize: 13,
     fontFamily: 'monospace',
   },
@@ -354,9 +354,9 @@ const styles = StyleSheet.create({
     minHeight: 54,
     paddingHorizontal: 12,
     borderRadius: 14,
-    backgroundColor: '#F3F0FF',
+    backgroundColor: '#1B1D2A',
     borderWidth: 1,
-    borderColor: '#E8E4F3',
+    borderColor: '#2B2E3B',
   },
   actionIcon: {
     width: 32,
@@ -367,12 +367,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   actionLabel: {
-    color: '#211B35',
+    color: '#F7F6FC',
     fontSize: 14,
     fontWeight: '700',
   },
   sectionTitle: {
-    color: '#211B35',
+    color: '#F7F6FC',
     fontSize: 18,
     fontWeight: '700',
     marginBottom: 12,
@@ -382,9 +382,9 @@ const styles = StyleSheet.create({
     paddingVertical: 40,
     gap: 10,
   },
-  emptyText: { color: '#9A95A8', fontSize: 15 },
+  emptyText: { color: '#858198', fontSize: 15 },
   tokenCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#151720',
     borderRadius: 16,
     padding: 16,
     flexDirection: 'row',
@@ -400,9 +400,9 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   tokenInfo: { flex: 1 },
-  tokenName: { color: '#211B35', fontSize: 15, fontWeight: '700' },
-  tokenSymbol: { color: '#777286', fontSize: 13, marginTop: 2 },
+  tokenName: { color: '#F7F6FC', fontSize: 15, fontWeight: '700' },
+  tokenSymbol: { color: '#A7A3B8', fontSize: 13, marginTop: 2 },
   tokenBalance: { alignItems: 'flex-end' },
-  tokenAmount: { color: '#211B35', fontSize: 14, fontWeight: '600' },
-  tokenUSD: { color: '#777286', fontSize: 12, marginTop: 2 },
+  tokenAmount: { color: '#F7F6FC', fontSize: 14, fontWeight: '600' },
+  tokenUSD: { color: '#A7A3B8', fontSize: 12, marginTop: 2 },
 });
