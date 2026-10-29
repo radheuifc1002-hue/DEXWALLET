@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
   TouchableOpacity,
   Switch,
@@ -14,6 +13,7 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useWallet } from '../../context/WalletContext';
+import { SafeAreaView as SafeAreaContextView } from 'react-native-safe-area-context';
 
 export default function Settings() {
   const router = useRouter();
@@ -72,7 +72,7 @@ export default function Settings() {
   const lockLabel = (v: number) => (v === 0 ? 'Never' : `${v} min`);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaContextView edges={["top"]} style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
         <Text style={styles.pageTitle}>Settings</Text>
 
@@ -126,7 +126,7 @@ export default function Settings() {
                   <Text
                     style={[
                       styles.lockChipText,
-                      autoLockTimer === v && { color: '#211B35' },
+                      autoLockTimer === v && { color: '#F7F6FC' },
                     ]}
                   >
                     {lockLabel(v)}
@@ -185,21 +185,21 @@ export default function Settings() {
 
         <Text style={styles.version}>XU Wallet v1.0.0</Text>
       </ScrollView>
-    </SafeAreaView>
+    </SafeAreaContextView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' },
+  container: { flex: 1, backgroundColor: '#0B0D12' },
   scroll: { padding: 20, paddingBottom: 40 },
   pageTitle: {
     fontSize: 28,
     fontWeight: '800',
-    color: '#211B35',
+    color: '#F7F6FC',
     marginBottom: 24,
   },
   sectionLabel: {
-    color: '#777286',
+    color: '#A7A3B8',
     fontSize: 12,
     fontWeight: '700',
     textTransform: 'uppercase',
@@ -208,7 +208,7 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   card: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#151720',
     borderRadius: 16,
     marginBottom: 20,
     overflow: 'hidden',
@@ -235,13 +235,13 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   rowLabel: {
-    color: '#211B35',
+    color: '#F7F6FC',
     fontSize: 15,
     fontWeight: '500',
   },
   divider: {
     height: 1,
-    backgroundColor: '#F3F0FF',
+    backgroundColor: '#1B1D2A',
     marginHorizontal: 16,
   },
   lockOptions: {
@@ -253,21 +253,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
-    backgroundColor: '#F3F0FF',
+    backgroundColor: '#1B1D2A',
     borderWidth: 1,
-    borderColor: '#E8E4F3',
+    borderColor: '#2B2E3B',
   },
   lockChipActive: {
     backgroundColor: '#6C4CF1',
     borderColor: '#6C4CF1',
   },
   lockChipText: {
-    color: '#777286',
+    color: '#A7A3B8',
     fontSize: 13,
     fontWeight: '600',
   },
   version: {
-    color: '#9A95A8',
+    color: '#858198',
     fontSize: 12,
     textAlign: 'center',
     marginTop: 16,
