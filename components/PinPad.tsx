@@ -62,7 +62,7 @@ export default function PinPad({
                 disabled={key === ''}
               >
                 {key === 'del' ? (
-                  <Ionicons name="backspace-outline" size={24} color="#FFFFFF" />
+                  <Ionicons name="backspace-outline" size={24} color="#6C4CF1" />
                 ) : (
                   <Text style={styles.keyText}>{key}</Text>
                 )}
@@ -123,7 +123,9 @@ const styles = StyleSheet.create({
     width: 90,
     height: 70,
     borderRadius: 16,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F8F6FF',
+    borderWidth: 1,
+    borderColor: '#E8E4F3',
     alignItems: 'center',
     justifyContent: 'center',
   },
