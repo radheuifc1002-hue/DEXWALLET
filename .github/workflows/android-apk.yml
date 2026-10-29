@@ -132,9 +132,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: android
-          key: android-project-v2-${{ runner.os }}-${{ hashFiles('package.json', 'app.json', 'babel.config.cjs', 'assets/icon.svg', 'assets/splash.svg') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: android-project-v3-${{ runner.os }}-${{ hashFiles('package.json', 'app.json', 'babel.config.cjs', 'assets/icon.svg', 'assets/splash.svg') }}
           restore-keys: |
-            android-project-v2-${{ runner.os }}-${{ hashFiles('package.json', 'app.json', 'babel.config.cjs', 'assets/icon.svg', 'assets/splash.svg') }}-
+            android-project-v3-${{ runner.os }}-${{ hashFiles('package.json', 'app.json', 'babel.config.cjs', 'assets/icon.svg', 'assets/splash.svg') }}
 
       - name: Check whether Android project was restored
         id: android-project-state
@@ -165,20 +165,20 @@ jobs:
             ~/.gradle/wrapper
             android/app/.cxx
             node_modules/*/android/.cxx
-          key: android-release-v2-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: android-release-v3-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
           restore-keys: |
-            android-release-v2-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
+            android-release-v3-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
             android-release-v2-${{ runner.os }}-
-            android-release-${{ runner.os }}-
+            android-release-v2-${{ runner.os }}-
 
       - name: Restore native module Gradle outputs
         id: native-module-cache
         uses: actions/cache/restore@v4
         with:
           path: node_modules/**/android/build
-          key: android-module-build-v1-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: android-module-build-v2-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json') }}
           restore-keys: |
-            android-module-build-v1-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json') }}-
+            android-module-build-v2-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json') }}
       # Expo/Metro normally keeps its transformer cache under the ephemeral
       # system temp directory. Persist it so unchanged modules are not transformed
       # from scratch inside every Gradle release build.
@@ -187,9 +187,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/metro-cache
-          key: metro-transform-v1-${{ runner.os }}-${{ hashFiles('package-lock.json', 'babel.config.cjs', 'metro.config.cjs') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: metro-transform-v2-${{ runner.os }}-${{ hashFiles('package-lock.json', 'babel.config.cjs', 'metro.config.cjs') }}
           restore-keys: |
-            metro-transform-v1-${{ runner.os }}-${{ hashFiles('package-lock.json', 'babel.config.cjs', 'metro.config.cjs') }}-
+            metro-transform-v2-${{ runner.os }}-${{ hashFiles('package-lock.json', 'babel.config.cjs', 'metro.config.cjs') }}
 
       # GitHub-hosted runners install the pinned NDK freshly each run. Its
       # toolchain files therefore look newer than cached build.ninja files,
@@ -271,21 +271,21 @@ jobs:
           retention-days: 14
 
       - name: Save Metro transform cache
-        if: ${{ always() && steps.android-build.outcome == 'success' }}
+        if: ${{ always() && steps.android-build.outcome == 'success' && steps.metro-transform-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/metro-cache
           key: metro-transform-v1-${{ runner.os }}-${{ hashFiles('package-lock.json', 'babel.config.cjs', 'metro.config.cjs') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Save complete Android project and build outputs
-        if: ${{ always() && steps.android-build.outcome == 'success' }}
+        if: ${{ always() && steps.android-build.outcome == 'success' && steps.android-project-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4
         with:
           path: android
           key: ${{ steps.android-project-cache.outputs.cache-primary-key }}
 
       - name: Save Gradle and native CMake dependency cache
-        if: ${{ always() && steps.android-build.outcome == 'success' }}
+        if: ${{ always() && steps.android-build.outcome == 'success' && steps.gradle-native-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4
         with:
           path: |
@@ -296,7 +296,7 @@ jobs:
           key: ${{ steps.gradle-native-cache.outputs.cache-primary-key }}
 
       - name: Save native module Gradle outputs
-        if: ${{ always() && steps.android-build.outcome == 'success' }}
+        if: ${{ always() && steps.android-build.outcome == 'success' && steps.native-module-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4
         with:
           path: node_modules/**/android/build
