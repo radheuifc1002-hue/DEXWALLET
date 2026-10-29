@@ -38,9 +38,9 @@ class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryStat
 }
 
 const errStyles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0F0E17', padding: 20, paddingTop: 60 },
+  container: { flex: 1, backgroundColor: '#FFFFFF', padding: 20, paddingTop: 60 },
   title: { color: '#FF4444', fontSize: 20, fontWeight: 'bold', marginBottom: 12 },
-  message: { color: '#FFFFFF', fontSize: 14, marginBottom: 12 },
+  message: { color: '#211B35', fontSize: 14, marginBottom: 12 },
   stack: { color: '#AAAAAA', fontSize: 11 },
 });
 
@@ -81,7 +81,7 @@ function AppStack() {
       <Stack
         screenOptions={{
           headerShown: false,
-          contentStyle: { backgroundColor: '#0F0E17' },
+          contentStyle: { backgroundColor: '#FFFFFF' },
           animation: 'fade',
         }}
       >
