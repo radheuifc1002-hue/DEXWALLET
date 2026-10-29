@@ -158,11 +158,11 @@ jobs:
               echo "$FILE already matches the installed dependency graph."
               continue
             fi
-            CONTENT="$(base64 -w 0 "$FILE")"
+            base64 -w 0 "$FILE" > "$RUNNER_TEMP/file-content.b64"
             SHA="$(gh api "repos/${GITHUB_REPOSITORY}/contents/$FILE?ref=main" --jq .sha)"
             jq -n \
               --arg message "Align dependency lockfile with Expo SDK 55 [skip ci]" \
-              --arg content "$CONTENT" \
+              --rawfile content "$RUNNER_TEMP/file-content.b64" \
               --arg sha "$SHA" \
               --arg branch "main" \
               '{message:$message,content:$content,sha:$sha,branch:$branch}' > "$RUNNER_TEMP/manifest-update.json"
