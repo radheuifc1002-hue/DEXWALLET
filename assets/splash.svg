@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#9B7BFF"/><stop offset="1" stop-color="#6C4CF1"/></linearGradient></defs>
+<circle cx="512" cy="430" r="235" fill="url(#g)"/>
+<path d="M390 305 L470 430 L390 555 L456 555 L512 474 L568 555 L634 555 L554 430 L634 305 L568 305 L512 386 L456 305 Z" fill="#FFFFFF"/>
+<text x="512" y="790" text-anchor="middle" font-family="Arial, sans-serif" font-weight="800" font-size="100" letter-spacing="8" fill="#FFFFFF">XU WALLET</text>
+</svg>
