@@ -1,5 +1,5 @@
 name: Build standalone Android APK
-# Timing baseline rerun: no build or app behavior changes.
+# CI-only optimization trial: preserve dependency mtimes, cache Metro transforms, and profile Gradle tasks.
 
 on:
   push:
@@ -52,12 +52,37 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      # The native CMake build directories are cached separately. Restoring the
+      # exact dependency tree avoids re-extracting native source files on every
+      # run, which can invalidate Ninja/CMake incremental-build checks.
+      - name: Restore dependency tree to preserve native source timestamps
+        id: node-modules-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: node_modules
+          key: node-modules-v1-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json') }}
+
       - name: Install and align Expo SDK dependencies
+        env:
+          NODE_MODULES_CACHE_HIT: ${{ steps.node-modules-cache.outputs.cache-hit }}
         run: |
-          npm install --no-audit --no-fund
-          npx expo install --fix
+          set -euo pipefail
+          if [[ "$NODE_MODULES_CACHE_HIT" == "true" ]]; then
+            echo "Reusing the locked node_modules tree; skipping reinstall to preserve native source timestamps."
+          else
+            npm install --no-audit --no-fund
+            npx expo install --fix
+          fi
           npx expo install --check
           node -e "const r=require('react/package.json').version; const d=require('react-dom/package.json').version; const rn=require('react-native/package.json').version; console.log('Resolved runtime:', {react:r, reactDom:d, reactNative:rn}); if(r!=='19.2.0'||d!=='19.2.0'||!rn.startsWith('0.83.')) process.exit(1)"
+
+      # Save the pristine dependency tree before Gradle creates native build outputs.
+      - name: Save dependency tree for future incremental native builds
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: node_modules
+          key: node-modules-v1-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json') }}
 
 
       - name: Generate Android icon and splash PNG assets
@@ -148,18 +173,51 @@ jobs:
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" --install "ndk;27.1.12297006" "cmake;3.22.1"
           test -d "$ANDROID_HOME/ndk/27.1.12297006"
+      # Expo/Metro normally keeps its transformer cache under the ephemeral
+      # system temp directory. Persist it so unchanged modules are not transformed
+      # from scratch inside every Gradle release build.
+      - name: Restore Metro transform cache
+        id: metro-transform-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/metro-cache
+          key: metro-transform-v1-${{ runner.os }}-${{ hashFiles('package-lock.json', 'babel.config.cjs', 'metro.config.cjs') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            metro-transform-v1-${{ runner.os }}-${{ hashFiles('package-lock.json', 'babel.config.cjs', 'metro.config.cjs') }}-
+
       - name: Build standalone release APK
         id: android-build
         working-directory: android
         timeout-minutes: 55
         env:
           EXPO_ROUTER_APP_ROOT: app
+          EXPO_METRO_CACHE_OUTPUT_DIR: ${{ runner.temp }}/metro-cache
           CMAKE_BUILD_PARALLEL_LEVEL: "4"
           NODE_ENV: production
           GRADLE_OPTS: "-Dorg.gradle.workers.max=4 -Dorg.gradle.parallel=true -Dorg.gradle.caching=true"
         run: |
+          set -euo pipefail
+          mkdir -p "$EXPO_METRO_CACHE_OUTPUT_DIR"
           chmod +x gradlew
-          ./gradlew --max-workers=4 --parallel --stacktrace --build-cache -PreactNativeArchitectures=arm64-v8a assembleRelease -x lintVitalAnalyzeRelease -x lintVitalRelease
+          ./gradlew --max-workers=4 --parallel --stacktrace --info --profile --build-cache -PreactNativeArchitectures=arm64-v8a assembleRelease -x lintVitalAnalyzeRelease -x lintVitalRelease
+          METRO_CACHE_FILES=$(find "$EXPO_METRO_CACHE_OUTPUT_DIR" -type f | wc -l)
+          echo "Metro transform cache files: $METRO_CACHE_FILES"
+
+      - name: Upload Gradle task profile
+        if: always()
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.2
+        with:
+          name: gradle-profile-report
+          path: android/build/reports/profile/*.html
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Save Metro transform cache
+        if: ${{ always() && steps.android-build.outcome == 'success' }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/metro-cache
+          key: metro-transform-v1-${{ runner.os }}-${{ hashFiles('package-lock.json', 'babel.config.cjs', 'metro.config.cjs') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Save complete Android project and build outputs
         if: ${{ always() && steps.android-build.outcome == 'success' }}
