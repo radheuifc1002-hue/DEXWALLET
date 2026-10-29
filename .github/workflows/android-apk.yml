@@ -208,7 +208,7 @@ jobs:
         id: cmake-cache-diagnostic
         shell: bash
         run: |
-          set -uo pipefail
+          set -euo pipefail
           REPORT="$RUNNER_TEMP/android-cmake-prebuild-dryrun.txt"
           : > "$REPORT"
           NINJA="$ANDROID_HOME/cmake/3.22.1/bin/ninja"
@@ -222,12 +222,16 @@ jobs:
             while IFS= read -r BUILD_FILE; do
               BUILD_DIR="$(dirname "$BUILD_FILE")"
               COUNT=$((COUNT + 1))
-              {
-                echo
-                echo "===== $BUILD_DIR ====="
-                "$NINJA" -C "$BUILD_DIR" -n -d explain 2>&1
-                echo "ninja_dry_run_exit=$?"
-              } >> "$REPORT"
+              echo >> "$REPORT"
+              echo "===== $BUILD_DIR =====" >> "$REPORT"
+              # Diagnostic only: stale or incomplete cached Ninja state must
+              # never prevent the actual Gradle build from running.
+              if "$NINJA" -C "$BUILD_DIR" -n -d explain >> "$REPORT" 2>&1; then
+                STATUS=0
+              else
+                STATUS=$?
+              fi
+              echo "ninja_dry_run_exit=$STATUS" >> "$REPORT"
             done < <(find android/app/.cxx node_modules -type f -name build.ninja -print 2>/dev/null || true)
           fi
           echo "CMake build directories inspected: $COUNT" | tee -a "$REPORT"
@@ -275,7 +279,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/metro-cache
-          key: metro-transform-v1-${{ runner.os }}-${{ hashFiles('package-lock.json', 'babel.config.cjs', 'metro.config.cjs') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: ${{ steps.metro-transform-cache.outputs.cache-primary-key }}
 
       - name: Save complete Android project and build outputs
         if: ${{ always() && steps.android-build.outcome == 'success' && steps.android-project-cache.outputs.cache-hit != 'true' }}
