@@ -64,11 +64,11 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-            node_modules/react-native-reanimated/android/.cxx
-            node_modules/react-native-worklets/android/.cxx
-          key: android-release-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'app.json', 'babel.config.cjs', 'metro.config.cjs') }}
+            android/app/.cxx
+            node_modules/*/android/.cxx
+          key: android-release-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'app.json', 'babel.config.cjs', 'metro.config.cjs') }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            android-release-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'app.json', 'babel.config.cjs', 'metro.config.cjs') }}
+            android-release-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'app.json', 'babel.config.cjs', 'metro.config.cjs') }}-
             android-release-${{ runner.os }}-
 
       - name: Generate Android icon and splash PNG assets
@@ -102,10 +102,10 @@ jobs:
           EXPO_ROUTER_APP_ROOT: app
           CMAKE_BUILD_PARALLEL_LEVEL: "2"
           NODE_ENV: production
-          GRADLE_OPTS: "-Dorg.gradle.workers.max=2 -Dorg.gradle.parallel=false -Dorg.gradle.caching=true"
+          GRADLE_OPTS: "-Dorg.gradle.workers.max=4 -Dorg.gradle.parallel=true -Dorg.gradle.caching=true"
         run: |
           chmod +x gradlew
-          ./gradlew --max-workers=2 --stacktrace --build-cache -PreactNativeArchitectures=arm64-v8a assembleRelease -x lintVitalAnalyzeRelease -x lintVitalRelease
+          ./gradlew --max-workers=4 --parallel --stacktrace --build-cache -PreactNativeArchitectures=arm64-v8a assembleRelease -x lintVitalAnalyzeRelease -x lintVitalRelease
 
       - name: Verify APK contains a bundled native application
         run: |
