@@ -113,7 +113,7 @@ export default function SetPin() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0B0D12' },
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
   header: { paddingHorizontal: 20, paddingTop: 12, minHeight: 44 },
   back: { alignSelf: 'flex-start' },
   backText: { color: '#6C4CF1', fontSize: 16 },
@@ -132,7 +132,7 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: '#1B1D2A',
+    backgroundColor: '#F3F0FF',
     borderWidth: 2,
     borderColor: '#6C4CF1',
   },
@@ -142,25 +142,25 @@ const styles = StyleSheet.create({
   stepLine: {
     width: 40,
     height: 2,
-    backgroundColor: '#1B1D2A',
+    backgroundColor: '#F3F0FF',
     marginHorizontal: 6,
   },
   title: {
     fontSize: 28,
     fontWeight: '800',
-    color: '#F7F6FC',
+    color: '#211B35',
     marginBottom: 8,
     textAlign: 'center',
   },
   subtitle: {
     fontSize: 15,
-    color: '#A7A3B8',
+    color: '#777286',
     textAlign: 'center',
     marginBottom: 32,
     lineHeight: 22,
   },
   loadingText: {
-    color: '#A7A3B8',
+    color: '#777286',
     marginTop: 20,
     fontSize: 14,
   },
