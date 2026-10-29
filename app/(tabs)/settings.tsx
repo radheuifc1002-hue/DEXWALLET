@@ -126,7 +126,7 @@ export default function Settings() {
                   <Text
                     style={[
                       styles.lockChipText,
-                      autoLockTimer === v && { color: '#F7F6FC' },
+                      autoLockTimer === v && { color: '#211B35' },
                     ]}
                   >
                     {lockLabel(v)}
@@ -190,16 +190,16 @@ export default function Settings() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0B0D12' },
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
   scroll: { padding: 20, paddingBottom: 40 },
   pageTitle: {
     fontSize: 28,
     fontWeight: '800',
-    color: '#F7F6FC',
+    color: '#211B35',
     marginBottom: 24,
   },
   sectionLabel: {
-    color: '#A7A3B8',
+    color: '#777286',
     fontSize: 12,
     fontWeight: '700',
     textTransform: 'uppercase',
@@ -208,7 +208,7 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   card: {
-    backgroundColor: '#151720',
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     marginBottom: 20,
     overflow: 'hidden',
@@ -235,13 +235,13 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   rowLabel: {
-    color: '#F7F6FC',
+    color: '#211B35',
     fontSize: 15,
     fontWeight: '500',
   },
   divider: {
     height: 1,
-    backgroundColor: '#1B1D2A',
+    backgroundColor: '#F3F0FF',
     marginHorizontal: 16,
   },
   lockOptions: {
@@ -253,21 +253,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
-    backgroundColor: '#1B1D2A',
+    backgroundColor: '#F3F0FF',
     borderWidth: 1,
-    borderColor: '#2B2E3B',
+    borderColor: '#E8E4F3',
   },
   lockChipActive: {
     backgroundColor: '#6C4CF1',
     borderColor: '#6C4CF1',
   },
   lockChipText: {
-    color: '#A7A3B8',
+    color: '#777286',
     fontSize: 13,
     fontWeight: '600',
   },
   version: {
-    color: '#858198',
+    color: '#9A95A8',
     fontSize: 12,
     textAlign: 'center',
     marginTop: 16,
