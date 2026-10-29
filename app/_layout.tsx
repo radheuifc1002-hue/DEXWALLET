@@ -53,8 +53,13 @@ function NavigationGuard() {
     if (isLoading) return;
 
     const s0 = segments[0] as string | undefined;
+
+    // The index route handles initial routing itself. Redirecting here too
+    // caused two independent navigation decisions during provider hydration.
+    if (!s0 || s0 === 'index') return;
+
     const inPinLock = s0 === 'pin-lock';
-    const inAuthFlow = ['onboarding', 'set-pin', 'generate-seed', 'confirm-seed', 'import-wallet'].includes(s0 ?? '');
+    const inAuthFlow = ['onboarding', 'set-pin', 'generate-seed', 'confirm-seed', 'import-wallet'].includes(s0);
     const inTabs = s0 === '(tabs)';
 
     if (!isWalletCreated && !inAuthFlow) {
@@ -64,7 +69,7 @@ function NavigationGuard() {
     } else if (isWalletCreated && !isLocked && (inPinLock || (!inTabs && !inAuthFlow && s0 !== 'send' && s0 !== 'receive' && s0 !== 'export-seed' && s0 !== 'change-pin'))) {
       router.replace('/(tabs)/home');
     }
-  }, [isWalletCreated, isLocked, isLoading, segments]);
+  }, [isWalletCreated, isLocked, isLoading, segments, router]);
 
   return null;
 }
