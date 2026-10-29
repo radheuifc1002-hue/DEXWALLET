@@ -90,6 +90,7 @@ export default function Browser() {
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [recentDApps, setRecentDApps] = useState<DAppShortcut[]>([]);
   const webRef = useRef<WebView>(null);
 
   useEffect(() => {
@@ -348,6 +349,15 @@ export default function Browser() {
       : trimmed.includes('.') && !trimmed.includes(' ')
         ? `https://${trimmed}`
         : `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`;
+    let recentItem: DAppShortcut;
+    try {
+      const host = new URL(dest).hostname.replace(/^www\./, '');
+      const known = DAPP_SHORTCUTS.find((item) => item.domain === host || host.endsWith(`.${item.domain}`));
+      recentItem = known || { name: host || 'Web search', url: dest, domain: host, category: 'Recently visited' };
+    } catch {
+      recentItem = { name: trimmed.slice(0, 24), url: dest, domain: '', category: 'Recently visited' };
+    }
+    setRecentDApps((previous) => [recentItem, ...previous.filter((item) => item.url !== recentItem.url)].slice(0, 6));
     setUrl(dest);
     setInputUrl(dest);
   };
@@ -359,6 +369,7 @@ export default function Browser() {
   if (!url) {
     return (
       <SafeAreaContextView edges={["top"]} style={styles.container}>
+        <ScrollView style={styles.landingScroll} contentContainerStyle={styles.landingContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <View style={styles.pageHeader}>
           <View>
             <Text style={styles.eyebrow}>EXPLORE WEB3</Text>
@@ -418,6 +429,31 @@ export default function Browser() {
             </TouchableOpacity>
           ))}
         </View>
+        <View style={styles.recentSection}>
+          <View style={styles.sectionHeader}>
+            <View>
+              <Text style={styles.sectionTitle}>Recently visited</Text>
+              <Text style={styles.sectionSubtitle}>Pick up where you left off</Text>
+            </View>
+            <Ionicons name="time-outline" size={18} color="#777286" />
+          </View>
+          {recentDApps.length > 0 ? recentDApps.map((app) => (
+            <TouchableOpacity key={app.url} style={styles.recentItem} onPress={() => navigate(app.url)} activeOpacity={0.75}>
+              <View style={styles.recentIcon}><Ionicons name="globe-outline" size={17} color="#6C4CF1" /></View>
+              <View style={styles.recentTextWrap}>
+                <Text style={styles.recentName} numberOfLines={1}>{app.name}</Text>
+                <Text style={styles.recentUrl} numberOfLines={1}>{app.domain || app.url}</Text>
+              </View>
+              <Ionicons name="arrow-up-right" size={17} color="#9A95A8" />
+            </TouchableOpacity>
+          )) : (
+            <View style={styles.recentEmpty}>
+              <Ionicons name="time-outline" size={20} color="#9A95A8" />
+              <Text style={styles.recentEmptyText}>Your recently visited sites will appear here.</Text>
+            </View>
+          )}
+        </View>
+        </ScrollView>
       </SafeAreaContextView>
     );
   }
