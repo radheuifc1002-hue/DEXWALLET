@@ -11,7 +11,7 @@ export default function TabLayout() {
         tabBarHideOnKeyboard: true,
         tabBarStyle: {
           backgroundColor: '#FFFFFF',
-          borderTopColor: '#262834',
+          borderTopColor: '#E8E4F3',
           borderTopWidth: 1,
           height: 66 + insets.bottom,
           paddingBottom: Math.max(insets.bottom, 8),
