@@ -586,7 +586,7 @@ const styles = StyleSheet.create({
   sectionTitle: { color: '#F7F6FC', fontSize: 17, fontWeight: '800' },
   sectionSubtitle: { color: '#77748C', fontSize: 11, marginTop: 4 },
   countBadge: { color: '#B7A5FF', fontSize: 10, backgroundColor: '#201B37', overflow: 'hidden', borderRadius: 10, paddingHorizontal: 9, paddingVertical: 5 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignContent: 'center', gap: 10, paddingBottom: 20 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-evenly', alignContent: 'center', gap: 10, paddingBottom: 20 },
   dappCard: {
     width: '30%',
     minHeight: 116,
