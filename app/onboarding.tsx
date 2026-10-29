@@ -45,7 +45,7 @@ export default function Onboarding() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#151720',
+    backgroundColor: '#FFFFFF',
     justifyContent: 'space-between',
     paddingHorizontal: 24,
     paddingBottom: 40,
@@ -65,13 +65,13 @@ const styles = StyleSheet.create({
   tagline: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#F7F6FC',
+    color: '#211B35',
     textAlign: 'center',
     marginBottom: 8,
   },
   sub: {
     fontSize: 14,
-    color: '#A7A3B8',
+    color: '#777286',
     textAlign: 'center',
   },
   actions: {
@@ -92,7 +92,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   secondaryBtn: {
-    backgroundColor: '#151720',
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     height: 56,
     flexDirection: 'row',
@@ -108,7 +108,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   disclaimer: {
-    color: '#A7A3B8',
+    color: '#777286',
     fontSize: 12,
     textAlign: 'center',
     marginTop: 8,
