@@ -132,7 +132,7 @@ export default function RootLayout() {
       <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaProvider>
           <WalletProvider>
-            <StatusBar style="light" />
+            <StatusBar style="dark" />
             <AppStack />
           </WalletProvider>
         </SafeAreaProvider>
