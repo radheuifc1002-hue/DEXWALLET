@@ -120,13 +120,13 @@ export default function GenerateSeed() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0F0E17' },
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
   scroll: { padding: 24, alignItems: 'center', paddingBottom: 40 },
   iconWrap: {
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: '#1A1825',
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
@@ -134,13 +134,13 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: '#211B35',
     marginBottom: 8,
     textAlign: 'center',
   },
   subtitle: {
     fontSize: 14,
-    color: '#9B97B2',
+    color: '#777286',
     textAlign: 'center',
     lineHeight: 20,
     marginBottom: 28,
@@ -150,7 +150,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#1A1825',
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: 28,
     paddingVertical: 16,
     borderRadius: 14,
@@ -173,7 +173,7 @@ const styles = StyleSheet.create({
   },
   wordCard: {
     width: '30%',
-    backgroundColor: '#1A1825',
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 10,
     flexDirection: 'row',
@@ -187,7 +187,7 @@ const styles = StyleSheet.create({
     width: 18,
   },
   word: {
-    color: '#FFFFFF',
+    color: '#211B35',
     fontSize: 13,
     fontWeight: '600',
     flex: 1,
@@ -199,14 +199,14 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   copyText: {
-    color: '#9B97B2',
+    color: '#777286',
     fontSize: 14,
   },
   warning: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 8,
-    backgroundColor: '#1A1825',
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 14,
     marginBottom: 28,
