@@ -70,10 +70,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p assets
-          command -v convert
-          convert -background none assets/icon.svg -resize 1024x1024 assets/icon.png
-          convert -background none assets/splash.svg -resize 1024x1024 assets/splash.png
-          identify assets/icon.png assets/splash.png
+          npx --yes sharp-cli -i assets/icon.svg -o assets/icon.png resize 1024 1024
+          npx --yes sharp-cli -i assets/splash.svg -o assets/splash.png resize 1024 1024
+          test -s assets/icon.png
+          test -s assets/splash.png
+          file assets/icon.png assets/splash.png
 
       - name: Force the standalone native entry configuration
         run: |
