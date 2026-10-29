@@ -81,7 +81,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   label: {
-    color: '#9B97B2',
+    color: '#777286',
     fontSize: 15,
     marginBottom: 20,
     textAlign: 'center',
@@ -123,7 +123,7 @@ const styles = StyleSheet.create({
     width: 90,
     height: 70,
     borderRadius: 16,
-    backgroundColor: '#1A1825',
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -131,7 +131,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   keyText: {
-    color: '#FFFFFF',
+    color: '#211B35',
     fontSize: 24,
     fontWeight: '600',
   },
