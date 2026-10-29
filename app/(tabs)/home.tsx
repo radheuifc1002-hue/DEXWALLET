@@ -152,32 +152,45 @@ export default function Home() {
           </View>
         </View>
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chainTabs}
+        <Modal
+          visible={chainPickerVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setChainPickerVisible(false)}
         >
-          {CHAINS.map((chain) => (
-            <TouchableOpacity
-              key={chain}
-              style={[
-                styles.chainTab,
-                selectedBlockchain === chain && styles.chainTabActive,
-              ]}
-              onPress={() => setSelectedBlockchain(chain)}
-              activeOpacity={0.7}
-            >
-              <Text
-                style={[
-                  styles.chainTabText,
-                  selectedBlockchain === chain && { color: '#211B35' },
-                ]}
-              >
-                {CHAIN_SYMBOLS[chain]}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+          <View style={styles.modalOverlay}>
+            <TouchableOpacity style={styles.modalDismiss} activeOpacity={1} onPress={() => setChainPickerVisible(false)} />
+            <View style={styles.chainModal}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Select network</Text>
+                <TouchableOpacity onPress={() => setChainPickerVisible(false)} hitSlop={10}>
+                  <Ionicons name="close" size={22} color="#777286" />
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.modalSubtitle}>Choose which blockchain to view</Text>
+              {CHAINS.map((chain) => (
+                <TouchableOpacity
+                  key={chain}
+                  style={[styles.chainOption, selectedBlockchain === chain && styles.chainOptionActive]}
+                  onPress={() => {
+                    setSelectedBlockchain(chain);
+                    setChainPickerVisible(false);
+                  }}
+                  activeOpacity={0.75}
+                >
+                  <View style={[styles.chainOptionIcon, { backgroundColor: (CHAIN_COLORS[chain] || '#6C4CF1') + '20' }]}>
+                    <Ionicons name={(CHAIN_ICONS[chain] as any) || 'ellipse-outline'} size={21} color={CHAIN_COLORS[chain]} />
+                  </View>
+                  <View style={styles.chainOptionTextWrap}>
+                    <Text style={styles.chainOptionName}>{chain === 'bnb' ? 'BNB Chain' : chain === 'polygon' ? 'Polygon' : chain === 'ethereum' ? 'Ethereum' : 'Solana'}</Text>
+                    <Text style={styles.chainOptionSymbol}>{CHAIN_SYMBOLS[chain]}</Text>
+                  </View>
+                  {selectedBlockchain === chain && <Ionicons name="checkmark-circle" size={22} color="#6C4CF1" />}
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        </Modal>
 
         <Text style={styles.sectionTitle}>Assets</Text>
 
