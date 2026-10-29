@@ -534,16 +534,16 @@ export default function Browser() {
         {connectedOrigin ? <View style={styles.connectionBadge}><Ionicons name="checkmark-circle" size={15} color="#34D399" /><Text style={styles.connectionText}>Connected to {connectedOrigin}</Text><TouchableOpacity onPress={() => { connectedOriginRef.current = null; setConnectedOrigin(null); webRef.current?.injectJavaScript('if(window.ethereum){window.ethereum.__selectedAddress=null;window.ethereum.emit("accountsChanged",[])}true;'); }}><Text style={styles.disconnectText}>Disconnect</Text></TouchableOpacity></View> : null}
         <View style={styles.navBar}>
           <TouchableOpacity onPress={() => webRef.current?.goBack()} disabled={!canGoBack} style={[styles.navBtn, !canGoBack && styles.navBtnDisabled]} accessibilityLabel="Go back">
-            <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+            <Ionicons name="arrow-back" size={20} color="#211B35" />
           </TouchableOpacity>
           <TouchableOpacity onPress={() => webRef.current?.goForward()} disabled={!canGoForward} style={[styles.navBtn, !canGoForward && styles.navBtnDisabled]} accessibilityLabel="Go forward">
-            <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
+            <Ionicons name="arrow-forward" size={20} color="#211B35" />
           </TouchableOpacity>
           <TouchableOpacity onPress={() => webRef.current?.reload()} style={styles.navBtn} accessibilityLabel="Reload page">
-            <Ionicons name="reload" size={20} color="#FFFFFF" />
+            <Ionicons name="reload" size={20} color="#211B35" />
           </TouchableOpacity>
           <TouchableOpacity onPress={() => { setUrl(''); setInputUrl(''); }} style={styles.navBtn} accessibilityLabel="Browser home">
-            <Ionicons name="home-outline" size={20} color="#FFFFFF" />
+            <Ionicons name="home-outline" size={20} color="#211B35" />
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -552,7 +552,7 @@ export default function Browser() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0B0D12', paddingHorizontal: 14 },
+  container: { flex: 1, backgroundColor: '#FFFFFF', paddingHorizontal: 14 },
   pageHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -560,20 +560,20 @@ const styles = StyleSheet.create({
     marginTop: 12,
     marginBottom: 20,
   },
-  eyebrow: { color: '#B7A5FF', fontSize: 10, fontWeight: '800', letterSpacing: 2 },
+  eyebrow: { color: '#6C4CF1', fontSize: 10, fontWeight: '800', letterSpacing: 2 },
   pageTitle: { color: '#211B35', fontSize: 26, fontWeight: '800', marginTop: 5, letterSpacing: -0.5 },
-  subtitle: { color: '#9290A5', fontSize: 12, marginTop: 5 },
+  subtitle: { color: '#777286', fontSize: 12, marginTop: 5 },
   headerIcon: {
     width: 44, height: 44, borderRadius: 15, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#1A1730', borderWidth: 1, borderColor: '#30264F',
+    backgroundColor: '#F3F0FF', borderWidth: 1, borderColor: '#E8E4F3',
   },
   urlBar: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 9,
-    backgroundColor: '#171923',
+    backgroundColor: '#F8F7FC',
     borderWidth: 1,
-    borderColor: '#292B38',
+    borderColor: '#E8E4F3',
     marginBottom: 10,
     paddingHorizontal: 13,
     borderRadius: 15,
@@ -581,18 +581,18 @@ const styles = StyleSheet.create({
   },
   urlInput: { flex: 1, color: '#211B35', fontSize: 13, paddingVertical: 12 },
   safetyNote: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 22, paddingHorizontal: 2 },
-  safetyText: { color: '#77748C', fontSize: 10, flex: 1 },
+  safetyText: { color: '#777286', fontSize: 10, flex: 1 },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 13 },
   sectionTitle: { color: '#211B35', fontSize: 17, fontWeight: '800' },
-  sectionSubtitle: { color: '#77748C', fontSize: 11, marginTop: 4 },
-  countBadge: { color: '#B7A5FF', fontSize: 10, backgroundColor: '#201B37', overflow: 'hidden', borderRadius: 10, paddingHorizontal: 9, paddingVertical: 5 },
+  sectionSubtitle: { color: '#777286', fontSize: 11, marginTop: 4 },
+  countBadge: { color: '#6C4CF1', fontSize: 10, backgroundColor: '#F3F0FF', overflow: 'hidden', borderRadius: 10, paddingHorizontal: 9, paddingVertical: 5 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-evenly', gap: 10, paddingBottom: 20 },
   dappCard: {
     width: '30%',
     minHeight: 116,
-    backgroundColor: '#151720',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#282A36',
+    borderColor: '#E8E4F3',
     borderRadius: 17,
     paddingVertical: 13,
     paddingHorizontal: 6,
@@ -605,39 +605,39 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
   },
   dappLogo: { width: 34, height: 34 },
-  logoFallback: { width: 43, height: 43, borderRadius: 14, backgroundColor: '#292341', alignItems: 'center', justifyContent: 'center' },
-  logoInitial: { color: '#C8BFFF', fontSize: 20, fontWeight: '800' },
-  dappName: { color: '#F7F6FC', fontSize: 10, fontWeight: '700', textAlign: 'center' },
-  dappCategory: { color: '#858198', fontSize: 9, textAlign: 'center' },
+  logoFallback: { width: 43, height: 43, borderRadius: 14, backgroundColor: '#F3F0FF', alignItems: 'center', justifyContent: 'center' },
+  logoInitial: { color: '#6C4CF1', fontSize: 20, fontWeight: '800' },
+  dappName: { color: '#211B35', fontSize: 10, fontWeight: '700', textAlign: 'center' },
+  dappCategory: { color: '#777286', fontSize: 9, textAlign: 'center' },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.72)', justifyContent: 'flex-end' },
-  approvalSheet: { backgroundColor: '#141622', borderTopLeftRadius: 26, borderTopRightRadius: 26, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 28, maxHeight: '85%', borderWidth: 1, borderColor: '#343044' },
-  modalHandle: { width: 42, height: 4, borderRadius: 3, backgroundColor: '#4C4A5B', alignSelf: 'center', marginBottom: 18 },
+  approvalSheet: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 26, borderTopRightRadius: 26, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 28, maxHeight: '85%', borderWidth: 1, borderColor: '#E8E4F3' },
+  modalHandle: { width: 42, height: 4, borderRadius: 3, backgroundColor: '#D8D4E4', alignSelf: 'center', marginBottom: 18 },
   approvalHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
-  approvalIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: '#28213F', alignItems: 'center', justifyContent: 'center' },
+  approvalIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: '#F3F0FF', alignItems: 'center', justifyContent: 'center' },
   approvalTitle: { color: '#211B35', fontSize: 18, fontWeight: '800' },
-  approvalOrigin: { color: '#A99AFB', fontSize: 12, marginTop: 4 },
-  approvalWarning: { color: '#FBBF24', backgroundColor: '#2B2414', borderRadius: 10, padding: 10, fontSize: 11, lineHeight: 16, marginBottom: 12 },
-  approvalDetails: { maxHeight: 350, borderRadius: 12, backgroundColor: '#0D0F17', paddingHorizontal: 12, paddingVertical: 4 },
-  approvalDetailRow: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#242634' },
-  approvalDetail: { color: '#E3E1EE', fontSize: 12, lineHeight: 18 },
+  approvalOrigin: { color: '#6C4CF1', fontSize: 12, marginTop: 4 },
+  approvalWarning: { color: '#FBBF24', backgroundColor: '#FFF7E6', borderRadius: 10, padding: 10, fontSize: 11, lineHeight: 16, marginBottom: 12 },
+  approvalDetails: { maxHeight: 350, borderRadius: 12, backgroundColor: '#F8F7FC', paddingHorizontal: 12, paddingVertical: 4 },
+  approvalDetailRow: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#E8E4F3' },
+  approvalDetail: { color: '#211B35', fontSize: 12, lineHeight: 18 },
   approvalActions: { flexDirection: 'row', gap: 10, marginTop: 16 },
-  rejectButton: { flex: 1, borderRadius: 13, borderWidth: 1, borderColor: '#484352', paddingVertical: 14, alignItems: 'center' },
+  rejectButton: { flex: 1, borderRadius: 13, borderWidth: 1, borderColor: '#D8D4E4', paddingVertical: 14, alignItems: 'center' },
   rejectText: { color: '#211B35', fontSize: 14, fontWeight: '700' },
   approveButton: { flex: 1, borderRadius: 13, backgroundColor: '#6C4CF1', paddingVertical: 14, alignItems: 'center' },
   approveText: { color: '#211B35', fontSize: 14, fontWeight: '800' },
-  connectionBadge: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: '#10251F', borderTopWidth: 1, borderTopColor: '#1D3B31' },
-  connectionText: { color: '#A7F3D0', fontSize: 10, flex: 1 },
-  disconnectText: { color: '#FCA5A5', fontSize: 10, fontWeight: '700' },
+  connectionBadge: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: '#ECFDF5', borderTopWidth: 1, borderTopColor: '#D1FAE5' },
+  connectionText: { color: '#047857', fontSize: 10, flex: 1 },
+  disconnectText: { color: '#B91C1C', fontSize: 10, fontWeight: '700' },
   navBar: {
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
-    backgroundColor: '#0B0D12',
+    backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
-    borderTopColor: '#262834',
+    borderTopColor: '#E8E4F3',
     height: 54,
     paddingHorizontal: 20,
   },
-  navBtn: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 13, backgroundColor: '#1B1D28' },
+  navBtn: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 13, backgroundColor: '#F3F0FF' },
   navBtnDisabled: { opacity: 0.3 },
 });
