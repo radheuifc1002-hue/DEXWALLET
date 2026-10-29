@@ -10,7 +10,7 @@ export default function TabLayout() {
         headerShown: false,
         tabBarHideOnKeyboard: true,
         tabBarStyle: {
-          backgroundColor: '#0B0D12',
+          backgroundColor: '#FFFFFF',
           borderTopColor: '#262834',
           borderTopWidth: 1,
           height: 66 + insets.bottom,
