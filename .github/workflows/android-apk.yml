@@ -186,6 +186,36 @@ jobs:
           restore-keys: |
             metro-transform-v1-${{ runner.os }}-${{ hashFiles('package-lock.json', 'babel.config.cjs', 'metro.config.cjs') }}-
 
+      - name: Inspect restored CMake/Ninja incremental state
+        id: cmake-cache-diagnostic
+        shell: bash
+        run: |
+          set -uo pipefail
+          REPORT="$RUNNER_TEMP/android-cmake-prebuild-dryrun.txt"
+          : > "$REPORT"
+          NINJA="$ANDROID_HOME/cmake/3.22.1/bin/ninja"
+          if [[ ! -x "$NINJA" ]]; then
+            NINJA="$(find "$ANDROID_HOME/cmake" -type f -name ninja -print -quit 2>/dev/null || true)"
+          fi
+          echo "Ninja executable: ${NINJA:-not found}" | tee -a "$REPORT"
+          echo "Restored CMake build directories and dry-run pending work:" | tee -a "$REPORT"
+          COUNT=0
+          if [[ -x "$NINJA" ]]; then
+            while IFS= read -r BUILD_FILE; do
+              BUILD_DIR="$(dirname "$BUILD_FILE")"
+              COUNT=$((COUNT + 1))
+              {
+                echo
+                echo "===== $BUILD_DIR ====="
+                "$NINJA" -C "$BUILD_DIR" -n -d explain 2>&1
+                echo "ninja_dry_run_exit=$?"
+              } >> "$REPORT"
+            done < <(find android/app/.cxx node_modules -type f -name build.ninja -print 2>/dev/null || true)
+          fi
+          echo "CMake build directories inspected: $COUNT" | tee -a "$REPORT"
+          cat "$REPORT"
+          echo "report=$REPORT" >> "$GITHUB_OUTPUT"
+
       - name: Build standalone release APK
         id: android-build
         working-directory: android
@@ -203,6 +233,15 @@ jobs:
           ./gradlew --max-workers=4 --parallel --stacktrace --info --profile --build-cache -PreactNativeArchitectures=arm64-v8a assembleRelease -x lintVitalAnalyzeRelease -x lintVitalRelease
           METRO_CACHE_FILES=$(find "$EXPO_METRO_CACHE_OUTPUT_DIR" -type f | wc -l)
           echo "Metro transform cache files: $METRO_CACHE_FILES"
+
+      - name: Upload CMake incremental-state diagnostic
+        if: always()
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.2
+        with:
+          name: android-cmake-incremental-diagnostic
+          path: ${{ runner.temp }}/android-cmake-prebuild-dryrun.txt
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload Gradle task profile
         if: always()
