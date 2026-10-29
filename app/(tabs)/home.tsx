@@ -7,6 +7,7 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  Modal,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
@@ -49,6 +50,7 @@ export default function Home() {
 
   const [copied, setCopied] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [chainPickerVisible, setChainPickerVisible] = useState(false);
 
   const totalUSD = tokens.reduce((s, t) => s + (t.balanceUSD || 0), 0);
 
@@ -92,10 +94,17 @@ export default function Home() {
       >
         <View style={styles.headerRow}>
           <Text style={styles.headerTitle}>XU Wallet</Text>
-          <View style={styles.networkBadge}>
-            <View style={styles.networkDot} />
-            <Text style={styles.networkText}>Mainnet</Text>
-          </View>
+          <TouchableOpacity
+            style={styles.chainPicker}
+            onPress={() => setChainPickerVisible(true)}
+            activeOpacity={0.75}
+            accessibilityRole="button"
+            accessibilityLabel="Select blockchain"
+          >
+            <View style={[styles.chainPickerDot, { backgroundColor: CHAIN_COLORS[selectedBlockchain] || '#6C4CF1' }]} />
+            <Text style={styles.chainPickerText}>{CHAIN_SYMBOLS[selectedBlockchain] || 'ETH'}</Text>
+            <Ionicons name="chevron-down" size={16} color="#6C4CF1" />
+          </TouchableOpacity>
         </View>
 
         <View style={styles.balanceCard}>
@@ -161,7 +170,7 @@ export default function Home() {
               <Text
                 style={[
                   styles.chainTabText,
-                  selectedBlockchain === chain && { color: '#FFFFFF' },
+                  selectedBlockchain === chain && { color: '#211B35' },
                 ]}
               >
                 {CHAIN_SYMBOLS[chain]}
@@ -217,7 +226,7 @@ export default function Home() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0F0E17' },
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
   scroll: { padding: 20, paddingBottom: 32 },
   headerRow: {
     flexDirection: 'row',
@@ -228,34 +237,71 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 22,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: '#211B35',
   },
-  networkBadge: {
+  chainPicker: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#1A1825',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 20,
+    gap: 8,
+    backgroundColor: '#F3F0FF',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E8E4F3',
   },
-  networkDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#10B981',
+  chainPickerDot: { width: 8, height: 8, borderRadius: 4 },
+  chainPickerText: { color: '#211B35', fontSize: 13, fontWeight: '800' },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 22,
+    backgroundColor: 'rgba(20, 16, 38, 0.38)',
   },
-  networkText: { color: '#9B97B2', fontSize: 12, fontWeight: '600' },
+  modalDismiss: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  chainModal: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#E8E4F3',
+    elevation: 12,
+  },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  modalTitle: { color: '#211B35', fontSize: 20, fontWeight: '800' },
+  modalSubtitle: { color: '#777286', fontSize: 13, marginTop: 5, marginBottom: 14 },
+  chainOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#F0EDF7',
+    marginTop: 8,
+  },
+  chainOptionActive: { backgroundColor: '#F8F6FF', borderColor: '#6C4CF1' },
+  chainOptionIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  chainOptionTextWrap: { flex: 1 },
+  chainOptionName: { color: '#211B35', fontSize: 15, fontWeight: '700' },
+  chainOptionSymbol: { color: '#777286', fontSize: 12, marginTop: 2 },
   balanceCard: {
-    backgroundColor: '#1A1825',
+    backgroundColor: '#FFFFFF',
     borderRadius: 20,
     padding: 20,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#6C4CF122',
+    borderColor: '#E8E4F3',
+    shadowColor: '#211B35',
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
   },
   balanceLabel: {
-    color: '#9B97B2',
+    color: '#777286',
     fontSize: 13,
     fontWeight: '600',
     marginBottom: 4,
@@ -263,14 +309,14 @@ const styles = StyleSheet.create({
   balanceAmount: {
     fontSize: 40,
     fontWeight: '900',
-    color: '#FFFFFF',
+    color: '#211B35',
     marginBottom: 12,
   },
   addressRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#24223A',
+    backgroundColor: '#F3F0FF',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 10,
@@ -278,7 +324,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   address: {
-    color: '#9B97B2',
+    color: '#777286',
     fontSize: 13,
     fontFamily: 'monospace',
   },
@@ -288,46 +334,32 @@ const styles = StyleSheet.create({
   },
   actionBtn: {
     flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    justifyContent: 'center',
+    gap: 9,
+    minHeight: 54,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    backgroundColor: '#F3F0FF',
+    borderWidth: 1,
+    borderColor: '#E8E4F3',
   },
   actionIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 32,
+    height: 32,
+    borderRadius: 10,
     backgroundColor: '#6C4CF1',
     alignItems: 'center',
     justifyContent: 'center',
   },
   actionLabel: {
-    color: '#9B97B2',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  chainTabs: {
-    gap: 8,
-    paddingHorizontal: 0,
-    marginBottom: 16,
-  },
-  chainTab: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#1A1825',
-    borderWidth: 1,
-    borderColor: '#24223A',
-  },
-  chainTabActive: {
-    backgroundColor: '#6C4CF1',
-    borderColor: '#6C4CF1',
-  },
-  chainTabText: {
-    color: '#9B97B2',
-    fontSize: 13,
+    color: '#211B35',
+    fontSize: 14,
     fontWeight: '700',
   },
   sectionTitle: {
-    color: '#FFFFFF',
+    color: '#211B35',
     fontSize: 18,
     fontWeight: '700',
     marginBottom: 12,
@@ -337,9 +369,9 @@ const styles = StyleSheet.create({
     paddingVertical: 40,
     gap: 10,
   },
-  emptyText: { color: '#4A4760', fontSize: 15 },
+  emptyText: { color: '#9A95A8', fontSize: 15 },
   tokenCard: {
-    backgroundColor: '#1A1825',
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 16,
     flexDirection: 'row',
@@ -355,9 +387,9 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   tokenInfo: { flex: 1 },
-  tokenName: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
-  tokenSymbol: { color: '#9B97B2', fontSize: 13, marginTop: 2 },
+  tokenName: { color: '#211B35', fontSize: 15, fontWeight: '700' },
+  tokenSymbol: { color: '#777286', fontSize: 13, marginTop: 2 },
   tokenBalance: { alignItems: 'flex-end' },
-  tokenAmount: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' },
-  tokenUSD: { color: '#9B97B2', fontSize: 12, marginTop: 2 },
+  tokenAmount: { color: '#211B35', fontSize: 14, fontWeight: '600' },
+  tokenUSD: { color: '#777286', fontSize: 12, marginTop: 2 },
 });
