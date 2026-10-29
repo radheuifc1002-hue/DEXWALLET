@@ -53,6 +53,23 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      # Install every NDK version referenced by the locked native modules before
+      # restoring CMake state. Expo Updates currently retains NDK 27.0 paths while
+      # the app uses NDK 27.1.
+      - name: Install required Android SDK native toolchains
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager -print -quit)"
+          fi
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" --install "ndk;27.0.12077973" "ndk;27.1.12297006" "cmake;3.22.1"
+          test -d "$ANDROID_HOME/ndk/27.0.12077973"
+          test -d "$ANDROID_HOME/ndk/27.1.12297006"
+
       # The native CMake build directories are cached separately. Restoring the
       # exact dependency tree avoids re-extracting native source files on every
       # run, which can invalidate Ninja/CMake incremental-build checks.
@@ -162,18 +179,6 @@ jobs:
           key: android-module-build-v1-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             android-module-build-v1-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json') }}-
-      - name: Install required Android SDK native toolchain
-        shell: bash
-        run: |
-          set -euo pipefail
-          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager -print -quit)"
-          fi
-          test -x "$SDKMANAGER"
-          yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" --install "ndk;27.1.12297006" "cmake;3.22.1"
-          test -d "$ANDROID_HOME/ndk/27.1.12297006"
       # Expo/Metro normally keeps its transformer cache under the ephemeral
       # system temp directory. Persist it so unchanged modules are not transformed
       # from scratch inside every Gradle release build.
@@ -185,6 +190,19 @@ jobs:
           key: metro-transform-v1-${{ runner.os }}-${{ hashFiles('package-lock.json', 'babel.config.cjs', 'metro.config.cjs') }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             metro-transform-v1-${{ runner.os }}-${{ hashFiles('package-lock.json', 'babel.config.cjs', 'metro.config.cjs') }}-
+
+      # GitHub-hosted runners install the pinned NDK freshly each run. Its
+      # toolchain files therefore look newer than cached build.ninja files,
+      # forcing CMake regeneration. The toolchain versions are pinned above;
+      # normalize only their mtimes so cached Ninja dependency state remains valid.
+      - name: Stabilize pinned Android toolchain timestamps
+        shell: bash
+        run: |
+          set -euo pipefail
+          for TOOLCHAIN in "$ANDROID_HOME/ndk/27.0.12077973" "$ANDROID_HOME/ndk/27.1.12297006" "$ANDROID_HOME/cmake/3.22.1"; do
+            test -d "$TOOLCHAIN"
+            find "$TOOLCHAIN" -type f -exec touch -d '2020-01-01 00:00:00 UTC' {} +
+          done
 
       - name: Inspect restored CMake/Ninja incremental state
         id: cmake-cache-diagnostic
