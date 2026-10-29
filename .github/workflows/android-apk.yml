@@ -126,8 +126,12 @@ jobs:
           fi
           echo "Standalone bundle found; development-launcher check passed."
 
-          # Confirm the generated Android package contains launcher icon resources.
-          grep -E 'res/(mipmap|drawable)[^ ]*/.*ic_launcher' /tmp/xu-apk-files.txt
+          # Check the APK's packaged launcher icon via Android's resource tool.
+          AAPT="$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -type f -name aapt | sort -V | tail -n 1)"
+          test -x "$AAPT"
+          "$AAPT" dump badging "$APK" | tee /tmp/xu-apk-badging.txt
+          grep -E "^application-icon(-[0-9]+)?:'res/" /tmp/xu-apk-badging.txt
+          echo "APK bundle and launcher icon checks passed."
           
       - name: Upload standalone APK artifact
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.2
