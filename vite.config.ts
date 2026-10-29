@@ -18,9 +18,10 @@ export default defineConfig({
     tailwindcss(),
   ],
   resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
+    alias: [
+      { find: '@/app', replacement: path.resolve(__dirname, './web-app/app') },
+      { find: '@', replacement: path.resolve(__dirname, './src') },
+    ],
   },
   assetsInclude: ['**/*.svg', '**/*.csv'],
   server: {
