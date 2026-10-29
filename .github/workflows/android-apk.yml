@@ -11,6 +11,7 @@ on:
       - "hooks/**"
       - "services/**"
       - "mobile/**"
+      - "index.js"
       - "package.json"
       - "package-lock.json"
       - "app.json"
@@ -78,12 +79,7 @@ jobs:
 
       - name: Force the standalone native entry configuration
         run: |
-          # This repository has both Vite web code and an Expo native app.
-          # Keep Metro on the CommonJS config; the duplicate ESM config can
-          # accidentally take precedence in environments with "type": "module.
           rm -f metro.config.js
-          # The dev client is not part of a standalone release APK. Remove its
-          # installed native modules without changing the lockfile or web dependencies.
           rm -rf node_modules/expo-dev-client node_modules/expo-dev-launcher
           test ! -d node_modules/expo-dev-client
           test ! -d node_modules/expo-dev-launcher
@@ -112,14 +108,10 @@ jobs:
           APK=android/app/build/outputs/apk/release/app-release.apk
           test -s "$APK"
           unzip -l "$APK" > /tmp/xu-apk-files.txt
-
-          # Keep only essential checks: a non-empty APK with an embedded JS bundle.
           grep -E 'assets/index.android.bundle|assets/.*\\.bundle' /tmp/xu-apk-files.txt
           BUNDLE_SIZE=$(unzip -p "$APK" assets/index.android.bundle | wc -c)
           test "$BUNDLE_SIZE" -gt 1000000
           echo "Embedded JS bundle size: $BUNDLE_SIZE bytes"
-
-          # Do not fail the build on optional text/icon resource checks.
           echo "Essential APK checks passed."
 
       - name: Upload standalone APK artifact
