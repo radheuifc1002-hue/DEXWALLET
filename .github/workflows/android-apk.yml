@@ -100,7 +100,7 @@ jobs:
         timeout-minutes: 55
         env:
           EXPO_ROUTER_APP_ROOT: app
-          CMAKE_BUILD_PARALLEL_LEVEL: "2"
+          CMAKE_BUILD_PARALLEL_LEVEL: "4"
           NODE_ENV: production
           GRADLE_OPTS: "-Dorg.gradle.workers.max=4 -Dorg.gradle.parallel=true -Dorg.gradle.caching=true"
         run: |
