@@ -18,10 +18,13 @@ config.resolver.extraNodeModules = {
   events: path.resolve(__dirname, 'node_modules/events'),
 };
 
-// The React/Vite website lives outside the Expo app. Keep it out of Metro's
-// native module graph so the Android bundle only resolves app/ native routes.
+// The native app is rooted exclusively in ./app and ./mobile.
+// Vite/React web source is intentionally kept outside Metro's resolver graph.
+// Block both historical web source (./src) and the separated web app (./web-app)
+// so native bundling cannot accidentally resolve a web entry or web-only module.
 config.resolver.blockList = [
-  /[/\\]web-app[/\\].*/,
+  /[/\\](?:web-app|src)[/\\].*/,
+  /[/\\]vite\.config\.(?:ts|js|mjs|cjs)$/,
 ];
 
 module.exports = config;
