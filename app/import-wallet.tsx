@@ -113,7 +113,7 @@ export default function ImportWallet() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0B0D12' },
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
   scroll: { padding: 24, paddingBottom: 40 },
   back: { marginBottom: 20 },
   backText: { color: '#6C4CF1', fontSize: 16 },
@@ -121,7 +121,7 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: '#151720',
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
@@ -129,20 +129,20 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: '800',
-    color: '#F7F6FC',
+    color: '#211B35',
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 14,
-    color: '#A7A3B8',
+    color: '#777286',
     lineHeight: 20,
     marginBottom: 24,
   },
   inputCard: {
-    backgroundColor: '#151720',
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#2B2E3B',
+    borderColor: '#E8E4F3',
     padding: 4,
     minHeight: 120,
   },
@@ -150,7 +150,7 @@ const styles = StyleSheet.create({
     borderColor: '#EF4444',
   },
   input: {
-    color: '#F7F6FC',
+    color: '#211B35',
     fontSize: 16,
     padding: 12,
     lineHeight: 24,
@@ -164,7 +164,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 8,
   },
-  metaText: { color: '#A7A3B8', fontSize: 13 },
+  metaText: { color: '#777286', fontSize: 13 },
   pasteBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -180,7 +180,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 8,
-    backgroundColor: '#151720',
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 14,
     marginTop: 8,
@@ -189,7 +189,7 @@ const styles = StyleSheet.create({
     borderColor: '#6C4CF144',
   },
   warningText: {
-    color: '#A7A3B8',
+    color: '#777286',
     fontSize: 13,
     flex: 1,
     lineHeight: 18,
