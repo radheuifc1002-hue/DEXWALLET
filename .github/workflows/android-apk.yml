@@ -1,6 +1,5 @@
 name: Build standalone Android APK
-# CI-only optimization trial: preserve dependency mtimes, cache Metro transforms, and profile Gradle tasks.
-# Follow-up run queues a warmed-cache validation after the first cache population.
+# Android release pipeline: validate warmed project/Gradle/native caches; keep APK verification and publishing mandatory.
 
 on:
   push:
