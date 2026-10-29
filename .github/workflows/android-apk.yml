@@ -1,4 +1,5 @@
 name: Build standalone Android APK
+# Timing baseline rerun: no build or app behavior changes.
 
 on:
   push:
