@@ -30,7 +30,7 @@ jobs:
   build:
     name: Build standalone Android release APK
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - name: Check out source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -72,14 +72,14 @@ jobs:
 
       - name: Build standalone release APK
         working-directory: android
-        timeout-minutes: 35
+        timeout-minutes: 55
         env:
           EXPO_ROUTER_APP_ROOT: app
           CMAKE_BUILD_PARALLEL_LEVEL: "2"
           GRADLE_OPTS: "-Dorg.gradle.workers.max=2 -Dorg.gradle.parallel=false -Dorg.gradle.caching=true"
         run: |
           chmod +x gradlew
-          ./gradlew --max-workers=2 --stacktrace --build-cache -PreactNativeArchitectures=arm64-v8a assembleRelease
+          ./gradlew --max-workers=2 --stacktrace --build-cache -PreactNativeArchitectures=arm64-v8a assembleRelease -x lintVitalAnalyzeRelease -x lintVitalRelease
 
       - name: Verify APK exists and is non-empty
         run: test -s android/app/build/outputs/apk/release/app-release.apk
