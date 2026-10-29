@@ -65,6 +65,20 @@ jobs:
             android-release-${{ runner.os }}-${{ hashFiles('package-lock.json', 'app.json', 'babel.config.cjs', 'metro.config.cjs') }}
             android-release-${{ runner.os }}-
 
+      - name: Force the standalone native entry configuration
+        run: |
+          # This repository has both Vite web code and an Expo native app.
+          # Keep Metro on the CommonJS config; the duplicate ESM config can
+          # accidentally take precedence in environments with "type": "module.
+          rm -f metro.config.js
+          # The dev client is not part of a standalone release APK. Remove its
+          # installed native modules without changing the lockfile or web dependencies.
+          rm -rf node_modules/expo-dev-client node_modules/expo-dev-launcher
+          test ! -d node_modules/expo-dev-client
+          test ! -d node_modules/expo-dev-launcher
+          node -e "const p=require('./package.json'); if (p.main !== 'index.js') process.exit(1); console.log('Native entry:', p.main)"
+          npx expo config --type public
+
       - name: Generate native Android project
         env:
           EXPO_ROUTER_APP_ROOT: app
@@ -81,8 +95,19 @@ jobs:
           chmod +x gradlew
           ./gradlew --max-workers=2 --stacktrace --build-cache -PreactNativeArchitectures=arm64-v8a assembleRelease -x lintVitalAnalyzeRelease -x lintVitalRelease
 
-      - name: Verify APK exists and is non-empty
-        run: test -s android/app/build/outputs/apk/release/app-release.apk
+      - name: Verify APK contains a bundled native application
+        run: |
+          set -euo pipefail
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          test -s "$APK"
+          unzip -l "$APK" > /tmp/xu-apk-files.txt
+          grep -E 'assets/index.android.bundle|assets/.*\.bundle' /tmp/xu-apk-files.txt
+          # A release APK should not depend on the Expo development launcher.
+          if unzip -p "$APK" classes.dex 2>/dev/null | strings | grep -qi 'expo/modules/devlauncher'; then
+            echo "Unexpected Expo development launcher reference found in classes.dex"
+            exit 1
+          fi
+          echo "Standalone bundle found; development-launcher check passed."
 
       - name: Upload standalone APK artifact
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.2
