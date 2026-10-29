@@ -97,7 +97,7 @@ export default function Send() {
                 <Text
                   style={[
                     styles.tokenChipText,
-                    selectedToken === t.blockchain && { color: '#F7F6FC' },
+                    selectedToken === t.blockchain && { color: '#211B35' },
                   ]}
                 >
                   {t.symbol}
@@ -163,7 +163,7 @@ export default function Send() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0B0D12' },
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -171,17 +171,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#2B2E3B',
+    borderBottomColor: '#E8E4F3',
   },
   back: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
   headerTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#F7F6FC',
+    color: '#211B35',
   },
   scroll: { padding: 20, paddingBottom: 20 },
   sectionLabel: {
-    color: '#A7A3B8',
+    color: '#777286',
     fontSize: 12,
     fontWeight: '700',
     textTransform: 'uppercase',
@@ -192,25 +192,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: '#151720',
+    backgroundColor: '#FFFFFF',
     marginRight: 8,
     borderWidth: 1,
-    borderColor: '#2B2E3B',
+    borderColor: '#E8E4F3',
   },
   tokenChipActive: {
     backgroundColor: '#6C4CF1',
     borderColor: '#6C4CF1',
   },
-  tokenChipText: { color: '#A7A3B8', fontSize: 13, fontWeight: '700' },
+  tokenChipText: { color: '#777286', fontSize: 13, fontWeight: '700' },
   inputCard: {
-    backgroundColor: '#151720',
+    backgroundColor: '#FFFFFF',
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#2B2E3B',
+    borderColor: '#E8E4F3',
     marginBottom: 16,
   },
   input: {
-    color: '#F7F6FC',
+    color: '#211B35',
     fontSize: 15,
     padding: 14,
   },
@@ -221,26 +221,26 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   symbolBadge: {
-    backgroundColor: '#151720',
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 14,
     borderWidth: 1,
-    borderColor: '#2B2E3B',
+    borderColor: '#E8E4F3',
   },
-  symbolText: { color: '#A7A3B8', fontSize: 14, fontWeight: '700' },
+  symbolText: { color: '#777286', fontSize: 14, fontWeight: '700' },
   fromRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     marginBottom: 8,
   },
-  fromText: { color: '#A7A3B8', fontSize: 13 },
+  fromText: { color: '#777286', fontSize: 13 },
   footer: {
     padding: 20,
     paddingBottom: 32,
     borderTopWidth: 1,
-    borderTopColor: '#2B2E3B',
+    borderTopColor: '#E8E4F3',
   },
   sendBtn: {
     backgroundColor: '#6C4CF1',
