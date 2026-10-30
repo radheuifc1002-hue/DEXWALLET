@@ -154,11 +154,14 @@ export default function Browser() {
       connectedSolanaOriginRef.current = null;
       setConnectedOrigin(null);
       if (approvalResolver.current) finishApproval(false);
-      webRef.current?.injectJavaScript('if(window.ethereum){window.ethereum.__selectedAddress=null;window.ethereum.emit("accountsChanged",[])}true;');
+      webRef.current?.injectJavaScript('if(window.ethereum){window.ethereum.__selectedAddress=null;window.ethereum.emit("accountsChanged",[])}if(window.__xuSolanaClearConnection)window.__xuSolanaClearConnection();true;');
       return;
     }
     const chainConfig = selectedBlockchain === 'ethereum' ? [1,11155111] : selectedBlockchain === 'bnb' ? [56,97] : selectedBlockchain === 'polygon' ? [137,80002] : null;
-    if (!chainConfig) return;
+    if (!chainConfig) {
+      webRef.current?.injectJavaScript('if(window.ethereum){window.ethereum.__selectedAddress=null;window.ethereum.emit("accountsChanged",[])}true;');
+      return;
+    }
     const id = network === 'testnet' ? chainConfig[1] : chainConfig[0];
     const chainHex = '0x' + id.toString(16);
     let currentOrigin = ''; try { currentOrigin = new URL(pageUrlRef.current).origin; } catch {}
