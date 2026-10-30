@@ -118,49 +118,54 @@ async function fetchRoutescanHistory(chain: Exclude<Blockchain, 'solana'>, netwo
 }
 
 async function fetchPolygonBlockscout(network: Network, wallet: string, asset: Token): Promise<WalletActivity[]> {
-  const host = network === 'mainnet' ? 'https://polygon.blockscout.com/api/v2' : 'https://polygon-amoy.blockscout.com/api/v2';
-  const base = `${host}/addresses/${encodeURIComponent(wallet)}`;
-  const [normalBody, secondaryBody] = await Promise.all([
-    fetchJson(`${base}/transactions`),
-    asset.contractAddress
-      ? fetchJson(`${base}/token-transfers?token=${encodeURIComponent(asset.contractAddress)}`)
-      : fetchJson(`${base}/internal-transactions`).catch(() => ({ items: [] })),
+  // Use Blockscout's Etherscan-compatible endpoint. The REST v2 endpoint
+  // has returned HTTP 403 for some mobile clients; this compatibility route
+  // is a separate public API surface and does not require an API key.
+  const host = network === 'mainnet'
+    ? 'https://polygon.blockscout.com/api'
+    : 'https://polygon-amoy.blockscout.com/api';
+
+  const request = async (action: string, extra: Record<string, string> = {}) => {
+    const url = new URL(host);
+    Object.entries({
+      module: 'account',
+      action,
+      address: wallet,
+      page: '1',
+      offset: '100',
+      sort: 'desc',
+      ...extra,
+    }).forEach(([key, value]) => url.searchParams.set(key, value));
+    const body = await fetchJson(url.toString());
+    if (body.status === '0') {
+      const result = String(body.result || body.message || '').toLowerCase();
+      if (result.includes('no transactions') || result.includes('no records')) return [];
+      throw new Error(String(body.result || body.message || 'Polygon history API returned an error.'));
+    }
+    return Array.isArray(body.result) ? body.result : [];
+  };
+
+  if (asset.contractAddress) {
+    const contract = asset.contractAddress.toLowerCase();
+    const [normal, transfers] = await Promise.all([
+      request('txlist'),
+      request('tokentx', { contractaddress: contract }),
+    ]);
+    const interactions = normal.filter((tx: any) =>
+      String(tx.to || '').toLowerCase() === contract
+    );
+    return sortAndLimit(formatEtherscanRows(
+      mergeRows([...interactions, ...transfers]), 'polygon', network, wallet, asset,
+    ));
+  }
+
+  const [normal, internal] = await Promise.all([
+    request('txlist'),
+    request('txlistinternal').catch(() => []),
   ]);
-  const normal = Array.isArray(normalBody.items) ? normalBody.items : [];
-  const secondary = Array.isArray(secondaryBody.items) ? secondaryBody.items : [];
-  const contract = asset.contractAddress?.toLowerCase();
-  const interactions = contract ? normal.filter((tx: any) =>
-    String(tx.to?.hash || tx.to || '').toLowerCase() === contract
-  ) : [];
-  const selected = contract ? [...interactions, ...secondary] : [...normal, ...secondary];
-  const mine = wallet.toLowerCase();
-  const rows = mergeRows(selected).map((tx: any) => {
-    const from = String(tx.from?.hash || tx.from || '').toLowerCase();
-    const to = String(tx.to?.hash || tx.to || '').toLowerCase();
-    const direction = from === mine && to === mine ? 'self' : from === mine ? 'out' : to === mine ? 'in' : 'contract';
-    const hash = String(tx.hash || tx.transaction_hash || tx.transactionHash || '');
-    const token = tx.token || {};
-    const isTokenTransfer = Boolean(tx.token || tx.token_type || tx.total?.value !== undefined);
-    const rawValue = tx.total?.value ?? tx.value ?? tx.amount ?? '0';
-    const decimals = Number(token.decimals ?? tx.token_decimals ?? (isTokenTransfer ? asset.decimals ?? 18 : 18));
-    const amount = isTokenTransfer
-      ? formatAmount(rawValue, decimals, token.symbol || asset.symbol)
-      : (!contract ? formatAmount(rawValue, 18, asset.symbol) : undefined);
-    const timestampRaw = tx.timestamp || tx.block_timestamp;
-    const timestamp = typeof timestampRaw === 'string' && timestampRaw.includes('T')
-      ? Math.floor(new Date(timestampRaw).getTime() / 1000)
-      : Number(timestampRaw || 0) || null;
-    const failed = ['error', 'failed'].includes(String(tx.status || tx.result || '').toLowerCase());
-    return {
-      id: hash + String(tx.log_index ?? tx.index ?? tx.trace_id ?? 'tx'),
-      hash, timestamp,
-      title: isTokenTransfer ? `${token.symbol || asset.symbol} transfer` : contract ? 'Token contract interaction' : direction === 'contract' ? (tx.method || 'Contract interaction') : direction === 'in' ? 'Received' : direction === 'out' ? 'Sent' : 'Internal transfer',
-      subtitle: `${short(from)} → ${short(to)}`,
-      amount, direction, status: failed ? 'failed' : 'success',
-      explorerUrl: explorerTx('polygon', network, hash),
-    } as WalletActivity;
-  }).filter((item) => Boolean(item.hash));
-  return sortAndLimit(rows);
+  return sortAndLimit(formatEtherscanRows(
+    mergeRows([...normal, ...internal]), 'polygon', network, wallet, asset,
+  ));
 }
 
 async function fetchBnbBinplorer(wallet: string, asset: Token): Promise<WalletActivity[]> {
@@ -211,19 +216,12 @@ async function fetchBnbBinplorer(wallet: string, asset: Token): Promise<WalletAc
 async function fetchEvmHistory(chain: Exclude<Blockchain, 'solana'>, network: Network, wallet: string, asset: Token): Promise<WalletActivity[]> {
   if (chain === 'ethereum') return fetchRoutescanHistory(chain, network, wallet, asset);
   if (chain === 'polygon') {
-    // Routescan's Etherscan-compatible API supports keyless reads. Prefer it
-    // over the Polygon Blockscout host, which can return HTTP 403 in some
-    // mobile/network environments. Keep Blockscout as a secondary source.
-    try {
-      const routescanRows = await fetchRoutescanHistory(chain, network, wallet, asset);
-      if (routescanRows.length > 0) return routescanRows.slice(0, 50);
-    } catch {}
     try {
       return (await fetchPolygonBlockscout(network, wallet, asset)).slice(0, 50);
     } catch (error: any) {
-      const message = String(error?.message || '');
-      if (message.includes('403')) {
-        throw new Error('Polygon history providers are currently refusing API access (HTTP 403). You can still view the full activity on PolygonScan.');
+      const status = String(error?.message || '');
+      if (status.includes('403')) {
+        throw new Error('Polygon history service is refusing requests right now. You can open PolygonScan to view the complete history.');
       }
       throw new Error('Polygon transaction history is temporarily unavailable. Please try again or open PolygonScan.');
     }
