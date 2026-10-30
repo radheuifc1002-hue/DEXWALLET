@@ -307,11 +307,53 @@ async function fetchBlockscout(options: Options): Promise<EvmHistoryRow[]> {
   return rows;
 }
 
+
+const INDEXED_HISTORY_API = 'https://dexwallet-omega.vercel.app/api/indexed-history';
+
+async function fetchIndexedHistory(options: Options): Promise<EvmHistoryRow[] | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4500);
+  try {
+    const response = await fetch(INDEXED_HISTORY_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        chain: options.chain,
+        network: options.network,
+        walletAddress: options.walletAddress,
+        contractAddress: options.contractAddress,
+        isNative: options.isNative,
+        limit: Math.min(options.limit || DEFAULT_LIMIT, DEFAULT_LIMIT),
+      }),
+      signal: controller.signal,
+    });
+    if (!response.ok) return null;
+    const payload = await response.json();
+    // A cache miss means the background indexer has not completed the initial
+    // sync yet. Preserve the existing device-direct provider fallback.
+    if (payload?.indexed !== true) return null;
+    if (!Array.isArray(payload.rows)) return null;
+    return payload.rows.slice(0, options.limit || DEFAULT_LIMIT).filter((row: any) =>
+      row && typeof row.hash === 'string' && typeof row.id === 'string' &&
+      typeof row.timestamp === 'number' && typeof row.incoming === 'boolean'
+    ) as EvmHistoryRow[];
+  } catch {
+    // The server-side index is an optimization, never a hard dependency for
+    // wallet history. Fall back to the existing provider adapters.
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function fetchEvmAssetHistory(options: Options): Promise<EvmHistoryRow[]> {
   if (!options.walletAddress) throw new Error('Wallet address is missing for this network.');
   if (!options.isNative && !/^0x[a-fA-F0-9]{40}$/.test(options.contractAddress)) {
     throw new Error('Token contract address is invalid for this EVM network.');
   }
+
+  const indexedRows = await fetchIndexedHistory(options);
+  if (indexedRows !== null) return indexedRows.slice(0, options.limit || DEFAULT_LIMIT);
 
   const providers: Array<() => Promise<EvmHistoryRow[]>> = [];
   // Prefer the chain's own indexed API for Ethereum and Polygon mainnet.
