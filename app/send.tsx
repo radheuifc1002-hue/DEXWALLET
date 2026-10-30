@@ -121,14 +121,14 @@ export default function Send() {
           const rawBalance = BigInt(sourceInfo.amount || '0');
           const tokenAmount = ethers.parseUnits(amount, tokenDecimals);
           if (tokenAmount > rawBalance) throw new Error('Insufficient token balance.');
-          const keys = [address, source, tokenContract, destination, tokenProgram].map((key) => [...bs58.decode(key)]);
+          const keys = [address, source, destination, tokenContract, tokenProgram].map((key) => [...bs58.decode(key)]);
           const data = [12, ...u64(tokenAmount), tokenDecimals];
           // SPL Token / Token-2022 TransferChecked instruction. The fee payer
           // is the wallet signer; the recipient must already have a token ATA.
           msg = Uint8Array.from([
             1, 0, 2, ...shortvec(keys.length), ...keys.flat(),
             ...bs58.decode(latest.value.blockhash),
-            ...shortvec(1), 4, ...shortvec(4), 1, 2, 3, 0,
+            ...shortvec(1), 4, ...shortvec(4), 1, 3, 2, 0,
             ...shortvec(data.length), ...data,
           ]);
         } else {
