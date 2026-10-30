@@ -67,17 +67,36 @@ export default function ImportToken() {
         const chain = await provider.getNetwork();
         if (Number(chain.chainId) !== config.chainId) throw new Error('RPC network mismatch. Import cancelled.');
         if (!ethers.isAddress(value)) throw new Error('Enter a valid token contract address.');
-        const contract = new ethers.Contract(ethers.getAddress(value), ABI, provider);
-        const [name, symbol, decimals, rawBalance] = await Promise.all([
-          contract.name(), contract.symbol(), contract.decimals(), contract.balanceOf(walletAddress),
-        ]);
+        const checksumAddress = ethers.getAddress(value);
+        const bytecode = await provider.getCode(checksumAddress);
+        if (!bytecode || bytecode === '0x') {
+          throw new Error(`Token not found on ${selectedBlockchain === 'bnb' ? 'BNB Chain' : selectedBlockchain === 'polygon' ? 'Polygon' : 'Ethereum'}. This address is not a deployed token contract.`);
+        }
+        const contract = new ethers.Contract(checksumAddress, ABI, provider);
+        let name: unknown, symbol: unknown, decimals: unknown, rawBalance: bigint;
+        try {
+          [name, symbol, decimals, rawBalance] = await Promise.all([
+            contract.name(), contract.symbol(), contract.decimals(), contract.balanceOf(walletAddress),
+          ]);
+        } catch (metadataError: any) {
+          const detail = String(metadataError?.shortMessage || metadataError?.message || '').toLowerCase();
+          if (metadataError?.code === 'BAD_DATA' || metadataError?.code === 'CALL_EXCEPTION' || detail.includes('could not decode result data') || detail.includes('could not coalesce error') || detail.includes('execution reverted')) {
+            throw new Error(`Token not found. This contract does not expose standard ERC-20 token details on ${selectedBlockchain === 'bnb' ? 'BNB Chain' : selectedBlockchain === 'polygon' ? 'Polygon' : 'Ethereum'}.`);
+          }
+          throw metadataError;
+        }
         const d = Number(decimals);
         if (!Number.isInteger(d) || d < 0 || d > 255) throw new Error('Token returned invalid decimals.');
         found = { id: `custom-${selectedBlockchain}-${value.toLowerCase()}`, name: String(name), symbol: String(symbol), balance: Number(ethers.formatUnits(rawBalance, d)), balanceUSD: 0, contractAddress: ethers.getAddress(value), decimals: d, blockchain: selectedBlockchain };
       }
       setToken(found);
     } catch (e: any) {
-      setError(e?.shortMessage || e?.message || 'Unable to fetch token information.');
+      const message = String(e?.shortMessage || e?.message || '');
+      if (/network|timeout|fetch failed|failed to fetch|could not detect network|server response/i.test(message)) {
+        setError('Unable to reach the blockchain network. Check your internet connection and try again.');
+      } else {
+        setError(message || 'Unable to fetch token information.');
+      }
     } finally { setLoading(false); }
   };
 
