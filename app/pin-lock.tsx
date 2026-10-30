@@ -6,6 +6,7 @@ import {
   SafeAreaView,
   TouchableOpacity,
   Alert,
+  AppState,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as LocalAuthentication from 'expo-local-authentication';
@@ -28,6 +29,7 @@ export default function PinLock() {
 
   useEffect(() => {
     mounted.current = true;
+    let promptTimer: ReturnType<typeof setTimeout> | null = null;
     const check = async () => {
       try {
         const [hw, enrolled] = await Promise.all([
@@ -35,14 +37,27 @@ export default function PinLock() {
           LocalAuthentication.isEnrolledAsync(),
         ]);
         if (!mounted.current) return;
-        setBiometricAvailable(hw && enrolled && biometricEnabled);
-        if (hw && enrolled && biometricEnabled) await tryBiometric();
+        const available = hw && enrolled && biometricEnabled;
+        setBiometricAvailable(available);
+
+        // Wait until the lock screen has finished mounting. Calling the native
+        // biometric prompt during a navigation transition can make it fail.
+        if (available) {
+          promptTimer = setTimeout(() => {
+            if (mounted.current && AppState.currentState === 'active') {
+              void tryBiometric();
+            }
+          }, 450);
+        }
       } catch {
         if (mounted.current) setBiometricAvailable(false);
       }
     };
-    check();
-    return () => { mounted.current = false; };
+    void check();
+    return () => {
+      mounted.current = false;
+      if (promptTimer) clearTimeout(promptTimer);
+    };
   }, [biometricEnabled]);
 
   useEffect(() => {
@@ -58,7 +73,7 @@ export default function PinLock() {
       const result = await LocalAuthentication.authenticateAsync({
         promptMessage: 'Unlock XU Wallet',
         cancelLabel: 'Use PIN',
-        disableDeviceFallback: true,
+        fallbackLabel: 'Use PIN',
       });
       if (result.success && mounted.current) unlock();
     } catch {
