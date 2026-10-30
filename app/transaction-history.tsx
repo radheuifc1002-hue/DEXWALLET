@@ -429,7 +429,7 @@ export default function TransactionHistory() {
           items.map((item) => (
             <TouchableOpacity key={item.id} style={styles.transactionCard} activeOpacity={0.78} onPress={() => Linking.openURL(item.explorerUrl)}>
               <View style={[styles.directionIcon, item.status === 'Failed' && styles.failedIcon]}>
-                <Ionicons name={item.status === 'Failed' ? 'close' : item.incoming ? 'arrow-down-left-box' : 'arrow-up-right'} size={20} color={item.status === 'Failed' ? '#B42318' : item.incoming ? '#059669' : '#6C4CF1'} />
+                <Ionicons name={item.status === 'Failed' ? 'close' : item.incoming ? 'arrow-down-left-box' : 'arrow-up-right-box'} size={20} color={item.status === 'Failed' ? '#B42318' : item.incoming ? '#059669' : '#6C4CF1'} />
               </View>
               <View style={styles.transactionInfo}>
                 <Text style={styles.transactionTitle}>{item.title}</Text>
