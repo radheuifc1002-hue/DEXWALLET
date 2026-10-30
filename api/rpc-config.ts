@@ -15,7 +15,7 @@ const rpcConfig = {
     },
     solana: {
       mainnet: { endpoints: ['https://api.mainnet-beta.solana.com', 'https://solana.api.pocket.network', 'https://api.mainnet.solana.com'] },
-      testnet: { endpoints: ['https://api.devnet.solana.com', 'https://solana.api.pocket.network'] }
+      testnet: { endpoints: ['https://api.devnet.solana.com'] }
     }
   }
 };
