@@ -1,7 +1,7 @@
 import { useEffect, useState, Component, ReactNode } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { WalletProvider, useWallet } from '../context/WalletContext';
-import { initializeRpcManager } from '../mobile/services/rpcManager';
+import { initializeRpcManager, startRpcHealthMonitoring } from '../mobile/services/rpcManager';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -76,6 +76,12 @@ function NavigationGuard() {
 }
 
 function AppStack() {
+  const { selectedBlockchain, network } = useWallet();
+
+  useEffect(() => {
+    return startRpcHealthMonitoring(selectedBlockchain, network);
+  }, [selectedBlockchain, network]);
+
   return (
     <>
       <NavigationGuard />

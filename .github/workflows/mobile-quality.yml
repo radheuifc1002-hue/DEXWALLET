@@ -1,0 +1,85 @@
+name: Mobile quality gates
+
+on:
+  pull_request:
+    branches: [main, infra/phase-2-rpc-health-failover]
+    paths:
+      - "app/**"
+      - "context/**"
+      - "mobile/**"
+      - "api/**"
+      - "database/**"
+      - "indexer/**"
+      - "tests/**"
+      - "components/**"
+      - "package.json"
+      - "package-lock.json"
+      - "app.json"
+      - "tsconfig.json"
+      - ".github/workflows/mobile-quality.yml"
+  push:
+    branches: [main, infra/phase-2-rpc-health-failover]
+    paths:
+      - "app/**"
+      - "context/**"
+      - "mobile/**"
+      - "api/**"
+      - "database/**"
+      - "indexer/**"
+      - "components/**"
+      - "package.json"
+      - "package-lock.json"
+      - "app.json"
+      - "tsconfig.json"
+      - ".github/workflows/mobile-quality.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-quality-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck-and-bundle:
+    name: TypeScript and Android bundle validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Resolve lockfile after dependency changes
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Verify Expo dependency alignment
+        run: npx expo install --check
+
+      - name: Type-check the application
+        run: npx tsc --noEmit
+
+      - name: Export Android JavaScript bundle
+        run: npx expo export --platform android --output-dir /tmp/xu-wallet-export
+
+      - name: Verify bundle output
+        run: test -s /tmp/xu-wallet-export/metadata.json
+
+      - name: Run indexer regression tests
+        run: node --test tests/indexer-regression.test.mjs
+
+      - name: Validate indexer worker syntax
+        run: node --check indexer/worker.mjs
+
+      - name: Build indexer worker container
+        run: docker build -t dexwallet-indexer ./indexer

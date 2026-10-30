@@ -1,14 +1,16 @@
 const CREDENTIAL_KEY = "xu_biometric_credential_id";
 
-function generateChallenge(): Uint8Array {
-  return crypto.getRandomValues(new Uint8Array(32));
+function generateChallenge(): Uint8Array<ArrayBuffer> {
+  const challenge = new Uint8Array(32);
+  crypto.getRandomValues(challenge);
+  return challenge;
 }
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(String.fromCharCode(...new Uint8Array(buffer)));
 }
 
-function base64ToUint8Array(base64: string): Uint8Array {
+function base64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) {
@@ -29,7 +31,8 @@ export const isBiometricAvailable = async (): Promise<boolean> => {
 export const registerBiometric = async (): Promise<boolean> => {
   try {
     const challenge = generateChallenge();
-    const userId = crypto.getRandomValues(new Uint8Array(16));
+    const userId = new Uint8Array(16);
+    crypto.getRandomValues(userId);
 
     const credential = (await navigator.credentials.create({
       publicKey: {
