@@ -185,6 +185,39 @@ async function fetchEtherscanStyle(options: Options): Promise<EvmHistoryRow[]> {
   return rows;
 }
 
+async function fetchEtherscanV2(options: Options): Promise<EvmHistoryRow[]> {
+  if (options.network !== 'mainnet') throw new Error('Etherscan V2 fallback is only configured for EVM mainnets.');
+  const key = (globalThis as any).process?.env?.EXPO_PUBLIC_ETHERSCAN_API_KEY;
+  if (!key) throw new Error('Etherscan V2 fallback is not configured.');
+  const chainIds = { ethereum: 1, bnb: 56, polygon: 137 } as const;
+  const base = 'https://api.etherscan.io/v2/api?chainid=' + chainIds[options.chain];
+  const common = '&address=' + encodeURIComponent(options.walletAddress) +
+    '&startblock=0&endblock=99999999&page=1&offset=' + (options.limit || DEFAULT_LIMIT) + '&sort=desc&apikey=' + encodeURIComponent(key);
+  const request = async (action: string, extra = '') => {
+    const json = await getJson(base + '&module=account&action=' + action + common + extra);
+    return parseEtherscanResult(json, action);
+  };
+  const [nativeResult, tokenResult] = await Promise.allSettled([
+    request('txlist'),
+    options.isNative ? Promise.resolve([]) : request('tokentx', '&contractaddress=' + encodeURIComponent(options.contractAddress)),
+  ]);
+  if (nativeResult.status === 'rejected' && tokenResult.status === 'rejected') {
+    throw new Error(String(nativeResult.reason?.message || tokenResult.reason?.message || 'Etherscan V2 failed.'));
+  }
+  const nativeRows = nativeResult.status === 'fulfilled' ? nativeResult.value : [];
+  const tokenRows = tokenResult.status === 'fulfilled' ? tokenResult.value : [];
+  const contractRows = options.isNative ? nativeRows : nativeRows.filter((row: any) =>
+    String(row.to || '').toLowerCase() === options.contractAddress.toLowerCase() ||
+    String(row.from || '').toLowerCase() === options.contractAddress.toLowerCase()
+  );
+  const rows = contractRows.map((row: any) => {
+    const mapped = mapEvmRow(row, options.walletAddress, options.symbol, false, options.chain, options.network);
+    return options.isNative ? mapped : { ...mapped, title: 'Contract interaction', detail: 'Called ' + options.name + ' contract', amount: '' };
+  });
+  rows.push(...tokenRows.map((row: any) => mapEvmRow(row, options.walletAddress, options.symbol, true, options.chain, options.network)));
+  return rows;
+}
+
 async function fetchPolygonBlockscout(options: Options): Promise<EvmHistoryRow[]> {
   if (options.network !== 'mainnet') throw new Error('Blockscout fallback is only configured for Polygon mainnet.');
   const base = 'https://polygon.blockscout.com/api/v2/addresses/' + encodeURIComponent(options.walletAddress);
@@ -222,6 +255,9 @@ export async function fetchEvmAssetHistory(options: Options): Promise<EvmHistory
     providers.push(() => fetchPolygonBlockscout(options));
   }
   providers.push(() => fetchEtherscanStyle(options));
+  if (options.network === 'mainnet') {
+    providers.push(() => fetchEtherscanV2(options));
+  }
 
   const errors: string[] = [];
   for (const provider of providers) {
