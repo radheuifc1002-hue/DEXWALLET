@@ -114,9 +114,9 @@ function mapEvmRow(row: any, wallet: string, symbol: string, token: boolean, cha
   const decimals = token ? (row.tokenDecimal ?? row.token?.decimals ?? 18) : 18;
   const rawValue = row.value ?? row.total?.value ?? '0';
   const amount = amountFromRaw(rawValue, decimals);
-  const failed = String(row.isError || row.txreceipt_status || row.status || '').toLowerCase() === '1' ||
+  const failed = String(row.isError || '').toLowerCase() === '1' ||
     String(row.txreceipt_status || '').toLowerCase() === '0' ||
-    ['error', 'failed', 'reverted'].includes(String(row.result || '').toLowerCase());
+    ['error', 'failed', 'reverted'].includes(String(row.result || row.status || '').toLowerCase());
   const timestamp = seconds(row.timeStamp ?? row.timestamp ?? row.block_timestamp);
   const tokenName = String(row.tokenName || row.token?.name || tokenSymbol);
   const logIndex = row.logIndex ?? row.log_index ?? row.transactionIndex ?? 'transfer';
@@ -150,7 +150,12 @@ function etherscanBase(chain: Exclude<Blockchain, 'solana'>, network: 'mainnet' 
 async function fetchEtherscanStyle(options: Options): Promise<EvmHistoryRow[]> {
   const { chain, network, walletAddress, contractAddress, isNative, name, symbol } = options;
   const base = etherscanBase(chain, network);
-  const key = (globalThis as any).process?.env?.EXPO_PUBLIC_ETHERSCAN_API_KEY;
+  const env = (globalThis as any).process?.env || {};
+  const key = chain === 'polygon'
+    ? env.EXPO_PUBLIC_POLYGONSCAN_API_KEY
+    : chain === 'bnb'
+      ? env.EXPO_PUBLIC_BSCSCAN_API_KEY
+      : env.EXPO_PUBLIC_ETHERSCAN_API_KEY;
   const common = '&address=' + encodeURIComponent(walletAddress) +
     '&startblock=0&endblock=99999999&page=1&offset=' + (options.limit || DEFAULT_LIMIT) + '&sort=desc';
   const auth = key ? '&apikey=' + encodeURIComponent(key) : '';
@@ -189,7 +194,7 @@ async function fetchPolygonBlockscout(options: Options): Promise<EvmHistoryRow[]
       ? Promise.resolve({ items: [] })
       : getJson(base + '/token-transfers?type=ERC-20&token=' + encodeURIComponent(options.contractAddress)),
   ]);
-  if (txResult.status === 'rejected' && tokenResult.status === 'rejected') {
+  if (txResult.status === 'rejected' && (options.isNative || tokenResult.status === 'rejected')) {
     throw new Error('Polygon indexer unavailable: ' + String(txResult.reason?.message || tokenResult.reason?.message || 'request failed'));
   }
   const txRows = txResult.status === 'fulfilled' && Array.isArray(txResult.value?.items) ? txResult.value.items : [];
