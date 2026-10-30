@@ -105,7 +105,7 @@ export default function ImportToken() {
       <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
         <Text style={s.title}>Add a custom asset</Text>
         <Text style={s.subtitle}>{isSolana ? 'Import an SPL token using its mint address.' : `Import an ERC-20 token on ${selectedBlockchain === 'bnb' ? 'BNB Chain' : selectedBlockchain === 'polygon' ? 'Polygon' : 'Ethereum'}.`}</Text>
-        <View style={s.network}><Ionicons name={isSolana ? 'planet-outline' : 'logo-ethereum'} size={18} color="#6C4CF1" /><Text style={s.networkText}>{selectedBlockchain.toUpperCase()} · {network.toUpperCase()}</Text></View>
+        <View style={s.network}><Ionicons name={'globe-outline'} size={18} color="#6C4CF1" /><Text style={s.networkText}>{selectedBlockchain.toUpperCase()} · {network.toUpperCase()}</Text></View>
         <Text style={s.label}>{isSolana ? 'Token mint address' : 'ERC-20 contract address'}</Text>
         <View style={s.inputCard}>
           <TextInput value={mintOrContract} onChangeText={(v) => { setMintOrContract(v); setToken(null); setError(''); }} placeholder={isSolana ? 'Enter SPL mint address' : '0x...'} placeholderTextColor="#A09AAC" autoCapitalize="none" autoCorrect={false} style={s.input} />
