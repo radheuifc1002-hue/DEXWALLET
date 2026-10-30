@@ -188,15 +188,48 @@ export default async function handler(req: Request, res: Response) {
 
     const addressKey = wallet.toLowerCase();
     const syncRows = await sql`
-      SELECT sync_status, last_indexed_at
+      SELECT sync_status, last_indexed_at, last_indexed_block, cursor
       FROM public.address_sync_state
       WHERE chain = ${chain} AND network = ${network} AND address_key = ${addressKey}
       LIMIT 1
     `;
-    const sync = (syncRows as unknown as Array<{ sync_status: string; last_indexed_at: string | null }>)[0];
+    const sync = (syncRows as unknown as Array<{
+      sync_status: string;
+      last_indexed_at: string | null;
+      last_indexed_block: number | null;
+      cursor: string | null;
+    }>)[0];
     if (!sync || !sync.last_indexed_at || !['idle', 'degraded', 'syncing'].includes(String(sync.sync_status))) {
       res.status(200).json({ indexed: false, rows: [], nextCursor: null, requestId });
       return;
+    }
+
+    // Refresh an indexed address when it is requested after the freshness
+    // window. The active-job check prevents every app refresh from creating
+    // another provider job. Cached history is still served while it runs.
+    const lastIndexedAt = new Date(sync.last_indexed_at).getTime();
+    const staleAfterMs = 5 * 60 * 1000;
+    if (
+      Number.isFinite(lastIndexedAt) &&
+      Date.now() - lastIndexedAt >= staleAfterMs &&
+      ['idle', 'degraded'].includes(String(sync.sync_status))
+    ) {
+      const activeJobs = await sql`
+        SELECT id FROM public.indexer_jobs
+        WHERE chain = ${chain} AND network = ${network} AND address_key = ${addressKey}
+          AND status IN ('queued', 'running', 'retry')
+        LIMIT 1
+      `;
+      if (activeJobs.length === 0) {
+        const bucketId = Math.floor(Date.now() / staleAfterMs);
+        const jobKey = 'incremental_sync:' + chain + ':' + network + ':' + addressKey + ':' + bucketId;
+        await sql`
+          INSERT INTO public.indexer_jobs
+            (job_key, job_type, chain, network, address_key, cursor, status, priority, max_attempts)
+          VALUES (${jobKey}, 'incremental_sync', ${chain}, ${network}, ${addressKey}, NULL, 'queued', 50, 8)
+          ON CONFLICT (job_key) DO NOTHING
+        `;
+      }
     }
 
     const nativeRows = isNative
