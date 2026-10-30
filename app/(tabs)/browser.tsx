@@ -459,18 +459,6 @@ export default function Browser() {
       : trimmed.includes('.') && !trimmed.includes(' ')
         ? `https://${trimmed}`
         : `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`;
-    let recentItem: DAppShortcut;
-    try {
-      const host = new URL(dest).hostname.replace(/^www\./, '');
-      const known = DAPP_SHORTCUTS.find((item) => item.domain === host || host.endsWith(`.${item.domain}`));
-      recentItem = known || { name: host || 'Web search', url: dest, domain: host, category: 'Recently visited' };
-    } catch {
-      recentItem = { name: trimmed.slice(0, 24), url: dest, domain: '', category: 'Recently visited' };
-    }
-    setRecentDApps((previous) => {
-      const old = previous.find((item) => item.url === recentItem.url);
-      return [{ ...recentItem, logoUrl: old?.logoUrl }, ...previous.filter((item) => item.url !== recentItem.url)].slice(0, 12);
-    });
     setUrl(dest);
     setInputUrl(dest);
   };
@@ -643,6 +631,33 @@ export default function Browser() {
             setCanGoForward(state.canGoForward);
             setInputUrl(state.url);
             setLoading(state.loading);
+
+            // Record only pages that have finished loading. Deduplicate by
+            // website origin so navigating between pages on one DApp does not
+            // fill the Recently Visited list with duplicate entries.
+            if (!state.loading && /^https?:\/\//i.test(state.url)) {
+              try {
+                const parsed = new URL(state.url);
+                const host = parsed.hostname.replace(/^www\./, '');
+                const origin = parsed.origin;
+                const known = DAPP_SHORTCUTS.find((item) => item.domain === host || host.endsWith(`.${item.domain}`));
+                setRecentDApps((previous) => {
+                  const existing = previous.find((item) => {
+                    try { return new URL(item.url).origin === origin; } catch { return false; }
+                  });
+                  const item: DAppShortcut = {
+                    name: known?.name || existing?.name || host || 'Website',
+                    url: state.url,
+                    domain: host,
+                    category: known?.category || existing?.category || 'Recently visited',
+                    logoUrl: existing?.logoUrl,
+                  };
+                  return [item, ...previous.filter((entry) => {
+                    try { return new URL(entry.url).origin !== origin; } catch { return entry.url !== state.url; }
+                  })].slice(0, 12);
+                });
+              } catch { /* Ignore non-standard navigation URLs. */ }
+            }
           }}
           onLoadStart={() => setLoading(true)}
           onLoadEnd={() => {
