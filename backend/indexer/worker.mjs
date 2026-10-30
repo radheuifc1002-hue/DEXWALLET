@@ -11,8 +11,18 @@ const hosts = {
   'ethereum:mainnet': 'https://eth.blockscout.com/api/v2',
   'ethereum:testnet': 'https://eth-sepolia.blockscout.com/api/v2',
   'polygon:mainnet': 'https://polygon.blockscout.com/api/v2',
+  'bnb:mainnet': 'https://blockscout.routescan.io/56/api/v2',
+  'bnb:testnet': 'https://blockscout.routescan.io/97/api/v2',
 };
-const nativeSymbols = { ethereum: 'ETH', polygon: 'POL' };
+const nativeSymbols = { ethereum: 'ETH', polygon: 'POL', bnb: 'BNB' };
+const SOL_NATIVE_MINT = 'native:SOL';
+const WRAPPED_SOL_MINT = 'So11111111111111111111111111111111111111112';
+const SOL_PROGRAMS = new Set([
+  '11111111111111111111111111111111',
+  'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+  'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb',
+  'ComputeBudget111111111111111111111111111111',
+]);
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const iso = (value) => {
@@ -38,23 +48,23 @@ const txType = (row) => {
   return 'transfer';
 };
 
-async function fetchJson(url) {
+async function fetchJson(url, extraHeaders = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), pageTimeoutMs);
   try {
     const response = await fetch(url, {
-      headers: { Accept: 'application/json', 'User-Agent': 'DEXWALLET-Indexer/1.0' },
+      headers: { Accept: 'application/json', 'User-Agent': 'DEXWALLET-Indexer/1.0', ...extraHeaders },
       signal: controller.signal,
     });
     if (!response.ok) {
       const retryHeader = response.headers.get('retry-after');
       const retrySeconds = retryHeader ? Number(retryHeader) : 0;
-      const error = new Error('Blockscout HTTP ' + response.status);
+      const error = new Error('History provider HTTP ' + response.status);
       error.retryAfterMs = Number.isFinite(retrySeconds) && retrySeconds > 0 ? retrySeconds * 1000 : undefined;
       throw error;
     }
     const json = await response.json();
-    if (!json || !Array.isArray(json.items)) throw new Error('Blockscout response shape invalid');
+    if (!json || !Array.isArray(json.items)) throw new Error('EVM history provider response shape invalid');
     return json;
   } finally {
     clearTimeout(timer);
@@ -99,8 +109,8 @@ async function upsertTransaction(chain, network, row) {
        ${timestamp}, ${from || null}, ${to || null}, ${value}, 18,
        ${nativeSymbols[chain] || 'ETH'}, ${status}, ${type}, ${gasUsed},
        ${gasPrice}, ${fee}, ${nonce},
-       ${chain === 'ethereum' ? (network === 'mainnet' ? 'https://etherscan.io/tx/' : 'https://sepolia.etherscan.io/tx/') : 'https://polygonscan.com/tx/'} || ${hash},
-       'blockscout', ${confirmations}, FALSE, NOW())
+       ${chain === 'ethereum' ? (network === 'mainnet' ? 'https://etherscan.io/tx/' : 'https://sepolia.etherscan.io/tx/') : chain === 'bnb' ? (network === 'mainnet' ? 'https://bscscan.com/tx/' : 'https://testnet.bscscan.com/tx/') : 'https://polygonscan.com/tx/'} || ${hash},
+       ${chain === 'bnb' ? 'routescan' : 'blockscout'}, ${confirmations}, FALSE, NOW())
     ON CONFLICT (chain, network, tx_hash) DO UPDATE SET
       block_number = COALESCE(EXCLUDED.block_number, indexed_transactions.block_number),
       block_hash = COALESCE(EXCLUDED.block_hash, indexed_transactions.block_hash),
@@ -142,7 +152,7 @@ async function upsertTokenTransfer(chain, network, row) {
       (chain, network, tx_hash, block_number, block_timestamp, from_address, to_address,
        value_raw, value_decimals, asset_symbol, tx_status, tx_type, source_provider)
     VALUES (${chain}, ${network}, ${hash}, ${block}, ${timestamp}, ${from}, ${to},
-       0, 18, ${nativeSymbols[chain] || 'ETH'}, 'unknown', 'token_transfer', 'blockscout')
+       0, 18, ${nativeSymbols[chain] || 'ETH'}, 'unknown', 'token_transfer', ${chain === 'bnb' ? 'routescan' : 'blockscout'})
     ON CONFLICT (chain, network, tx_hash) DO UPDATE SET
       block_number = COALESCE(indexed_transactions.block_number, EXCLUDED.block_number),
       block_timestamp = COALESCE(indexed_transactions.block_timestamp, EXCLUDED.block_timestamp),
@@ -157,7 +167,7 @@ async function upsertTokenTransfer(chain, network, row) {
        block_timestamp, source_provider)
     VALUES (${chain}, ${network}, ${hash}, ${eventIndex}, ${tokenAddress},
        ${token.symbol || null}, ${token.name || null}, ${decimals}, ${from}, ${to},
-       ${amount}, ${block}, ${timestamp}, 'blockscout')
+       ${amount}, ${block}, ${timestamp}, ${chain === 'bnb' ? 'routescan' : 'blockscout'})
     ON CONFLICT (chain, network, tx_hash, event_index) DO UPDATE SET
       token_symbol = COALESCE(EXCLUDED.token_symbol, indexed_token_transfers.token_symbol),
       token_name = COALESCE(EXCLUDED.token_name, indexed_token_transfers.token_name),
@@ -191,7 +201,8 @@ async function processJob(job) {
   const network = String(job.network);
   const address = String(job.address_key);
   const base = hosts[chain + ':' + network];
-  if (!base) throw new Error('No approved indexed-history adapter for this network');
+  if (chain !== 'solana' && !base) throw new Error('No approved indexed-history adapter for this network');
+  if (chain === 'bnb' && !process.env.ROUTESCAN_API_KEY) throw new Error('ROUTESCAN_API_KEY is required for BNB indexing');
 
   const states = await sql`
     SELECT last_indexed_block, cursor FROM public.address_sync_state
@@ -207,6 +218,8 @@ async function processJob(job) {
     WHERE chain = ${chain} AND network = ${network} AND address_key = ${address}
   `;
 
+  if (chain === 'solana') return processSolanaJob(job, address, syncState);
+
   let cursor;
   try { cursor = job.cursor ? JSON.parse(job.cursor) : null; } catch { cursor = null; }
   const stopBlock = job.job_type === 'incremental_sync'
@@ -218,12 +231,13 @@ async function processJob(job) {
     tokenTransfers: { done: false, params: null },
   };
 
+  const providerHeaders = chain === 'bnb' ? { 'x-api-key': process.env.ROUTESCAN_API_KEY } : {};
   const txPage = cursor.transactions.done
     ? { items: [], next_page_params: null }
-    : await fetchJson(pageUrl(base, address, 'transactions', cursor.transactions.params));
+    : await fetchJson(pageUrl(base, address, 'transactions', cursor.transactions.params), providerHeaders);
   const tokenPage = cursor.tokenTransfers.done
     ? { items: [], next_page_params: null }
-    : await fetchJson(pageUrl(base, address, 'token-transfers', cursor.tokenTransfers.params));
+    : await fetchJson(pageUrl(base, address, 'token-transfers', cursor.tokenTransfers.params), providerHeaders);
 
   let highestBlock = asNumber(syncState.last_indexed_block, 0);
   let txReachedStop = false;
@@ -278,7 +292,224 @@ async function processJob(job) {
 
   await sql`
     INSERT INTO public.api_metric_events (service, operation, chain, network, outcome, provider_key)
-    VALUES ('indexer', ${job.job_type}, ${chain}, ${network}, 'success', 'blockscout')
+    VALUES ('indexer', ${job.job_type}, ${chain}, ${network}, 'success', ${chain === 'bnb' ? 'routescan' : 'blockscout'})
+  `;
+  await sql`
+    UPDATE public.indexer_jobs
+    SET status = 'succeeded', locked_at = NULL, locked_by = NULL, updated_at = NOW()
+    WHERE id = ${job.id} AND locked_by = ${workerId}
+  `;
+}
+
+
+async function heliusRpc(network, method, address, options) {
+  const apiKey = process.env.HELIUS_API_KEY;
+  if (!apiKey) throw new Error('HELIUS_API_KEY is required for Solana indexing');
+  const cluster = network === 'mainnet' ? 'mainnet' : 'devnet';
+  const url = 'https://' + cluster + '.helius-rpc.com/?api-key=' + encodeURIComponent(apiKey);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), pageTimeoutMs);
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 'dexwallet-indexer', method, params: [address, options] }),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const retryHeader = response.headers.get('retry-after');
+      const retrySeconds = retryHeader ? Number(retryHeader) : 0;
+      const error = new Error('Helius HTTP ' + response.status);
+      error.retryAfterMs = Number.isFinite(retrySeconds) && retrySeconds > 0 ? retrySeconds * 1000 : undefined;
+      throw error;
+    }
+    const payload = await response.json();
+    if (payload?.error) throw new Error('Helius RPC error: ' + String(payload.error.message || payload.error.code || 'unknown'));
+    const result = payload?.result;
+    if (!result || !Array.isArray(result.data)) throw new Error('Helius response shape invalid for ' + method);
+    return result;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function upsertSolanaTransaction(network, wallet, row) {
+  const signature = String(row.signature || row.transaction?.signatures?.[0] || '');
+  if (!/^[1-9A-HJ-NP-Za-km-z]{80,100}$/.test(signature)) return 0;
+  const slot = asNumber(row.slot, 0);
+  const blockTime = asNumber(row.blockTime ?? row.block_time, 0);
+  const timestamp = blockTime > 0 ? new Date(blockTime * 1000).toISOString() : null;
+  const meta = row.meta || row.transaction?.meta || {};
+  const message = row.transaction?.message || row.message || {};
+  const accountKeys = (message.accountKeys || []).map((key) => typeof key === 'string' ? key : String(key?.pubkey || ''));
+  const instructions = Array.isArray(message.instructions) ? message.instructions : [];
+  const programIds = instructions.map((instruction) =>
+    instruction.programId || accountKeys[Number(instruction.programIdIndex)] || ''
+  ).filter(Boolean);
+  const contractProgram = programIds.find((programId) => !SOL_PROGRAMS.has(programId)) || null;
+  const status = meta.err ? 'failed' : 'success';
+  const txType = contractProgram ? 'contract_interaction' : 'other';
+  await sql`
+    INSERT INTO public.indexed_transactions
+      (chain, network, tx_hash, block_number, block_timestamp, from_address, to_address,
+       value_raw, value_decimals, asset_symbol, tx_status, tx_type, fee_raw,
+       explorer_url, source_provider, confirmations, is_final, last_seen_at)
+    VALUES ('solana', ${network}, ${signature}, ${slot || null}, ${timestamp},
+      ${wallet}, ${contractProgram}, 0, 9, 'SOL', ${status}, ${txType},
+      ${meta.fee == null ? null : String(meta.fee)},
+      ${'https://explorer.solana.com/tx/' + signature + (network === 'devnet' ? '?cluster=devnet' : '')},
+      'helius', ${row.confirmationStatus === 'finalized' ? 32 : 0},
+      ${row.confirmationStatus === 'finalized'}, NOW())
+    ON CONFLICT (chain, network, tx_hash) DO UPDATE SET
+      block_number = COALESCE(EXCLUDED.block_number, indexed_transactions.block_number),
+      block_timestamp = COALESCE(EXCLUDED.block_timestamp, indexed_transactions.block_timestamp),
+      from_address = COALESCE(indexed_transactions.from_address, EXCLUDED.from_address),
+      to_address = COALESCE(EXCLUDED.to_address, indexed_transactions.to_address),
+      tx_status = EXCLUDED.tx_status,
+      tx_type = CASE WHEN EXCLUDED.tx_type = 'contract_interaction' THEN EXCLUDED.tx_type ELSE indexed_transactions.tx_type END,
+      fee_raw = COALESCE(EXCLUDED.fee_raw, indexed_transactions.fee_raw),
+      confirmations = GREATEST(indexed_transactions.confirmations, EXCLUDED.confirmations),
+      is_final = indexed_transactions.is_final OR EXCLUDED.is_final,
+      last_seen_at = NOW()
+  `;
+  return slot;
+}
+
+async function upsertSolanaTransfer(network, wallet, row) {
+  const signature = String(row.signature || '');
+  const from = String(row.fromUserAccount || '');
+  const to = String(row.toUserAccount || '');
+  if (!/^[1-9A-HJ-NP-Za-km-z]{80,100}$/.test(signature) || !from || !to) return 0;
+  const mint = String(row.mint || '');
+  const native = !mint || mint === WRAPPED_SOL_MINT;
+  const tokenAddress = native ? SOL_NATIVE_MINT : mint;
+  const slot = asNumber(row.slot, 0);
+  const blockTime = asNumber(row.blockTime, 0);
+  const timestamp = blockTime > 0 ? new Date(blockTime * 1000).toISOString() : null;
+  const instructionIndex = asNumber(row.instructionIdx, 0);
+  const innerInstructionIndex = asNumber(row.innerInstructionIdx, 0);
+  const eventIndex = instructionIndex * 1000 + innerInstructionIndex;
+  const amount = String(row.amount ?? row.amountRaw ?? '0');
+  const decimals = Math.max(0, Math.min(36, asNumber(row.decimals, native ? 9 : 0)));
+  const eventType = String(row.type || 'transfer');
+  if (!['transfer', 'transferFee'].includes(eventType)) return 0;
+
+  await sql`
+    INSERT INTO public.indexed_transactions
+      (chain, network, tx_hash, block_number, block_timestamp, from_address, to_address,
+       value_raw, value_decimals, asset_symbol, tx_status, tx_type, source_provider,
+       explorer_url, last_seen_at)
+    VALUES ('solana', ${network}, ${signature}, ${slot || null}, ${timestamp},
+      ${from}, ${to}, 0, 9, 'SOL', 'success', 'token_transfer', 'helius',
+      ${'https://explorer.solana.com/tx/' + signature + (network === 'devnet' ? '?cluster=devnet' : '')}, NOW())
+    ON CONFLICT (chain, network, tx_hash) DO UPDATE SET
+      block_number = COALESCE(indexed_transactions.block_number, EXCLUDED.block_number),
+      block_timestamp = COALESCE(indexed_transactions.block_timestamp, EXCLUDED.block_timestamp),
+      last_seen_at = NOW()
+  `;
+  await sql`
+    INSERT INTO public.indexed_token_transfers
+      (chain, network, tx_hash, event_index, token_address, token_symbol, token_name,
+       token_decimals, from_address, to_address, amount_raw, block_number,
+       block_timestamp, source_provider)
+    VALUES ('solana', ${network}, ${signature}, ${eventIndex}, ${tokenAddress},
+      ${native ? 'SOL' : (row.symbol || row.tokenSymbol || 'SPL')},
+      ${native ? 'Solana' : (row.name || row.tokenName || null)}, ${decimals},
+      ${from}, ${to}, ${amount}, ${slot || null}, ${timestamp}, 'helius')
+    ON CONFLICT (chain, network, tx_hash, event_index) DO UPDATE SET
+      token_address = EXCLUDED.token_address,
+      token_symbol = COALESCE(EXCLUDED.token_symbol, indexed_token_transfers.token_symbol),
+      token_name = COALESCE(EXCLUDED.token_name, indexed_token_transfers.token_name),
+      amount_raw = EXCLUDED.amount_raw,
+      block_timestamp = COALESCE(EXCLUDED.block_timestamp, indexed_token_transfers.block_timestamp),
+      indexed_at = NOW()
+  `;
+  return slot;
+}
+
+async function processSolanaJob(job, address, syncState) {
+  const network = String(job.network);
+  const stopSlot = job.job_type === 'incremental_sync'
+    ? asNumber(syncState.last_indexed_block, 0) || null
+    : null;
+  let cursor;
+  try { cursor = job.cursor ? JSON.parse(job.cursor) : null; } catch { cursor = null; }
+  cursor = cursor || {
+    stopSlot,
+    transactions: { done: false, token: null },
+    transfers: { done: false, token: null },
+  };
+
+  const [transactionPage, transferPage] = await Promise.all([
+    cursor.transactions.done
+      ? Promise.resolve({ data: [], paginationToken: null })
+      : heliusRpc(network, 'getTransactionsForAddress', address, {
+          transactionDetails: 'full',
+          sortOrder: 'desc',
+          limit: 100,
+          filters: { tokenAccounts: 'balanceChanged' },
+          ...(cursor.transactions.token ? { paginationToken: cursor.transactions.token } : {}),
+        }),
+    cursor.transfers.done
+      ? Promise.resolve({ data: [], paginationToken: null })
+      : heliusRpc(network, 'getTransfersByAddress', address, {
+          limit: 100,
+          sortOrder: 'desc',
+          solMode: 'merged',
+          ...(cursor.transfers.token ? { paginationToken: cursor.transfers.token } : {}),
+        }),
+  ]);
+
+  let highestSlot = asNumber(syncState.last_indexed_block, 0);
+  let transactionsReachedStop = false;
+  let transfersReachedStop = false;
+
+  for (const row of transactionPage.data) {
+    const slot = await upsertSolanaTransaction(network, address, row);
+    highestSlot = Math.max(highestSlot, slot);
+    if (stopSlot && slot > 0 && slot < stopSlot) transactionsReachedStop = true;
+  }
+  for (const row of transferPage.data) {
+    const slot = await upsertSolanaTransfer(network, address, row);
+    highestSlot = Math.max(highestSlot, slot);
+    if (stopSlot && slot > 0 && slot < stopSlot) transfersReachedStop = true;
+  }
+
+  cursor.transactions = {
+    done: transactionsReachedStop || !transactionPage.paginationToken,
+    token: transactionsReachedStop ? null : (transactionPage.paginationToken || null),
+  };
+  cursor.transfers = {
+    done: transfersReachedStop || !transferPage.paginationToken,
+    token: transfersReachedStop ? null : (transferPage.paginationToken || null),
+  };
+  const done = cursor.transactions.done && cursor.transfers.done;
+  const nextCursor = JSON.stringify(cursor);
+  await sql`
+    UPDATE public.address_sync_state
+    SET cursor = ${done ? null : nextCursor},
+        last_indexed_block = GREATEST(COALESCE(last_indexed_block, 0), ${highestSlot}),
+        confirmed_through_block = GREATEST(COALESCE(confirmed_through_block, 0), ${highestSlot}),
+        last_indexed_at = NOW(), sync_status = ${done ? 'idle' : 'syncing'},
+        last_error_category = NULL, lease_owner = NULL, lease_expires_at = NULL,
+        updated_at = NOW()
+    WHERE chain = 'solana' AND network = ${network} AND address_key = ${address}
+  `;
+
+  if (!done) {
+    const digest = createHash('sha256').update(nextCursor).digest('hex').slice(0, 20);
+    await sql`
+      INSERT INTO public.indexer_jobs
+        (job_key, job_type, chain, network, address_key, cursor, status, priority, max_attempts)
+      VALUES (${String(job.job_key) + ':' + digest}, ${job.job_type}, 'solana', ${network},
+        ${address}, ${nextCursor}, 'queued', 50, 8)
+      ON CONFLICT (job_key) DO NOTHING
+    `;
+  }
+
+  await sql`
+    INSERT INTO public.api_metric_events (service, operation, chain, network, outcome, provider_key)
+    VALUES ('indexer', ${job.job_type}, 'solana', ${network}, 'success', 'helius')
   `;
   await sql`
     UPDATE public.indexer_jobs
@@ -320,7 +551,7 @@ async function failJob(job, error) {
   await sql`
     INSERT INTO public.api_metric_events (service, operation, chain, network, outcome, provider_key, error_category)
     VALUES ('indexer', ${job.job_type}, ${job.chain}, ${job.network},
-      ${dead ? 'error' : 'timeout'}, 'blockscout', 'provider_or_worker_failure')
+      ${dead ? 'error' : 'timeout'}, ${job.chain === 'solana' ? 'helius' : job.chain === 'bnb' ? 'routescan' : 'blockscout'}, 'provider_or_worker_failure')
   `;
 }
 
