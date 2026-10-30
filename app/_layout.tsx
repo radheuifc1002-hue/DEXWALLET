@@ -67,7 +67,7 @@ function NavigationGuard() {
       router.replace('/onboarding');
     } else if (isWalletCreated && isLocked && !inPinLock) {
       router.replace('/pin-lock');
-    } else if (isWalletCreated && !isLocked && (inPinLock || (!inTabs && !inAuthFlow && s0 !== 'send' && s0 !== 'import-token' && s0 !== 'receive' && s0 !== 'export-seed' && s0 !== 'change-pin'))) {
+    } else if (isWalletCreated && !isLocked && (inPinLock || (!inTabs && !inAuthFlow && s0 !== 'send' && s0 !== 'import-token' && s0 !== 'receive' && s0 !== 'transaction-history' && s0 !== 'export-seed' && s0 !== 'change-pin'))) {
       router.replace('/(tabs)/home');
     }
   }, [isWalletCreated, isLocked, isLoading, segments, router]);
@@ -96,6 +96,7 @@ function AppStack() {
         <Stack.Screen name="(tabs)" options={{ animation: 'none' }} />
         <Stack.Screen name="send" options={{ animation: 'slide_from_bottom' }} />
         <Stack.Screen name="import-token" options={{ animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="transaction-history" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="receive" options={{ animation: 'slide_from_bottom' }} />
         <Stack.Screen name="export-seed" />
         <Stack.Screen name="change-pin" />
