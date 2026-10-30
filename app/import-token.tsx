@@ -5,6 +5,7 @@ import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import { ethers } from 'ethers';
 import bs58 from 'bs58';
+import { Buffer } from 'buffer';
 import { useWallet, Blockchain, Token } from '../context/WalletContext';
 
 const EVM: Record<string, { chainId: number; rpc: string }> = {
@@ -54,7 +55,7 @@ export default function ImportToken() {
         const rpc = SOL_RPC[network];
         const account = await solRpc(rpc, 'getAccountInfo', [value, { encoding: 'base64', commitment: 'confirmed' }]);
         if (!account?.value || ![TOKEN_PROGRAM, TOKEN_2022_PROGRAM].includes(account.value.owner)) throw new Error('This address is not a supported SPL token mint.');
-        const mintData = Uint8Array.from(atob(account.value.data[0]), (ch) => ch.charCodeAt(0));
+        const mintData = Buffer.from(account.value.data[0], 'base64');
         if (mintData.length < 82) throw new Error('Invalid SPL mint account data.');
         const decimals = mintData[44];
         const accounts = await solRpc(rpc, 'getTokenAccountsByOwner', [walletAddress, { mint: value }, { encoding: 'jsonParsed', commitment: 'confirmed' }]);
