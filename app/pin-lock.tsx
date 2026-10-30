@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -21,20 +21,29 @@ export default function PinLock() {
   const [error, setError] = useState('');
   const [attempts, setAttempts] = useState(0);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const biometricInProgress = useRef(false);
+  const mounted = useRef(true);
 
   const PIN_LENGTH = 6;
 
   useEffect(() => {
+    mounted.current = true;
     const check = async () => {
-      const hw = await LocalAuthentication.hasHardwareAsync();
-      const enrolled = await LocalAuthentication.isEnrolledAsync();
-      setBiometricAvailable(hw && enrolled && biometricEnabled);
-      if (hw && enrolled && biometricEnabled) {
-        tryBiometric();
+      try {
+        const [hw, enrolled] = await Promise.all([
+          LocalAuthentication.hasHardwareAsync(),
+          LocalAuthentication.isEnrolledAsync(),
+        ]);
+        if (!mounted.current) return;
+        setBiometricAvailable(hw && enrolled && biometricEnabled);
+        if (hw && enrolled && biometricEnabled) await tryBiometric();
+      } catch {
+        if (mounted.current) setBiometricAvailable(false);
       }
     };
     check();
-  }, []);
+    return () => { mounted.current = false; };
+  }, [biometricEnabled]);
 
   useEffect(() => {
     if (entered.length === PIN_LENGTH) {
@@ -43,12 +52,20 @@ export default function PinLock() {
   }, [entered]);
 
   const tryBiometric = async () => {
-    const result = await LocalAuthentication.authenticateAsync({
-      promptMessage: 'Unlock XU Wallet',
-      fallbackLabel: 'Use PIN',
-    });
-    if (result.success) {
-      unlock();
+    if (biometricInProgress.current) return;
+    biometricInProgress.current = true;
+    try {
+      const result = await LocalAuthentication.authenticateAsync({
+        promptMessage: 'Unlock XU Wallet',
+        cancelLabel: 'Use PIN',
+        fallbackLabel: 'Use PIN',
+        disableDeviceFallback: false,
+      });
+      if (result.success && mounted.current) unlock();
+    } catch {
+      // A cancelled or unavailable biometric prompt must leave PIN unlock usable.
+    } finally {
+      biometricInProgress.current = false;
     }
   };
 
