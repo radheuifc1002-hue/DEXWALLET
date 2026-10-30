@@ -43,6 +43,13 @@ const NATIVE_SYMBOLS: Record<Blockchain, string> = {
   solana: 'SOL',
 };
 
+const ADDRESS_EXPLORERS: Record<Blockchain, { mainnet: string; testnet: string }> = {
+  ethereum: { mainnet: 'https://etherscan.io/address/', testnet: 'https://sepolia.etherscan.io/address/' },
+  bnb: { mainnet: 'https://bscscan.com/address/', testnet: 'https://testnet.bscscan.com/address/' },
+  polygon: { mainnet: 'https://polygonscan.com/address/', testnet: 'https://amoy.polygonscan.com/address/' },
+  solana: { mainnet: 'https://solscan.io/account/', testnet: 'https://solscan.io/account/' },
+};
+
 const EXPLORERS: Record<Blockchain, { mainnet: string; testnet: string }> = {
   ethereum: { mainnet: 'https://etherscan.io/tx/', testnet: 'https://sepolia.etherscan.io/tx/' },
   bnb: { mainnet: 'https://bscscan.com/tx/', testnet: 'https://testnet.bscscan.com/tx/' },
@@ -354,6 +361,11 @@ export default function TransactionHistory() {
     if (!loadingMore && hasMore) void loadHistory(false);
   };
 
+  const openAddressExplorer = () => {
+    const url = ADDRESS_EXPLORERS[selectedBlockchain][network] + walletAddress + (selectedBlockchain === 'solana' && network === 'testnet' ? '?cluster=devnet' : '');
+    void Linking.openURL(url);
+  };
+
   return (
     <SafeAreaView edges={['top']} style={styles.container}>
       <View style={styles.header}>
@@ -402,7 +414,10 @@ export default function TransactionHistory() {
             <View style={styles.stateIconError}><Ionicons name="cloud-offline-outline" size={25} color="#B42318" /></View>
             <Text style={styles.stateTitle}>History unavailable</Text>
             <Text style={styles.stateMessage}>{error}</Text>
-            <TouchableOpacity style={styles.retryButton} onPress={handleRefresh}><Text style={styles.retryText}>Try again</Text></TouchableOpacity>
+            <View style={styles.errorActions}>
+              <TouchableOpacity style={styles.retryButton} onPress={handleRefresh}><Text style={styles.retryText}>Try again</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.explorerButton} onPress={openAddressExplorer}><Ionicons name="open-outline" size={14} color="#6C4CF1" /><Text style={styles.explorerButtonText}>Open block explorer</Text></TouchableOpacity>
+            </View>
           </View>
         ) : items.length === 0 ? (
           <View style={styles.stateCard}>
@@ -480,6 +495,9 @@ const styles = StyleSheet.create({
   stateMessage: { color: '#8A849B', fontSize: 11, textAlign: 'center', lineHeight: 17 },
   retryButton: { paddingHorizontal: 20, paddingVertical: 10, backgroundColor: '#6C4CF1', borderRadius: 12, marginTop: 16 },
   retryText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
+  errorActions: { alignItems: 'center', gap: 10, marginTop: 16 },
+  explorerButton: { minHeight: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 13, borderRadius: 11, borderWidth: 1, borderColor: '#DDD6F7', backgroundColor: '#F8F6FF' },
+  explorerButtonText: { color: '#6C4CF1', fontSize: 11, fontWeight: '800' },
   loadMoreButton: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 14, backgroundColor: '#6C4CF1', marginTop: 12 },
   loadMoreText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
   footerNote: { color: '#A09AAC', fontSize: 10, textAlign: 'center', marginTop: 14 },
