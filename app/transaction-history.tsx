@@ -79,6 +79,26 @@ async function fetchExplorerRows(url: string): Promise<any[]> {
   }
 }
 
+async function fetchBinplorer(url: string): Promise<any> {
+  const response = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (!response.ok) throw new Error('BNB history service returned HTTP ' + response.status + '.');
+  const json = await response.json();
+  if (json?.error) throw new Error(json.error.message || 'BNB transaction history is unavailable.');
+  return json;
+}
+
+async function fetchBlockscoutList(url: string): Promise<any> {
+  const response = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (!response.ok) throw new Error('Polygon history service returned HTTP ' + response.status + '.');
+  return response.json();
+}
+
+function cursorQuery(cursor: any): string {
+  if (!cursor || typeof cursor !== 'object') return '';
+  const entries = Object.entries(cursor).filter((entry) => entry[1] !== null && entry[1] !== undefined);
+  return entries.length ? '?' + entries.map(([key, value]) => encodeURIComponent(key) + '=' + encodeURIComponent(String(value))).join('&') : '';
+}
+
 async function fetchSolanaSignatures(address: string, network: 'mainnet' | 'testnet', before?: string) {
   const endpoint = getSolanaRpcEndpoint(network);
   const config: any = { limit: PAGE_SIZE, commitment: 'confirmed' };
@@ -105,6 +125,8 @@ export default function TransactionHistory() {
   const [hasMore, setHasMore] = useState(false);
   const [page, setPage] = useState(1);
   const [beforeSignature, setBeforeSignature] = useState('');
+  const [polygonTxCursor, setPolygonTxCursor] = useState<any>(null);
+  const [polygonTransferCursor, setPolygonTransferCursor] = useState<any>(null);
 
   const loadHistory = useCallback(async (reset: boolean) => {
     if (!walletAddress) {
@@ -118,6 +140,8 @@ export default function TransactionHistory() {
       setError('');
       setPage(1);
       setBeforeSignature('');
+      setPolygonTxCursor(null);
+      setPolygonTransferCursor(null);
     } else {
       setLoadingMore(true);
     }
@@ -142,6 +166,115 @@ export default function TransactionHistory() {
         }));
         more = signatures.length === PAGE_SIZE;
         if (signatures.length) setBeforeSignature(String(signatures[signatures.length - 1].signature));
+      } else if (selectedBlockchain === 'bnb') {
+        if (network !== 'mainnet') {
+          throw new Error('A public keyless transaction indexer is not currently available for BNB testnet. You can still open the BNB testnet explorer from a transaction hash.');
+        }
+        const base = 'https://api.binplorer.com/';
+        const addressPath = encodeURIComponent(walletAddress);
+        const results = await Promise.all([
+          fetchBinplorer(base + 'getAddressTransactions/' + addressPath + '?apiKey=freekey&limit=100'),
+          fetchBinplorer(base + 'getAddressHistory/' + addressPath + '?apiKey=freekey&limit=100'),
+        ]);
+        const nativeRows = Array.isArray(results[0]) ? results[0] : [];
+        const tokenRows = Array.isArray(results[1]?.operations) ? results[1].operations : [];
+        const explorerBase = EXPLORERS.bnb.mainnet;
+        const nativeItems: HistoryItem[] = nativeRows.map((row: any) => {
+          const from = String(row.from || '');
+          const to = String(row.to || '');
+          const incoming = from.toLowerCase() !== walletAddress.toLowerCase();
+          const hash = String(row.hash || '');
+          const amount = row.value === undefined ? '' : Number(row.value).toLocaleString(undefined, { maximumFractionDigits: 6 }) + ' BNB';
+          return {
+            id: hash + ':native',
+            hash,
+            title: (incoming ? 'Received ' : 'Sent ') + 'BNB',
+            subtitle: incoming ? 'From ' + shorten(from) : 'To ' + shorten(to),
+            amount,
+            timestamp: Number(row.timestamp || 0),
+            status: row.success === false ? 'Failed' : 'Confirmed',
+            incoming,
+            explorerUrl: explorerBase + hash,
+          };
+        });
+        const tokenItems: HistoryItem[] = tokenRows.map((row: any, index: number) => {
+          const from = String(row.from || '');
+          const to = String(row.to || '');
+          const incoming = from.toLowerCase() !== walletAddress.toLowerCase();
+          const hash = String(row.transactionHash || '');
+          const symbol = String(row.tokenInfo?.symbol || 'TOKEN');
+          const amount = row.value === undefined ? '' : Number(row.value).toLocaleString(undefined, { maximumFractionDigits: 6 }) + ' ' + symbol;
+          return {
+            id: hash + ':token:' + String(row.timestamp || index),
+            hash,
+            title: (incoming ? 'Received ' : 'Sent ') + symbol,
+            subtitle: String(row.tokenInfo?.name || symbol) + ' · ' + (incoming ? 'From ' + shorten(from) : 'To ' + shorten(to)),
+            amount,
+            timestamp: Number(row.timestamp || 0),
+            status: 'Confirmed',
+            incoming,
+            explorerUrl: explorerBase + hash,
+          };
+        });
+        nextItems = nativeItems.concat(tokenItems).sort((a, b) => b.timestamp - a.timestamp);
+        more = false;
+      } else if (selectedBlockchain === 'polygon') {
+        if (network !== 'mainnet') {
+          throw new Error('Polygon Amoy history is not available from the current public keyless indexer. Mainnet history is supported.');
+        }
+        const base = 'https://polygon.blockscout.com/api/v2/addresses/' + encodeURIComponent(walletAddress);
+        const txCursor = reset ? null : polygonTxCursor;
+        const transferCursor = reset ? null : polygonTransferCursor;
+        const txResult = txCursor ? await fetchBlockscoutList(base + '/transactions' + cursorQuery(txCursor)) : (reset ? await fetchBlockscoutList(base + '/transactions') : { items: [], next_page_params: null });
+        const transferResult = transferCursor ? await fetchBlockscoutList(base + '/token-transfers' + cursorQuery(transferCursor)) : (reset ? await fetchBlockscoutList(base + '/token-transfers') : { items: [], next_page_params: null });
+        const txRows = Array.isArray(txResult.items) ? txResult.items : [];
+        const transferRows = Array.isArray(transferResult.items) ? transferResult.items : [];
+        const nativeItems: HistoryItem[] = txRows.map((row: any) => {
+          const from = String(row.from?.hash || '');
+          const to = String(row.to?.hash || '');
+          const incoming = from.toLowerCase() !== walletAddress.toLowerCase();
+          const hash = String(row.hash || '');
+          const timestamp = Math.floor(new Date(row.timestamp || 0).getTime() / 1000);
+          const amount = formatAmount(String(row.value || '0'), 18);
+          const failed = String(row.status || '').toLowerCase() === 'error' || String(row.result || '').toLowerCase().includes('fail');
+          return {
+            id: hash + ':native',
+            hash,
+            title: (incoming ? 'Received ' : 'Sent ') + 'POL',
+            subtitle: incoming ? 'From ' + shorten(from) : 'To ' + shorten(to),
+            amount: amount ? amount + ' POL' : '',
+            timestamp,
+            status: failed ? 'Failed' : 'Confirmed',
+            incoming,
+            explorerUrl: EXPLORERS.polygon.mainnet + hash,
+          };
+        });
+        const tokenItems: HistoryItem[] = transferRows.map((row: any, index: number) => {
+          const from = String(row.from?.hash || '');
+          const to = String(row.to?.hash || '');
+          const incoming = from.toLowerCase() !== walletAddress.toLowerCase();
+          const hash = String(row.transaction_hash || row.tx_hash || '');
+          const symbol = String(row.token?.symbol || 'TOKEN');
+          const decimals = Number(row.token?.decimals || 18);
+          const raw = String(row.total?.value || row.total_value || '0');
+          const amount = formatAmount(raw, Number.isFinite(decimals) ? decimals : 18);
+          const timestamp = Math.floor(new Date(row.timestamp || 0).getTime() / 1000);
+          return {
+            id: hash + ':token:' + String(row.log_index || index),
+            hash,
+            title: (incoming ? 'Received ' : 'Sent ') + symbol,
+            subtitle: String(row.token?.name || symbol) + ' · ' + (incoming ? 'From ' + shorten(from) : 'To ' + shorten(to)),
+            amount: amount ? amount + ' ' + symbol : '',
+            timestamp,
+            status: 'Confirmed',
+            incoming,
+            explorerUrl: EXPLORERS.polygon.mainnet + hash,
+          };
+        });
+        nextItems = nativeItems.concat(tokenItems).sort((a, b) => b.timestamp - a.timestamp);
+        setPolygonTxCursor(txResult.next_page_params || null);
+        setPolygonTransferCursor(transferResult.next_page_params || null);
+        more = Boolean(txResult.next_page_params || transferResult.next_page_params);
       } else {
         const rpcConfig = getEvmRpcConfig(selectedBlockchain, network);
         const networkName = network === 'mainnet' ? 'mainnet' : 'testnet';
@@ -303,7 +436,7 @@ export default function TransactionHistory() {
             <Text style={styles.loadMoreText}>{loadingMore ? 'Loading…' : 'Load older transactions'}</Text>
           </TouchableOpacity>
         ) : null}
-        {!loading && !error && items.length > 0 ? <Text style={styles.footerNote}>Tap any transaction to open its block explorer record.</Text> : null}
+        {!loading && !error && items.length > 0 ? <Text style={styles.footerNote}>{selectedBlockchain === 'bnb' ? 'BNB history uses Binplorer’s free public index and is limited to the latest 30 days / 100 records.' : 'Tap any transaction to open its block explorer record.'}</Text> : null}
       </ScrollView>
     </SafeAreaView>
   );
