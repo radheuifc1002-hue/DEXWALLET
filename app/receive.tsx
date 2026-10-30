@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -33,11 +33,11 @@ export default function Receive() {
   const params = useLocalSearchParams<{ assetSymbol?: string; assetName?: string; assetContract?: string }>();
   const assetSymbol = typeof params.assetSymbol === 'string' ? params.assetSymbol : '';
   const { walletAddresses, selectedBlockchain, setSelectedBlockchain } = useWallet();
+  const params = useLocalSearchParams<{ assetChain?: string; assetSymbol?: string; assetName?: string }>();
+  const requestedChain = ['ethereum', 'bnb', 'polygon', 'solana'].includes(String(params.assetChain)) ? params.assetChain as keyof typeof CHAIN_SYMBOLS : null;
+  const activeBlockchain = requestedChain || selectedBlockchain;
   const [copied, setCopied] = useState(false);
-
-  const address = walletAddresses
-    ? walletAddresses[selectedBlockchain]
-    : null;
+  const address = walletAddresses?.[activeBlockchain] || null;
 
   const handleCopy = async () => {
     if (!address) return;
@@ -46,6 +46,8 @@ export default function Receive() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  useEffect(() => { if (requestedChain && selectedBlockchain !== requestedChain) setSelectedBlockchain(requestedChain); }, [requestedChain, selectedBlockchain, setSelectedBlockchain]);
 
   const CHAINS: Array<'ethereum' | 'solana' | 'bnb' | 'polygon'> = [
     'ethereum', 'solana', 'bnb', 'polygon',
@@ -68,7 +70,7 @@ export default function Receive() {
               key={chain}
               style={[
                 styles.chainTab,
-                selectedBlockchain === chain && styles.chainTabActive,
+                activeBlockchain === chain && styles.chainTabActive,
               ]}
               onPress={() => setSelectedBlockchain(chain)}
               activeOpacity={0.7}
@@ -76,7 +78,7 @@ export default function Receive() {
               <Text
                 style={[
                   styles.chainTabText,
-                  selectedBlockchain === chain && { color: '#211B35' },
+                  activeBlockchain === chain && { color: '#211B35' },
                 ]}
               >
                 {CHAIN_SYMBOLS[chain]}
@@ -91,7 +93,7 @@ export default function Receive() {
               <View
                 style={[
                   styles.qrBorder,
-                  { borderColor: CHAIN_COLORS[selectedBlockchain] + '44' },
+                  { borderColor: CHAIN_COLORS[activeBlockchain] + '44' },
                 ]}
               >
                 <QRCode
@@ -102,7 +104,7 @@ export default function Receive() {
                 />
               </View>
               <Text style={styles.chainLabel}>
-                {assetSymbol || CHAIN_SYMBOLS[selectedBlockchain]} Address
+                {assetSymbol || CHAIN_SYMBOLS[activeBlockchain]} Address
               </Text>
             </View>
 
@@ -127,7 +129,7 @@ export default function Receive() {
             <View style={styles.warning}>
               <Ionicons name="information-circle-outline" size={16} color="#9B97B2" />
               <Text style={styles.warningText}>
-                Only send {assetSymbol || CHAIN_SYMBOLS[selectedBlockchain]} on {selectedBlockchain === 'bnb' ? 'BNB Chain' : selectedBlockchain === 'polygon' ? 'Polygon' : selectedBlockchain === 'ethereum' ? 'Ethereum' : 'Solana'} to this address. For imported tokens, use the same token contract and network.
+                Only send {assetSymbol || CHAIN_SYMBOLS[activeBlockchain]} on {activeBlockchain === 'bnb' ? 'BNB Chain' : activeBlockchain === 'polygon' ? 'Polygon' : activeBlockchain === 'ethereum' ? 'Ethereum' : 'Solana'} to this address. For imported tokens, use the same token contract and network.
               </Text>
             </View>
           </>
