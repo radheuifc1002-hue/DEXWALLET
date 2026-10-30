@@ -226,23 +226,84 @@ async function solRpc(url: string, method: string, params: unknown[]) {
 async function fetchSolanaHistory(network: Network, wallet: string, asset: Token): Promise<WalletActivity[]> {
   const rpc = getSolanaRpcEndpoint(network);
   let addresses = [wallet];
+  const tokenAccountSet = new Set<string>();
   if (asset.contractAddress) {
     const tokenAccounts = await solRpc(rpc, 'getTokenAccountsByOwner', [wallet, { mint: asset.contractAddress }, { encoding: 'jsonParsed', commitment: 'confirmed' }]);
     addresses = (tokenAccounts?.value || []).map((item: any) => item.pubkey);
+    addresses.forEach((address: string) => tokenAccountSet.add(address));
     if (!addresses.length) return [];
   }
-  const signatures = await Promise.all(addresses.map((address) =>
+  const signaturePages = await Promise.all(addresses.map((address) =>
     solRpc(rpc, 'getSignaturesForAddress', [address, { limit: 50, commitment: 'confirmed' }])
   ));
   const unique = new Map<string, any>();
-  signatures.flat().forEach((item: any) => unique.set(item.signature, item));
-  return [...unique.values()].sort((a, b) => (b.blockTime || 0) - (a.blockTime || 0)).slice(0, 50).map((item) => ({
-    id: item.signature, hash: item.signature, timestamp: item.blockTime || null,
-    title: item.err ? 'Failed transaction' : asset.contractAddress ? 'Token account activity' : 'Solana transaction',
-    subtitle: `Slot ${item.slot}`, direction: 'contract',
-    status: item.err ? 'failed' : 'success',
-    explorerUrl: `https://explorer.solana.com/tx/${item.signature}${network === 'testnet' ? '?cluster=devnet' : ''}`,
-  }));
+  signaturePages.flat().forEach((item: any) => unique.set(item.signature, item));
+  const recent = [...unique.values()].sort((a, b) => (b.blockTime || 0) - (a.blockTime || 0)).slice(0, 50);
+  const detailed: any[] = [];
+  for (let i = 0; i < recent.length; i += 8) {
+    const batch = await Promise.all(recent.slice(i, i + 8).map(async (item) => {
+      try {
+        const tx = await solRpc(rpc, 'getTransaction', [item.signature, {
+          commitment: 'confirmed', encoding: 'jsonParsed', maxSupportedTransactionVersion: 0,
+        }]);
+        return { signatureInfo: item, transaction: tx };
+      } catch { return { signatureInfo: item, transaction: null }; }
+    }));
+    detailed.push(...batch);
+  }
+  return detailed.map(({ signatureInfo, transaction }) => {
+    const meta = transaction?.meta;
+    const keys = transaction?.transaction?.message?.accountKeys || [];
+    const keyAddress = (key: any) => typeof key === 'string' ? key : String(key?.pubkey || '');
+    const walletIndex = keys.findIndex((key: any) => keyAddress(key) === wallet);
+    let amount: string | undefined;
+    let direction: WalletActivity['direction'] = 'contract';
+    let title = asset.contractAddress ? 'Token contract interaction' : 'Solana program interaction';
+
+    if (asset.contractAddress && meta) {
+      const balances = (list: any[]) => (list || [])
+        .filter((entry: any) => entry.mint === asset.contractAddress &&
+          (entry.owner === wallet || tokenAccountSet.has(keyAddress(keys[entry.accountIndex]))))
+        .reduce((sum: bigint, entry: any) => sum + BigInt(entry.uiTokenAmount?.amount || '0'), 0n);
+      const before = balances(meta.preTokenBalances);
+      const after = balances(meta.postTokenBalances);
+      const delta = after - before;
+      if (delta > 0n) {
+        direction = 'in';
+        title = `Received ${asset.symbol}`;
+        amount = formatAmount(delta, asset.decimals ?? 0, asset.symbol);
+      } else if (delta < 0n) {
+        direction = 'out';
+        title = `Sent ${asset.symbol}`;
+        amount = formatAmount(-delta, asset.decimals ?? 0, asset.symbol);
+      }
+    } else if (!asset.contractAddress && meta && walletIndex >= 0) {
+      const delta = BigInt(meta.postBalances?.[walletIndex] || 0) - BigInt(meta.preBalances?.[walletIndex] || 0);
+      const fee = BigInt(meta.fee || 0);
+      const transfer = delta < 0n && walletIndex === 0 ? -(delta + fee) : delta;
+      if (transfer > 0n) {
+        direction = 'in';
+        title = 'Received SOL';
+        amount = formatAmount(transfer, 9, 'SOL');
+      } else if (transfer < 0n) {
+        direction = 'out';
+        title = 'Sent SOL';
+        amount = formatAmount(-transfer, 9, 'SOL');
+      }
+    }
+    const failed = Boolean(signatureInfo.err || meta?.err);
+    return {
+      id: signatureInfo.signature,
+      hash: signatureInfo.signature,
+      timestamp: signatureInfo.blockTime || transaction?.blockTime || null,
+      title: failed ? 'Failed transaction' : title,
+      subtitle: `Slot ${signatureInfo.slot}`,
+      amount,
+      direction,
+      status: failed ? 'failed' : 'success',
+      explorerUrl: `https://explorer.solana.com/tx/${signatureInfo.signature}${network === 'testnet' ? '?cluster=devnet' : ''}`,
+    } as WalletActivity;
+  });
 }
 
 export async function fetchAssetHistory(chain: Blockchain, network: Network, wallet: string, asset: Token): Promise<WalletActivity[]> {
