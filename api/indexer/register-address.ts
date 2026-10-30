@@ -72,8 +72,12 @@ export default async function handler(req: any, res: any) {
       RETURNING sync_status, last_indexed_at, last_indexed_block, cursor
     `;
     const state = states[0];
-    const initial = state.sync_status !== 'idle' || !state.last_indexed_at;
-    const shouldQueue = initial || Date.now() - new Date(state.last_indexed_at).getTime() > 5 * 60 * 1000;
+    const initial = !state.last_indexed_at;
+    const lastIndexedAt = state.last_indexed_at ? new Date(state.last_indexed_at).getTime() : 0;
+    const shouldQueue = initial || (
+      state.sync_status !== 'syncing' &&
+      (!Number.isFinite(lastIndexedAt) || Date.now() - lastIndexedAt > 5 * 60 * 1000)
+    );
     if (shouldQueue) {
       const active = await sql`
         SELECT id FROM public.indexer_jobs
