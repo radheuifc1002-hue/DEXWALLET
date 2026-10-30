@@ -29,11 +29,14 @@ export default async function handler(req: any, res: any) {
   const network = String(body.network || '').toLowerCase();
   const address = String(body.walletAddress || '');
   const supported = (chain === 'ethereum' && ['mainnet', 'testnet'].includes(network)) ||
-    (chain === 'polygon' && network === 'mainnet');
+    (chain === 'polygon' && network === 'mainnet') ||
+    (chain === 'bnb' && ['mainnet', 'testnet'].includes(network)) ||
+    (chain === 'solana' && ['mainnet', 'devnet'].includes(network));
   if (!supported) {
     res.status(422).json({ error: { code: 'indexer_network_not_enabled', requestId } }); return;
   }
-  if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
+  const validAddress = chain === 'solana' ? /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address) : /^0x[a-fA-F0-9]{40}$/.test(address);
+  if (!validAddress) {
     res.status(400).json({ error: { code: 'invalid_wallet_address', requestId } }); return;
   }
   if (!process.env.DATABASE_URL || !process.env.API_RATE_LIMIT_SECRET) {
@@ -62,7 +65,7 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    const addressKey = address.toLowerCase();
+    const addressKey = chain === 'solana' ? address : address.toLowerCase();
     const states = await sql`
       INSERT INTO public.address_sync_state
         (chain, network, address_key, address_display, sync_status)
