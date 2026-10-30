@@ -139,7 +139,7 @@ export default function Browser() {
           if (Array.isArray(parsed)) {
             const valid = parsed.filter((item) =>
               item && typeof item.url === 'string' && /^https?:\\/\\//i.test(item.url)
-            ).slice(0, 12);
+            ).slice(0, 5);
             setRecentDApps(valid);
           }
         } catch { /* Ignore malformed browser history. */ }
@@ -574,8 +574,8 @@ export default function Browser() {
                   <TouchableOpacity style={styles.recentOpen} onPress={() => navigate(app.url)} activeOpacity={0.75}>
                     <DAppLogo domain={app.domain} name={app.name} logoUrl={app.logoUrl} />
                     <View style={styles.recentTextWrap}>
-                      <Text style={styles.recentName} numberOfLines={1}>{app.name}</Text>
-                      <Text style={styles.recentUrl} numberOfLines={1} ellipsizeMode="middle">{app.url}</Text>
+                      <Text style={styles.recentName} numberOfLines={1} textAlign="center">{app.name}</Text>
+                      <Text style={styles.recentUrl} numberOfLines={1} ellipsizeMode="tail">{app.url}</Text>
                     </View>
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.removeRecent} onPress={() => setRecentDApps((previous) => previous.filter((item) => item.url !== app.url))} accessibilityLabel={`Remove ${app.name} from recently visited`}>
@@ -667,7 +667,7 @@ export default function Browser() {
                   };
                   return [item, ...previous.filter((entry) => {
                     try { return new URL(entry.url).origin !== origin; } catch { return entry.url !== state.url; }
-                  })].slice(0, 12);
+                  })].slice(0, 5);
                 });
               } catch { /* Ignore non-standard navigation URLs. */ }
             }
@@ -824,11 +824,11 @@ const styles = StyleSheet.create({
   recentActions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: -5, marginBottom: 8 },
   recentCount: { color: '#9A95A8', fontSize: 10 },
   clearRecent: { color: '#6C4CF1', fontSize: 11, fontWeight: '700' },
-  recentItem: { flexDirection: 'row', alignItems: 'center', minHeight: 66, paddingHorizontal: 10, marginBottom: 8, borderWidth: 1, borderColor: '#E8E4F3', borderRadius: 14, backgroundColor: '#FFFFFF' },
-  recentOpen: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, minWidth: 0 },
-  recentTextWrap: { flex: 1, minWidth: 0 },
-  recentName: { color: '#211B35', fontSize: 12, fontWeight: '700' },
-  recentUrl: { color: '#777286', fontSize: 10, marginTop: 4 },
+  recentItem: { width: '100%', flexDirection: 'row', alignItems: 'center', minHeight: 66, paddingHorizontal: 10, marginBottom: 8, borderWidth: 1, borderColor: '#E8E4F3', borderRadius: 14, backgroundColor: '#FFFFFF' },
+  recentOpen: { flex: 1, width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, minWidth: 0 },
+  recentTextWrap: { flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center' },
+  recentName: { color: '#211B35', fontSize: 12, fontWeight: '700', textAlign: 'center', maxWidth: '100%' },
+  recentUrl: { color: '#777286', fontSize: 10, marginTop: 4, textAlign: 'center', width: '100%' },
   removeRecent: { width: 34, height: 40, alignItems: 'center', justifyContent: 'center' },
   recentEmpty: { minHeight: 66, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, borderWidth: 1, borderColor: '#E8E4F3', borderRadius: 14 },
   recentEmptyText: { color: '#9A95A8', fontSize: 11 },
