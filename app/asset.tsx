@@ -50,8 +50,6 @@ export default function AssetProfile() {
     if (!asset || isLocked) { setLoading(false); return; }
     setError('');
     try {
-      const rows = await fetchAssetHistory(asset.blockchain, network, walletAddress, asset);
-      setHistory(rows.slice(0, 50));
       if (asset.blockchain === 'solana') {
         const rpc = getSolanaRpcEndpoint(network);
         const method = async (name: string, params: unknown[]) => {
@@ -84,9 +82,15 @@ export default function AssetProfile() {
         }
       }
     } catch (e: any) {
-      setError(e?.message || 'Unable to load transaction history.');
-      setHistory([]);
       setDisplayBalance(null);
+      setError(e?.message || 'Unable to load live balance.');
+    }
+    try {
+      const rows = await fetchAssetHistory(asset.blockchain, network, walletAddress, asset);
+      setHistory(rows.slice(0, 50));
+    } catch (e: any) {
+      setError((previous) => previous || (e?.message || 'Unable to load transaction history.'));
+      setHistory([]);
     } finally { setLoading(false); setRefreshing(false); }
   };
 
