@@ -118,26 +118,47 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // Track the foreground -> inactive/background transition only once.
+    // Android may report both inactive and background during one app switch.
+    const previousState = { current: AppState.currentState };
     const sub = AppState.addEventListener('change', async (state: AppStateStatus) => {
-      if (!isWalletCreated) return;
-      if (state === 'background') {
-        const timestamp = Date.now();
-        lastBackgroundAt.current = timestamp;
-        await AsyncStorage.setItem(BACKGROUND_AT_KEY, String(timestamp)).catch(() => {});
+      if (!isWalletCreated) {
+        previousState.current = state;
         return;
       }
+
+      if (state === 'inactive' || state === 'background') {
+        if (previousState.current === 'active' && lastBackgroundAt.current === null) {
+          const timestamp = Date.now();
+          lastBackgroundAt.current = timestamp;
+          await AsyncStorage.setItem(BACKGROUND_AT_KEY, String(timestamp)).catch(() => {});
+        }
+        previousState.current = state;
+        return;
+      }
+
       if (state === 'active') {
         let timestamp = lastBackgroundAt.current;
         if (timestamp === null) {
           const stored = await AsyncStorage.getItem(BACKGROUND_AT_KEY).catch(() => null);
-          timestamp = stored ? Number(stored) : null;
+          const parsed = stored === null ? null : Number(stored);
+          timestamp = parsed !== null && Number.isFinite(parsed) ? parsed : null;
         }
-        if (autoLockTimer > 0 && timestamp !== null && Number.isFinite(timestamp) && Date.now() - timestamp >= autoLockTimer * 60 * 1000) {
+
+        const elapsedMs = timestamp === null ? null : Date.now() - timestamp;
+        if (
+          autoLockTimer > 0 &&
+          elapsedMs !== null &&
+          elapsedMs >= 0 &&
+          elapsedMs >= autoLockTimer * 60 * 1000
+        ) {
           setIsLockedState(true);
         }
+
         lastBackgroundAt.current = null;
         await AsyncStorage.removeItem(BACKGROUND_AT_KEY).catch(() => {});
       }
+      previousState.current = state;
     });
     return () => sub.remove();
   }, [isWalletCreated, autoLockTimer]);
