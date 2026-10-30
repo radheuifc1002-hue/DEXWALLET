@@ -1,0 +1,150 @@
+import { useState } from 'react';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useRouter } from 'expo-router';
+import * as Clipboard from 'expo-clipboard';
+import { Ionicons } from '@expo/vector-icons';
+import { ethers } from 'ethers';
+import bs58 from 'bs58';
+import { useWallet, Blockchain, Token } from '../context/WalletContext';
+
+const EVM: Record<string, { chainId: number; rpc: string }> = {
+  ethereum: { chainId: 1, rpc: 'https://ethereum-rpc.publicnode.com' },
+  bnb: { chainId: 56, rpc: 'https://bsc-rpc.publicnode.com' },
+  polygon: { chainId: 137, rpc: 'https://polygon-bor-rpc.publicnode.com' },
+};
+const TEST: Record<string, { chainId: number; rpc: string }> = {
+  ethereum: { chainId: 11155111, rpc: 'https://ethereum-sepolia-rpc.publicnode.com' },
+  bnb: { chainId: 97, rpc: 'https://bsc-testnet-rpc.publicnode.com' },
+  polygon: { chainId: 80002, rpc: 'https://polygon-amoy-bor-rpc.publicnode.com' },
+};
+const SOL_RPC = { mainnet: 'https://api.mainnet-beta.solana.com', testnet: 'https://api.devnet.solana.com' };
+const ABI = ['function name() view returns (string)', 'function symbol() view returns (string)', 'function decimals() view returns (uint8)', 'function balanceOf(address) view returns (uint256)'];
+const TOKEN_PROGRAM = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
+const TOKEN_2022_PROGRAM = 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb';
+
+async function solRpc(url: string, method: string, params: unknown[] = []) {
+  const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) });
+  if (!response.ok) throw new Error('Solana RPC request failed.');
+  const json = await response.json();
+  if (json.error) throw new Error(json.error.message || 'Solana RPC request failed.');
+  return json.result;
+}
+
+export default function ImportToken() {
+  const router = useRouter();
+  const { selectedBlockchain, network, walletAddress, addToken, isLocked } = useWallet();
+  const [mintOrContract, setMintOrContract] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [token, setToken] = useState<Token | null>(null);
+  const [error, setError] = useState('');
+  const isSolana = selectedBlockchain === 'solana';
+
+  const fetchToken = async () => {
+    setError('');
+    setToken(null);
+    if (isLocked) { setError('Unlock your wallet before importing tokens.'); return; }
+    const value = mintOrContract.trim();
+    if (!value) return;
+    setLoading(true);
+    try {
+      let found: Token;
+      if (isSolana) {
+        const decoded = bs58.decode(value);
+        if (decoded.length !== 32) throw new Error('Enter a valid Solana token mint address.');
+        const rpc = SOL_RPC[network];
+        const account = await solRpc(rpc, 'getAccountInfo', [value, { encoding: 'base64', commitment: 'confirmed' }]);
+        if (!account?.value || ![TOKEN_PROGRAM, TOKEN_2022_PROGRAM].includes(account.value.owner)) throw new Error('This address is not a supported SPL token mint.');
+        const mintData = Uint8Array.from(atob(account.value.data[0]), (ch) => ch.charCodeAt(0));
+        if (mintData.length < 82) throw new Error('Invalid SPL mint account data.');
+        const decimals = mintData[44];
+        const accounts = await solRpc(rpc, 'getTokenAccountsByOwner', [walletAddress, { mint: value }, { encoding: 'jsonParsed', commitment: 'confirmed' }]);
+        const balance = (accounts?.value || []).reduce((sum: number, item: any) => sum + Number(item.account.data.parsed.info.tokenAmount.uiAmountString || 0), 0);
+        let name = 'Solana SPL Token';
+        let symbol = `SPL-${value.slice(0, 4)}`;
+        try {
+          const metadataResponse = await fetch(`https://tokens.jup.ag/token/${value}`);
+          if (metadataResponse.ok) {
+            const metadata = await metadataResponse.json();
+            if (metadata?.name) name = metadata.name;
+            if (metadata?.symbol) symbol = metadata.symbol;
+          }
+        } catch {}
+        found = { id: `custom-${selectedBlockchain}-${value}`, name, symbol, balance, balanceUSD: 0, contractAddress: value, decimals, blockchain: selectedBlockchain };
+      } else {
+        const config = network === 'testnet' ? TEST[selectedBlockchain] : EVM[selectedBlockchain];
+        const provider = new ethers.JsonRpcProvider(config.rpc, config.chainId);
+        const chain = await provider.getNetwork();
+        if (Number(chain.chainId) !== config.chainId) throw new Error('RPC network mismatch. Import cancelled.');
+        if (!ethers.isAddress(value)) throw new Error('Enter a valid token contract address.');
+        const contract = new ethers.Contract(ethers.getAddress(value), ABI, provider);
+        const [name, symbol, decimals, rawBalance] = await Promise.all([
+          contract.name(), contract.symbol(), contract.decimals(), contract.balanceOf(walletAddress),
+        ]);
+        const d = Number(decimals);
+        if (!Number.isInteger(d) || d < 0 || d > 255) throw new Error('Token returned invalid decimals.');
+        found = { id: `custom-${selectedBlockchain}-${value.toLowerCase()}`, name: String(name), symbol: String(symbol), balance: Number(ethers.formatUnits(rawBalance, d)), balanceUSD: 0, contractAddress: ethers.getAddress(value), decimals: d, blockchain: selectedBlockchain };
+      }
+      setToken(found);
+    } catch (e: any) {
+      setError(e?.shortMessage || e?.message || 'Unable to fetch token information.');
+    } finally { setLoading(false); }
+  };
+
+  const importToken = () => {
+    if (!token) return;
+    addToken(token);
+    router.replace('/(tabs)/home');
+  };
+
+  return <SafeAreaView style={s.container}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={s.header}>
+        <TouchableOpacity onPress={() => router.back()} style={s.back}><Ionicons name="arrow-back" size={22} color="#211B35" /></TouchableOpacity>
+        <Text style={s.headerTitle}>Import token</Text><View style={{ width: 40 }} />
+      </View>
+      <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+        <Text style={s.title}>Add a custom asset</Text>
+        <Text style={s.subtitle}>{isSolana ? 'Import an SPL token using its mint address.' : `Import an ERC-20 token on ${selectedBlockchain === 'bnb' ? 'BNB Chain' : selectedBlockchain === 'polygon' ? 'Polygon' : 'Ethereum'}.`}</Text>
+        <View style={s.network}><Ionicons name={isSolana ? 'planet-outline' : 'logo-ethereum'} size={18} color="#6C4CF1" /><Text style={s.networkText}>{selectedBlockchain.toUpperCase()} · {network.toUpperCase()}</Text></View>
+        <Text style={s.label}>{isSolana ? 'Token mint address' : 'ERC-20 contract address'}</Text>
+        <View style={s.inputCard}>
+          <TextInput value={mintOrContract} onChangeText={(v) => { setMintOrContract(v); setToken(null); setError(''); }} placeholder={isSolana ? 'Enter SPL mint address' : '0x...'} placeholderTextColor="#A09AAC" autoCapitalize="none" autoCorrect={false} style={s.input} />
+          <TouchableOpacity onPress={async () => { const value = await Clipboard.getStringAsync(); setMintOrContract(value.trim()); setToken(null); }}><Ionicons name="clipboard-outline" size={20} color="#6C4CF1" /></TouchableOpacity>
+        </View>
+        <TouchableOpacity style={[s.primary, loading && s.disabled]} disabled={loading || !mintOrContract.trim()} onPress={fetchToken}>
+          {loading ? <ActivityIndicator color="#fff" /> : <Ionicons name="search" size={18} color="#fff" />}
+          <Text style={s.primaryText}>{loading ? 'Checking on network…' : 'Fetch token details'}</Text>
+        </TouchableOpacity>
+        {error ? <View style={s.error}><Ionicons name="alert-circle-outline" size={18} color="#B42318" /><Text style={s.errorText}>{error}</Text></View> : null}
+        {token ? <View style={s.preview}>
+          <View style={s.previewHeader}><Ionicons name="checkmark-circle" size={21} color="#16A36A" /><Text style={s.previewTitle}>Token verified</Text></View>
+          <View style={s.row}><Text style={s.muted}>Name</Text><Text style={s.value}>{token.name}</Text></View>
+          <View style={s.row}><Text style={s.muted}>Symbol</Text><Text style={s.value}>{token.symbol}</Text></View>
+          <View style={s.row}><Text style={s.muted}>Decimals</Text><Text style={s.value}>{token.decimals}</Text></View>
+          <View style={s.row}><Text style={s.muted}>Wallet balance</Text><Text style={s.value}>{token.balance} {token.symbol}</Text></View>
+          <Text style={s.muted}>Token address</Text><Text selectable style={s.address}>{token.contractAddress}</Text>
+          <Text style={s.notice}>Token prices are not yet sourced, so the USD value is shown as $0.00.</Text>
+          <TouchableOpacity style={s.primary} onPress={importToken}><Ionicons name="add-circle-outline" size={18} color="#fff" /><Text style={s.primaryText}>Import asset</Text></TouchableOpacity>
+        </View> : null}
+      </ScrollView>
+    </KeyboardAvoidingView>
+  </SafeAreaView>;
+}
+
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#fff' },
+  header: { height: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#EEEAF5' },
+  back: { width: 40 }, headerTitle: { color: '#211B35', fontSize: 17, fontWeight: '800' },
+  content: { padding: 20, paddingBottom: 36 }, title: { color: '#211B35', fontSize: 26, fontWeight: '900', marginTop: 10 }, subtitle: { color: '#777286', fontSize: 13, lineHeight: 20, marginTop: 7, marginBottom: 18 },
+  network: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 13, borderRadius: 12, backgroundColor: '#F5F2FF' }, networkText: { color: '#51476E', fontSize: 12, fontWeight: '800' },
+  label: { color: '#555064', fontSize: 12, fontWeight: '800', marginTop: 22, marginBottom: 9 },
+  inputCard: { minHeight: 54, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#E8E4F3', borderRadius: 14, paddingHorizontal: 14 },
+  input: { flex: 1, color: '#211B35', fontSize: 12, paddingVertical: 14 },
+  primary: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, backgroundColor: '#6C4CF1', borderRadius: 14, marginTop: 16 },
+  primaryText: { color: '#fff', fontSize: 14, fontWeight: '800' }, disabled: { opacity: .55 },
+  error: { flexDirection: 'row', gap: 8, padding: 12, backgroundColor: '#FFF1F0', borderRadius: 12, marginTop: 14 }, errorText: { flex: 1, color: '#B42318', fontSize: 12, lineHeight: 18 },
+  preview: { borderWidth: 1, borderColor: '#E8E4F3', borderRadius: 18, padding: 16, marginTop: 22, backgroundColor: '#FAF9FD' },
+  previewHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 }, previewTitle: { color: '#211B35', fontSize: 16, fontWeight: '900' },
+  row: { flexDirection: 'row', justifyContent: 'space-between', gap: 10, marginBottom: 12 }, muted: { color: '#777286', fontSize: 12 }, value: { color: '#211B35', fontSize: 12, fontWeight: '800', textAlign: 'right' },
+  address: { color: '#211B35', fontSize: 10, lineHeight: 16, marginTop: 6 }, notice: { color: '#8A6A20', fontSize: 11, lineHeight: 16, marginTop: 14, marginBottom: 2 },
+});
