@@ -1,3 +1,4 @@
+import { ethers } from 'ethers';
 import { Blockchain, Network, Token } from '../../context/WalletContext';
 import { getSolanaRpcEndpoint } from './rpcManager';
 
@@ -48,7 +49,7 @@ function formatEvmRows(rows: any[], chain: Blockchain, network: Network, wallet:
     const mine = wallet.toLowerCase();
     const direction = from === mine && to === mine ? 'self' : from === mine ? 'out' : to === mine ? 'in' : 'contract';
     const failed = tx.isError === '1' || tx.txreceipt_status === '0';
-    const amount = tx.value && tx.value !== '0' ? (Number(tx.value) / 1e18).toLocaleString(undefined, { maximumFractionDigits: 6 }) : undefined;
+    const amount = tx.value && tx.value !== '0' ? Number(ethers.formatUnits(BigInt(tx.value), 18)).toLocaleString(undefined, { maximumFractionDigits: 6 }) : undefined;
     const hash = String(tx.hash || tx.transactionHash || '');
     return {
       id: hash + (tx.traceId || tx.logIndex || ''),
@@ -56,7 +57,7 @@ function formatEvmRows(rows: any[], chain: Blockchain, network: Network, wallet:
       timestamp: Number(tx.timeStamp || 0) || null,
       title: contract ? (tx.tokenName ? `${tx.tokenName} transfer` : 'Token interaction') : (direction === 'contract' ? 'Contract interaction' : direction === 'in' ? 'Received' : direction === 'out' ? 'Sent' : 'Self transfer'),
       subtitle: contract ? `${String(tx.from || '').slice(0, 8)}… → ${String(tx.to || '').slice(0, 8)}…` : (direction === 'contract' ? `Contract: ${String(tx.to || '').slice(0, 10)}…` : `${direction === 'in' ? 'From' : 'To'} ${(direction === 'in' ? String(tx.from || '') : String(tx.to || '')).slice(0, 8)}…`),
-      amount: tx.tokenDecimal ? `${(Number(tx.value || 0) / (10 ** Number(tx.tokenDecimal))).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${tx.tokenSymbol || symbol}` : amount ? `${amount} ${symbol}` : undefined,
+      amount: tx.tokenDecimal ? `${Number(ethers.formatUnits(BigInt(tx.value || '0'), Number(tx.tokenDecimal))).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${tx.tokenSymbol || symbol}` : amount ? `${amount} ${symbol}` : undefined,
       direction,
       status: failed ? 'failed' : 'success',
       explorerUrl: `${EXPLORER[chain][network]}/tx/${hash}`,
@@ -137,9 +138,9 @@ async function fetchPolygonHistory(network: Network, wallet: string, asset: Toke
     const token = tx.token || {};
     const value = tx.total?.value || tx.value || tx.amount || '0';
     const decimals = Number(token.decimals || tx.token_decimals || 18);
-    const amount = tx.token || tx.token?.symbol || tx.token_type
-      ? `${(Number(value) / (10 ** decimals)).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${token.symbol || asset.symbol}`
-      : undefined;
+    const amount = tx.token || tx.token_type
+      ? `${Number(ethers.formatUnits(BigInt(value || '0'), decimals)).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${token.symbol || asset.symbol}`
+      : (!contract && value !== '0' ? `${Number(ethers.formatUnits(BigInt(value), 18)).toLocaleString(undefined, { maximumFractionDigits: 6 })} POL` : undefined);
     const failed = tx.status === 'error' || tx.status === 'failed' || tx.result === 'error';
     const timestamp = tx.timestamp || tx.block_timestamp;
     return {
@@ -175,7 +176,7 @@ async function fetchBnbHistory(wallet: string, asset: Token): Promise<WalletActi
     const direction = from === mine ? 'out' : to === mine ? 'in' : 'contract';
     const hash = String(tx.transactionHash || tx.hash || tx.txHash || '');
     const tokenInfo = tx.tokenInfo || {};
-    const amountValue = Number(tx.value || 0) / (10 ** Number(tokenInfo.decimals || asset.decimals || 18));
+    const amountValue = Number(ethers.formatUnits(BigInt(tx.value || '0'), Number(tokenInfo.decimals || asset.decimals || 18)));
     return {
       id: hash + String(tx.logIndex || ''),
       hash,
