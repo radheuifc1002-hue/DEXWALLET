@@ -186,11 +186,11 @@ export default function Send() {
     <View style={s.header}><TouchableOpacity onPress={() => router.back()} style={s.back}><Ionicons name="arrow-back" size={22} color="#211B35" /></TouchableOpacity><Text style={s.headerTitle}>{isTokenTransfer ? `Send ${tokenSymbol}` : 'Send'}</Text><View style={{ width: 40 }} /></View>
     <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
       <Text style={s.eyebrow}>TRANSFER ASSETS</Text><Text style={s.title}>Send {symbol}</Text><Text style={s.sub}>{isTokenTransfer ? 'Transfer this token from your wallet.' : 'Transfer assets directly from your wallet.'}</Text>
-      {!isTokenTransfer ? <><Text style={s.label}>Network</Text>
+      {!isTokenTransfer && <><Text style={s.label}>Network</Text>
       <View style={s.chains}>{(['ethereum', 'bnb', 'polygon', 'solana'] as Blockchain[]).map((c) =>
         <TouchableOpacity key={c} style={[s.chain, selectedBlockchain === c && s.chainActive]} onPress={() => { setSelectedBlockchain(c); setReview(null); }}>
           <Text style={[s.chainText, selectedBlockchain === c && s.chainTextActive]}>{SYMBOL[c]}</Text>
-        </TouchableOpacity>)}</View>
+        </TouchableOpacity>)}</View></>}
       <View style={s.balanceCard}><Ionicons name="wallet-outline" size={16} color="#6C4CF1" /><Text style={s.balanceLabel}>{testnet ? 'Testnet' : 'Mainnet'} · {LABEL[selectedBlockchain]}</Text><View style={{ flex: 1 }} /><Text style={s.balanceValue}>{loadingBalance ? 'Loading…' : balance === null ? '—' : Number(balance).toLocaleString(undefined, { maximumFractionDigits: 6 }) + ' ' + symbol}</Text></View>
       <Text style={s.label}>Recipient address</Text>
       <View style={s.inputCard}><TextInput value={to} onChangeText={(v) => { setTo(v); setReview(null); }} placeholder={selectedBlockchain === 'solana' ? 'Solana address' : '0x recipient address'} placeholderTextColor="#A09AAC" autoCapitalize="none" autoCorrect={false} style={s.input} /><TouchableOpacity onPress={() => setTo('')}><Ionicons name="close-circle" size={19} color="#9A95A8" /></TouchableOpacity></View>
