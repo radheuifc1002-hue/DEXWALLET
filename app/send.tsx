@@ -31,6 +31,12 @@ async function solRpc(url: string, method: string, params: unknown[] = []) {
 
 type Review = { to: string; amount: string; fee: string; feeSymbol: string; network: string; evmTx?: ethers.TransactionRequest; solMessage?: Uint8Array; blockhash?: string; lastValidBlockHeight?: number };
 
+function createEvmProvider(endpoint: string, chainId: number) {
+  const request = new ethers.FetchRequest(endpoint);
+  request.timeout = 12000;
+  return new ethers.JsonRpcProvider(request, chainId, { staticNetwork: true });
+}
+
 export default function Send() {
   const router = useRouter();
   const { selectedBlockchain, setSelectedBlockchain, network, walletAddresses, isLocked } = useWallet();
@@ -60,14 +66,14 @@ export default function Send() {
         setBalance(ethers.formatUnits(BigInt(lamports), 9));
       } else {
         const balanceWei = await withEvmReadFallback(selectedBlockchain, network, async (endpoint, chainId) => {
-          const provider = new ethers.JsonRpcProvider(endpoint, chainId);
+          const provider = createEvmProvider(endpoint, chainId);
           return provider.getBalance(address);
         });
         setBalance(ethers.formatEther(balanceWei));
       }
     } catch (e: any) { setBalance(null); setError(e?.message || 'Unable to load balance.'); }
     finally { setLoadingBalance(false); }
-  }, [address, isLocked, selectedBlockchain, network, rpc]);
+  }, [address, isLocked, selectedBlockchain, network]);
 
   useEffect(() => { setReview(null); setError(''); setBalance(null); void loadBalance(); }, [loadBalance]);
 
@@ -142,7 +148,7 @@ export default function Send() {
         if (c.value?.err) throw new Error('Solana transaction failed on chain.');
       } else {
         if (!rpc || !review.evmTx) throw new Error('Transaction review expired. Review again.');
-        const p = new ethers.JsonRpcProvider(rpc.rpc, rpc.chainId);
+        const p = createEvmProvider(rpc.rpc, rpc.chainId);
         const n = await p.getNetwork();
         if (Number(n.chainId) !== rpc.chainId) throw new Error('Network changed. Transaction cancelled.');
         const w = ethers.HDNodeWallet.fromPhrase(mnemonic).connect(p);
