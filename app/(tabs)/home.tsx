@@ -52,7 +52,8 @@ export default function Home() {
   const [refreshing, setRefreshing] = useState(false);
   const [chainPickerVisible, setChainPickerVisible] = useState(false);
 
-  const totalUSD = tokens.reduce((s, t) => s + (t.balanceUSD || 0), 0);
+  const visibleTokens = tokens.filter((token) => token.blockchain === selectedBlockchain);
+  const totalUSD = visibleTokens.reduce((s, t) => s + (t.balanceUSD || 0), 0);
 
   const handleCopy = async () => {
     if (!walletAddress) return;
@@ -192,15 +193,21 @@ export default function Home() {
           </View>
         </Modal>
 
-        <Text style={styles.sectionTitle}>Assets</Text>
+        <View style={styles.assetsHeader}>
+          <Text style={styles.sectionTitle}>Assets</Text>
+          <TouchableOpacity style={styles.importButton} onPress={() => router.push('/import-token')} activeOpacity={0.8}>
+            <Ionicons name="add" size={16} color="#FFFFFF" />
+            <Text style={styles.importButtonText}>Import</Text>
+          </TouchableOpacity>
+        </View>
 
-        {tokens.length === 0 ? (
+        {visibleTokens.length === 0 ? (
           <View style={styles.emptyState}>
             <Ionicons name="cube-outline" size={40} color="#4A4760" />
             <Text style={styles.emptyText}>No tokens yet</Text>
           </View>
         ) : (
-          tokens.map((token) => (
+          visibleTokens.map((token) => (
             <TouchableOpacity
               key={token.id}
               style={styles.tokenCard}
@@ -371,11 +378,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
+  assetsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  importButton: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#6C4CF1', paddingHorizontal: 13, paddingVertical: 8, borderRadius: 10 },
+  importButtonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
   sectionTitle: {
     color: '#211B35',
     fontSize: 18,
     fontWeight: '700',
-    marginBottom: 12,
+    marginBottom: 0,
   },
   emptyState: {
     alignItems: 'center',
