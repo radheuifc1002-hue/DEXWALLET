@@ -127,7 +127,7 @@ export default function AssetProfile() {
 
         <View style={s.historyPanel}>
           {loading ? <View style={s.state}><ActivityIndicator size="large" color="#6C4CF1" /><Text style={s.stateText}>Loading activity…</Text></View> :
-            error ? <View style={s.state}><Ionicons name="cloud-offline-outline" size={30} color="#9A95A8" /><Text style={s.errorText}>{error}</Text><TouchableOpacity onPress={() => { setLoading(true); void loadHistory(); }}><Text style={s.link}>Try again</Text></TouchableOpacity></View> :
+            error ? <View style={s.state}><Ionicons name="cloud-offline-outline" size={30} color="#9A95A8" /><Text style={s.errorText}>{error}</Text><TouchableOpacity onPress={() => { setLoading(true); void loadHistory(); }}><Text style={s.link}>Try again</Text></TouchableOpacity><TouchableOpacity onPress={() => Linking.openURL(explorer)}><Text style={s.link}>Open block explorer</Text></TouchableOpacity></View> :
             history.length === 0 ? <View style={s.state}><Ionicons name="receipt-outline" size={32} color="#B1ABBE" /><Text style={s.stateText}>No transactions found for this asset.</Text></View> :
             history.map((item) => <ActivityRow key={item.id} item={item} />)}
         </View>
