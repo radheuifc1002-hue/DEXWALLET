@@ -138,7 +138,7 @@ export default function Browser() {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed)) {
             const valid = parsed.filter((item) =>
-              item && typeof item.url === 'string' && /^https?:\\/\\//i.test(item.url)
+              item && typeof item.url === 'string' && (item.url.toLowerCase().startsWith('https://') || item.url.toLowerCase().startsWith('http://'))
             ).slice(0, 5);
             setRecentDApps(valid);
           }
