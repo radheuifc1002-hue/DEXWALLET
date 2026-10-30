@@ -166,7 +166,23 @@ async function fetchEtherscanStyle(options: Options): Promise<EvmHistoryRow[]> {
 
   const nativePromise = request('txlist');
   const tokenPromise = isNative ? Promise.resolve([]) : request('tokentx', '&contractaddress=' + encodeURIComponent(contractAddress));
-  const [nativeResult, tokenResult] = await Promise.allSettled([nativePromise, tokenPromise]);
+  let nativeResult: PromiseSettledResult<any[]>;
+  let tokenResult: PromiseSettledResult<any[]>;
+  if (!isNative && !key && chain !== 'ethereum') {
+    nativeResult = await nativePromise.then(
+      (value) => ({ status: 'fulfilled', value } as const),
+      (reason) => ({ status: 'rejected', reason } as const)
+    );
+    // Keyless PolygonScan/BscScan access is deliberately throttled to avoid
+    // turning the provider's low anonymous quota into a second failed request.
+    await new Promise((resolve) => setTimeout(resolve, 5200));
+    tokenResult = await tokenPromise.then(
+      (value) => ({ status: 'fulfilled', value } as const),
+      (reason) => ({ status: 'rejected', reason } as const)
+    );
+  } else {
+    [nativeResult, tokenResult] = await Promise.allSettled([nativePromise, tokenPromise]);
+  }
   if (nativeResult.status === 'rejected' && tokenResult.status === 'rejected') {
     throw new Error(String(nativeResult.reason?.message || tokenResult.reason?.message || 'History provider failed.'));
   }
