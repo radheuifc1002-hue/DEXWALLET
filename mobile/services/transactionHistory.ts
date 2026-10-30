@@ -14,8 +14,10 @@ export type WalletActivity = {
   explorerUrl: string;
 };
 
-const CHAIN_ID: Record<'ethereum', { mainnet: number; testnet: number }> = {
+const CHAIN_ID: Record<Exclude<Blockchain, 'solana'>, { mainnet: number; testnet: number }> = {
   ethereum: { mainnet: 1, testnet: 11155111 },
+  bnb: { mainnet: 56, testnet: 97 },
+  polygon: { mainnet: 137, testnet: 80002 },
 };
 const EXPLORER: Record<Blockchain, { mainnet: string; testnet: string }> = {
   ethereum: { mainnet: 'https://etherscan.io', testnet: 'https://sepolia.etherscan.io' },
@@ -60,7 +62,7 @@ async function fetchJson(url: string) {
   if (!response.ok) throw new Error(`History provider returned HTTP ${response.status}.`);
   return response.json();
 }
-async function fetchRoutescan(chain: 'ethereum', network: Network, params: Record<string, string>) {
+async function fetchRoutescan(chain: Exclude<Blockchain, 'solana'>, network: Network, params: Record<string, string>) {
   const chainId = CHAIN_ID[chain][network];
   const url = new URL(`https://api.routescan.io/v2/network/${network}/evm/${chainId}/etherscan/api`);
   Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
@@ -97,7 +99,7 @@ function formatEtherscanRows(rows: any[], chain: Exclude<Blockchain, 'solana'>, 
   }).filter((item) => Boolean(item.hash));
 }
 
-async function fetchRoutescanHistory(chain: 'ethereum', network: Network, wallet: string, asset: Token): Promise<WalletActivity[]> {
+async function fetchRoutescanHistory(chain: Exclude<Blockchain, 'solana'>, network: Network, wallet: string, asset: Token): Promise<WalletActivity[]> {
   const base = { module: 'account', address: wallet, page: '1', offset: '100', sort: 'desc' };
   if (asset.contractAddress) {
     const contract = asset.contractAddress.toLowerCase();
@@ -208,11 +210,23 @@ async function fetchBnbBinplorer(wallet: string, asset: Token): Promise<WalletAc
 
 async function fetchEvmHistory(chain: Exclude<Blockchain, 'solana'>, network: Network, wallet: string, asset: Token): Promise<WalletActivity[]> {
   if (chain === 'ethereum') return fetchRoutescanHistory(chain, network, wallet, asset);
-  if (chain === 'polygon') return fetchPolygonBlockscout(network, wallet, asset);
-  if (network === 'testnet') {
-    throw new Error('BNB testnet transaction indexing is not available yet. You can open BscScan Testnet to inspect activity.');
+  if (chain === 'polygon') {
+    try {
+      return await fetchPolygonBlockscout(network, wallet, asset);
+    } catch {
+      try {
+        return await fetchRoutescanHistory(chain, network, wallet, asset);
+      } catch {
+        throw new Error('Polygon transaction history is temporarily unavailable from the indexing providers. You can still open PolygonScan to view activity.');
+      }
+    }
   }
-  return fetchBnbBinplorer(wallet, asset);
+  if (network === 'testnet') {
+    try { return await fetchRoutescanHistory(chain, network, wallet, asset); }
+    catch { throw new Error('BNB testnet transaction history is not currently available.'); }
+  }
+  try { return await fetchBnbBinplorer(wallet, asset); }
+  catch { return fetchRoutescanHistory(chain, network, wallet, asset); }
 }
 
 async function solRpc(url: string, method: string, params: unknown[]) {
