@@ -35,3 +35,8 @@ test('keyset pagination distinguishes native rows and token log events at the sa
   assert.match(historyApi, /tr\.event_index < \$\{cursor\?\.eventIndex/);
   assert.match(historyApi, /_eventIndex - a\._eventIndex/);
 });
+
+test('indexed-history only advertises networks with a configured worker', () => {
+  assert.match(historyApi, /SUPPORTED_INDEXED_NETWORKS = new Set\(\['ethereum:mainnet', 'ethereum:testnet', 'polygon:mainnet'\]\)/);
+  assert.doesNotMatch(historyApi, /ALLOWED_CHAINS = new Set\(\['ethereum', 'polygon', 'bnb'\]\)/);
+});
