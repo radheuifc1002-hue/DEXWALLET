@@ -14,7 +14,11 @@ export type WalletActivity = {
   explorerUrl: string;
 };
 
-const CHAIN_ID: Record<Exclude<Blockchain, 'solana'>, number> = { ethereum: 1, bnb: 56, polygon: 137 };
+const CHAIN_ID: Record<Exclude<Blockchain, 'solana'>, { mainnet: number; testnet: number }> = {
+  ethereum: { mainnet: 1, testnet: 11155111 },
+  bnb: { mainnet: 56, testnet: 97 },
+  polygon: { mainnet: 137, testnet: 80002 },
+};
 const EXPLORER: Record<Blockchain, { mainnet: string; testnet: string }> = {
   ethereum: { mainnet: 'https://etherscan.io', testnet: 'https://sepolia.etherscan.io' },
   bnb: { mainnet: 'https://bscscan.com', testnet: 'https://testnet.bscscan.com' },
@@ -28,174 +32,187 @@ export function getAssetExplorerUrl(chain: Blockchain, network: Network, address
   return contractAddress ? `${base}/token/${contractAddress}?a=${address}` : `${base}/address/${address}`;
 }
 
-async function routescan(chain: Exclude<Blockchain, 'solana'>, network: Network, params: Record<string, string>) {
-  const chainId = CHAIN_ID[chain];
-  const url = new URL(`https://api.routescan.io/v2/network/${network === 'mainnet' ? 'mainnet' : 'testnet'}/evm/${chainId}/etherscan/api`);
+function safeBigInt(value: unknown): bigint {
+  try { return BigInt(String(value ?? '0')); } catch { return 0n; }
+}
+function formatAmount(value: unknown, decimals: number, symbol: string) {
+  if (value === undefined || value === null) return undefined;
+  const formatted = Number(ethers.formatUnits(safeBigInt(value), decimals));
+  return Number.isFinite(formatted) ? `${formatted.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${symbol}` : undefined;
+}
+function short(value: string) { return value ? `${value.slice(0, 8)}…${value.slice(-4)}` : 'Unknown'; }
+function mergeRows(rows: any[]) {
+  const unique = new Map<string, any>();
+  rows.forEach((tx) => {
+    const hash = String(tx.hash || tx.transactionHash || tx.transaction_hash || '');
+    const index = tx.logIndex ?? tx.log_index ?? tx.traceId ?? tx.trace_id ?? 'tx';
+    if (hash) unique.set(`${hash}:${index}`, tx);
+  });
+  return [...unique.values()];
+}
+function sortAndLimit(rows: WalletActivity[]) {
+  return rows.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, 50);
+}
+function explorerTx(chain: Blockchain, network: Network, hash: string) {
+  return `${EXPLORER[chain][network]}/tx/${hash}`;
+}
+
+async function fetchJson(url: string) {
+  const response = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (!response.ok) throw new Error(`History provider returned HTTP ${response.status}.`);
+  return response.json();
+}
+async function fetchRoutescan(chain: Exclude<Blockchain, 'solana'>, network: Network, params: Record<string, string>) {
+  const chainId = CHAIN_ID[chain][network];
+  const url = new URL(`https://api.routescan.io/v2/network/${network}/evm/${chainId}/etherscan/api`);
   Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
-  const response = await fetch(url.toString(), { headers: { Accept: 'application/json' } });
-  if (response.status === 403) throw new Error('The transaction data provider denied this request (HTTP 403). Please try again later.');
-  if (!response.ok) throw new Error(`Transaction history service returned HTTP ${response.status}.`);
-  const body = await response.json();
-  if (body.status === '0' && body.message !== 'No transactions found') {
-    throw new Error(body.result || body.message || 'Unable to retrieve transaction history.');
+  const body = await fetchJson(url.toString());
+  if (body.status === '0' && body.message !== 'No transactions found' && !String(body.result || '').toLowerCase().includes('no transactions')) {
+    throw new Error(body.result || body.message || 'Unable to retrieve indexed transactions.');
   }
   return Array.isArray(body.result) ? body.result : [];
 }
 
-function formatEvmRows(rows: any[], chain: Blockchain, network: Network, wallet: string, symbol: string, contract?: string): WalletActivity[] {
+function formatEtherscanRows(rows: any[], chain: Exclude<Blockchain, 'solana'>, network: Network, wallet: string, asset: Token) {
+  const contract = asset.contractAddress?.toLowerCase();
   return rows.map((tx) => {
     const from = String(tx.from || '').toLowerCase();
     const to = String(tx.to || '').toLowerCase();
     const mine = wallet.toLowerCase();
     const direction = from === mine && to === mine ? 'self' : from === mine ? 'out' : to === mine ? 'in' : 'contract';
-    const failed = tx.isError === '1' || tx.txreceipt_status === '0';
-    const amount = tx.value && tx.value !== '0' ? Number(ethers.formatUnits(BigInt(tx.value), 18)).toLocaleString(undefined, { maximumFractionDigits: 6 }) : undefined;
     const hash = String(tx.hash || tx.transactionHash || '');
+    const tokenTransfer = tx.tokenDecimal !== undefined || tx.tokenSymbol !== undefined;
+    const amount = tokenTransfer
+      ? formatAmount(tx.value, Number(tx.tokenDecimal || asset.decimals || 18), tx.tokenSymbol || asset.symbol)
+      : (!contract ? formatAmount(tx.value, 18, asset.symbol) : undefined);
+    const failed = tx.isError === '1' || tx.txreceipt_status === '0';
+    const counterparty = direction === 'in' ? from : to;
+    const timestamp = Number(tx.timeStamp || 0) || null;
     return {
-      id: hash + (tx.traceId || tx.logIndex || ''),
-      hash,
-      timestamp: Number(tx.timeStamp || 0) || null,
-      title: contract ? (tx.tokenName ? `${tx.tokenName} transfer` : 'Token interaction') : (direction === 'contract' ? 'Contract interaction' : direction === 'in' ? 'Received' : direction === 'out' ? 'Sent' : 'Self transfer'),
-      subtitle: contract ? `${String(tx.from || '').slice(0, 8)}… → ${String(tx.to || '').slice(0, 8)}…` : (direction === 'contract' ? `Contract: ${String(tx.to || '').slice(0, 10)}…` : `${direction === 'in' ? 'From' : 'To'} ${(direction === 'in' ? String(tx.from || '') : String(tx.to || '')).slice(0, 8)}…`),
-      amount: tx.tokenDecimal ? `${Number(ethers.formatUnits(BigInt(tx.value || '0'), Number(tx.tokenDecimal))).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${tx.tokenSymbol || symbol}` : amount ? `${amount} ${symbol}` : undefined,
-      direction,
-      status: failed ? 'failed' : 'success',
-      explorerUrl: `${EXPLORER[chain][network]}/tx/${hash}`,
+      id: hash + String(tx.logIndex ?? tx.traceId ?? 'call'),
+      hash, timestamp,
+      title: tokenTransfer ? `${tx.tokenSymbol || asset.symbol} transfer` : contract ? 'Token contract interaction' : direction === 'contract' ? 'Contract interaction' : direction === 'in' ? 'Received' : direction === 'out' ? 'Sent' : 'Self transfer',
+      subtitle: `${short(from)} → ${short(to)}`,
+      amount, direction, status: failed ? 'failed' : 'success',
+      explorerUrl: explorerTx(chain, network, hash),
     } as WalletActivity;
-  });
+  }).filter((item) => Boolean(item.hash));
 }
 
-async function fetchRoutescanHistory(chain: 'ethereum', network: Network, wallet: string, asset: Token): Promise<WalletActivity[]> {
-  const base = { module: 'account', address: wallet, page: '1', offset: '50', sort: 'desc' };
+async function fetchRoutescanHistory(chain: Exclude<Blockchain, 'solana'>, network: Network, wallet: string, asset: Token): Promise<WalletActivity[]> {
+  const base = { module: 'account', address: wallet, page: '1', offset: '100', sort: 'desc' };
   if (asset.contractAddress) {
     const contract = asset.contractAddress.toLowerCase();
-    const [normal, tokenTransfers] = await Promise.all([
-      routescan(chain, network, { ...base, action: 'txlist' }),
-      routescan(chain, network, { ...base, action: 'tokentx', contractaddress: contract }),
+    const [normal, transfers] = await Promise.all([
+      fetchRoutescan(chain, network, { ...base, action: 'txlist' }),
+      fetchRoutescan(chain, network, { ...base, action: 'tokentx', contractaddress: contract }),
     ]);
-    const interactions = normal.filter((tx: any) => String(tx.to || '').toLowerCase() === contract || String(tx.from || '').toLowerCase() === contract);
-    const merged = new Map<string, any>();
-    [...interactions, ...tokenTransfers].forEach((tx: any) => {
-      const hash = String(tx.hash || tx.transactionHash || '');
-      if (hash) merged.set(hash + String(tx.logIndex ?? 'call'), tx);
-    });
-    return formatEvmRows([...merged.values()], chain, network, wallet, asset.symbol, contract)
-      .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, 50);
+    const interactions = normal.filter((tx: any) => String(tx.to || '').toLowerCase() === contract);
+    return sortAndLimit(formatEtherscanRows(mergeRows([...interactions, ...transfers]), chain, network, wallet, asset));
   }
   const [normal, internal] = await Promise.all([
-    routescan(chain, network, { ...base, action: 'txlist' }),
-    routescan(chain, network, { ...base, action: 'txlistinternal' }).catch(() => []),
+    fetchRoutescan(chain, network, { ...base, action: 'txlist' }),
+    fetchRoutescan(chain, network, { ...base, action: 'txlistinternal' }).catch(() => []),
   ]);
-  const all = new Map<string, any>();
-  [...normal, ...internal].forEach((tx: any) => {
-    const hash = String(tx.hash || tx.transactionHash || '');
-    const key = hash + String(tx.traceId || 'native');
-    if (hash) all.set(key, tx);
-  });
-  return formatEvmRows([...all.values()], chain, network, wallet, asset.symbol)
-    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, 50);
+  return sortAndLimit(formatEtherscanRows(mergeRows([...normal, ...internal]), chain, network, wallet, asset));
 }
 
-async function fetchJson(url: string) {
-  const response = await fetch(url, { headers: { Accept: 'application/json' } });
-  if (response.status === 403) throw new Error('The transaction history provider denied access (HTTP 403).');
-  if (!response.ok) throw new Error(`Transaction history service returned HTTP ${response.status}.`);
-  return response.json();
-}
-
-async function fetchPolygonHistory(network: Network, wallet: string, asset: Token): Promise<WalletActivity[]> {
+async function fetchPolygonBlockscout(network: Network, wallet: string, asset: Token): Promise<WalletActivity[]> {
   const host = network === 'mainnet' ? 'https://polygon.blockscout.com/api/v2' : 'https://polygon-amoy.blockscout.com/api/v2';
-  const address = encodeURIComponent(wallet);
-  const base = `${host}/addresses/${address}`;
-  const [normalBody, internalBody, transferBody] = await Promise.all([
+  const base = `${host}/addresses/${encodeURIComponent(wallet)}`;
+  const [normalBody, secondaryBody] = await Promise.all([
     fetchJson(`${base}/transactions`),
-    fetchJson(`${base}/internal-transactions`).catch(() => ({ items: [] })),
     asset.contractAddress
-      ? fetchJson(`${base}/token-transfers?token=${encodeURIComponent(asset.contractAddress)}`).catch(() => ({ items: [] }))
-      : Promise.resolve({ items: [] }),
+      ? fetchJson(`${base}/token-transfers?token=${encodeURIComponent(asset.contractAddress)}`)
+      : fetchJson(`${base}/internal-transactions`).catch(() => ({ items: [] })),
   ]);
   const normal = Array.isArray(normalBody.items) ? normalBody.items : [];
-  const internal = Array.isArray(internalBody.items) ? internalBody.items : [];
-  const transfers = Array.isArray(transferBody.items) ? transferBody.items : [];
+  const secondary = Array.isArray(secondaryBody.items) ? secondaryBody.items : [];
   const contract = asset.contractAddress?.toLowerCase();
   const interactions = contract ? normal.filter((tx: any) =>
-    String(tx.to?.hash || tx.to || '').toLowerCase() === contract ||
-    String(tx.from?.hash || tx.from || '').toLowerCase() === contract
+    String(tx.to?.hash || tx.to || '').toLowerCase() === contract
   ) : [];
-  const selected = contract ? [...interactions, ...transfers] : [...normal, ...internal];
-  const unique = new Map<string, any>();
-  selected.forEach((tx: any) => {
-    const hash = String(tx.hash || tx.transaction_hash || tx.transactionHash || '');
-    const key = hash + String(tx.log_index ?? tx.index ?? tx.trace_id ?? 'tx');
-    if (hash) unique.set(key, tx);
-  });
-  return [...unique.values()].map((tx: any) => {
+  const selected = contract ? [...interactions, ...secondary] : [...normal, ...secondary];
+  const mine = wallet.toLowerCase();
+  const rows = mergeRows(selected).map((tx: any) => {
     const from = String(tx.from?.hash || tx.from || '').toLowerCase();
     const to = String(tx.to?.hash || tx.to || '').toLowerCase();
-    const mine = wallet.toLowerCase();
     const direction = from === mine && to === mine ? 'self' : from === mine ? 'out' : to === mine ? 'in' : 'contract';
     const hash = String(tx.hash || tx.transaction_hash || tx.transactionHash || '');
     const token = tx.token || {};
-    const value = tx.total?.value || tx.value || tx.amount || '0';
-    const decimals = Number(token.decimals || tx.token_decimals || 18);
-    const amount = tx.token || tx.token_type
-      ? `${Number(ethers.formatUnits(BigInt(value || '0'), decimals)).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${token.symbol || asset.symbol}`
-      : (!contract && value !== '0' ? `${Number(ethers.formatUnits(BigInt(value), 18)).toLocaleString(undefined, { maximumFractionDigits: 6 })} POL` : undefined);
-    const failed = tx.status === 'error' || tx.status === 'failed' || tx.result === 'error';
-    const timestamp = tx.timestamp || tx.block_timestamp;
+    const isTokenTransfer = Boolean(tx.token || tx.token_type || tx.total?.value !== undefined);
+    const rawValue = tx.total?.value ?? tx.value ?? tx.amount ?? '0';
+    const decimals = Number(token.decimals ?? tx.token_decimals ?? (isTokenTransfer ? asset.decimals ?? 18 : 18));
+    const amount = isTokenTransfer
+      ? formatAmount(rawValue, decimals, token.symbol || asset.symbol)
+      : (!contract ? formatAmount(rawValue, 18, asset.symbol) : undefined);
+    const timestampRaw = tx.timestamp || tx.block_timestamp;
+    const timestamp = typeof timestampRaw === 'string' && timestampRaw.includes('T')
+      ? Math.floor(new Date(timestampRaw).getTime() / 1000)
+      : Number(timestampRaw || 0) || null;
+    const failed = ['error', 'failed'].includes(String(tx.status || tx.result || '').toLowerCase());
     return {
-      id: hash + String(tx.log_index ?? tx.index ?? ''),
-      hash,
-      timestamp: timestamp ? Math.floor(new Date(timestamp).getTime() / 1000) : Number(tx.timestamp || 0) || null,
-      title: contract ? (tx.token ? `${token.symbol || asset.symbol} transfer` : 'Token contract interaction') : (direction === 'contract' ? 'Contract interaction' : direction === 'in' ? 'Received' : direction === 'out' ? 'Sent' : 'Internal transfer'),
-      subtitle: `${from.slice(0, 8)}… → ${to.slice(0, 8)}…`,
-      amount,
-      direction,
-      status: failed ? 'failed' : 'success',
-      explorerUrl: `https://polygonscan.com/tx/${hash}`,
+      id: hash + String(tx.log_index ?? tx.index ?? tx.trace_id ?? 'tx'),
+      hash, timestamp,
+      title: isTokenTransfer ? `${token.symbol || asset.symbol} transfer` : contract ? 'Token contract interaction' : direction === 'contract' ? (tx.method || 'Contract interaction') : direction === 'in' ? 'Received' : direction === 'out' ? 'Sent' : 'Internal transfer',
+      subtitle: `${short(from)} → ${short(to)}`,
+      amount, direction, status: failed ? 'failed' : 'success',
+      explorerUrl: explorerTx('polygon', network, hash),
     } as WalletActivity;
-  }).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, 50);
+  }).filter((item) => Boolean(item.hash));
+  return sortAndLimit(rows);
 }
 
-async function fetchBnbHistory(wallet: string, asset: Token): Promise<WalletActivity[]> {
-  const base = 'https://api.binplorer.com';
-  const query = 'apiKey=freekey&limit=100&showZeroValues=true';
+async function fetchBnbBinplorer(wallet: string, asset: Token): Promise<WalletActivity[]> {
   const path = asset.contractAddress ? 'getAddressHistory' : 'getAddressTransactions';
-  const data = await fetchJson(`${base}/${path}/${encodeURIComponent(wallet)}?${query}`);
+  const url = `https://api.binplorer.com/${path}/${encodeURIComponent(wallet)}?apiKey=freekey&limit=100&showZeroValues=true`;
+  const data = await fetchJson(url);
   const rows = Array.isArray(data) ? data : Array.isArray(data.operations) ? data.operations : [];
   const contract = asset.contractAddress?.toLowerCase();
   const filtered = contract ? rows.filter((tx: any) =>
     String(tx.tokenInfo?.address || tx.token?.address || '').toLowerCase() === contract ||
-    String(tx.to || '').toLowerCase() === contract ||
-    String(tx.from || '').toLowerCase() === contract
+    String(tx.to || '').toLowerCase() === contract
   ) : rows;
-  return filtered.slice(0, 50).map((tx: any) => {
+  const mapped = filtered.map((tx: any) => {
     const from = String(tx.from || '').toLowerCase();
     const to = String(tx.to || tx.address || '').toLowerCase();
-    const mine = wallet.toLowerCase();
-    const direction = from === mine ? 'out' : to === mine ? 'in' : 'contract';
+    const direction = from === wallet.toLowerCase() ? 'out' : to === wallet.toLowerCase() ? 'in' : 'contract';
     const hash = String(tx.transactionHash || tx.hash || tx.txHash || '');
-    const tokenInfo = tx.tokenInfo || {};
-    const amountValue = Number(ethers.formatUnits(BigInt(tx.value || '0'), Number(tokenInfo.decimals || asset.decimals || 18)));
+    const token = tx.tokenInfo || tx.token || {};
+    const isToken = Boolean(asset.contractAddress);
+    const decimals = Number(token.decimals ?? asset.decimals ?? 18);
     return {
-      id: hash + String(tx.logIndex || ''),
-      hash,
+      id: hash + String(tx.logIndex || 'tx'), hash,
       timestamp: Number(tx.timestamp || 0) || null,
-      title: contract ? (tx.type === 'transfer' ? `${tokenInfo.symbol || asset.symbol} transfer` : 'Token contract interaction') : (direction === 'out' ? 'Sent' : direction === 'in' ? 'Received' : 'Contract interaction'),
-      subtitle: `${from.slice(0, 8)}… → ${to.slice(0, 8)}…`,
-      amount: tx.value !== undefined ? `${amountValue.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${tokenInfo.symbol || asset.symbol}` : undefined,
-      direction,
-      status: 'success',
-      explorerUrl: `https://bscscan.com/tx/${hash}`,
+      title: isToken ? (tx.type === 'transfer' ? `${token.symbol || asset.symbol} transfer` : 'Token contract interaction') : direction === 'out' ? 'Sent' : direction === 'in' ? 'Received' : 'Contract interaction',
+      subtitle: `${short(from)} → ${short(to)}`,
+      amount: tx.value !== undefined ? formatAmount(tx.value, decimals, token.symbol || asset.symbol) : undefined,
+      direction, status: 'success',
+      explorerUrl: explorerTx('bnb', 'mainnet', hash),
     } as WalletActivity;
-  }).filter((item: WalletActivity) => Boolean(item.hash)).sort((a: WalletActivity, b: WalletActivity) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, 50);
+  }).filter((item: WalletActivity) => Boolean(item.hash));
+  return sortAndLimit(mapped);
 }
 
 async function fetchEvmHistory(chain: Exclude<Blockchain, 'solana'>, network: Network, wallet: string, asset: Token): Promise<WalletActivity[]> {
   if (chain === 'ethereum') return fetchRoutescanHistory(chain, network, wallet, asset);
-  if (chain === 'polygon') return fetchPolygonHistory(network, wallet, asset);
-  if (network === 'testnet') throw new Error('BNB testnet transaction indexing is not available in this build.');
-  return fetchBnbHistory(wallet, asset);
+  if (chain === 'polygon') {
+    try { return await fetchPolygonBlockscout(network, wallet, asset); }
+    catch (primaryError) {
+      try { return await fetchRoutescanHistory(chain, network, wallet, asset); }
+      catch {
+        throw new Error('Polygon transaction history is temporarily unavailable from the indexing providers. You can still open PolygonScan to view activity.');
+      }
+    }
+  }
+  if (network === 'testnet') {
+    try { return await fetchRoutescanHistory(chain, network, wallet, asset); }
+    catch { throw new Error('BNB testnet transaction history is not currently available.'); }
+  }
+  try { return await fetchBnbBinplorer(wallet, asset); }
+  catch {
+    return fetchRoutescanHistory(chain, network, wallet, asset);
+  }
 }
 
 async function solRpc(url: string, method: string, params: unknown[]) {
@@ -214,18 +231,15 @@ async function fetchSolanaHistory(network: Network, wallet: string, asset: Token
     addresses = (tokenAccounts?.value || []).map((item: any) => item.pubkey);
     if (!addresses.length) return [];
   }
-  const signatures = await Promise.all(addresses.map(async (address) =>
+  const signatures = await Promise.all(addresses.map((address) =>
     solRpc(rpc, 'getSignaturesForAddress', [address, { limit: 50, commitment: 'confirmed' }])
   ));
   const unique = new Map<string, any>();
   signatures.flat().forEach((item: any) => unique.set(item.signature, item));
   return [...unique.values()].sort((a, b) => (b.blockTime || 0) - (a.blockTime || 0)).slice(0, 50).map((item) => ({
-    id: item.signature,
-    hash: item.signature,
-    timestamp: item.blockTime || null,
+    id: item.signature, hash: item.signature, timestamp: item.blockTime || null,
     title: item.err ? 'Failed transaction' : asset.contractAddress ? 'Token account activity' : 'Solana transaction',
-    subtitle: `Slot ${item.slot}`,
-    direction: 'contract',
+    subtitle: `Slot ${item.slot}`, direction: 'contract',
     status: item.err ? 'failed' : 'success',
     explorerUrl: `https://explorer.solana.com/tx/${item.signature}${network === 'testnet' ? '?cluster=devnet' : ''}`,
   }));
