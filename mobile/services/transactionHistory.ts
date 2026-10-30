@@ -80,14 +80,24 @@ async function getJson(url: string): Promise<any> {
         headers: { Accept: 'application/json' },
         signal: controller.signal,
       });
-      if (response.status === 429 || response.status >= 500) {
-        throw new Error('History provider returned HTTP ' + response.status + '.');
+      if (!response.ok) {
+        const message = 'History provider returned HTTP ' + response.status + '.';
+        // Retry only transient failures. A 400/401/403/404 is a provider or
+        // configuration problem and should fail over immediately.
+        if (response.status !== 408 && response.status !== 429 && response.status < 500) {
+          throw Object.assign(new Error(message), { nonRetryable: true });
+        }
+        throw new Error(message);
       }
-      if (!response.ok) throw new Error('History provider returned HTTP ' + response.status + '.');
-      return await response.json();
+      const json = await response.json();
+      if (json && typeof json === 'object' && json.error) {
+        throw new Error(String(json.error.message || 'History provider returned an API error.'));
+      }
+      return json;
     } catch (error: any) {
       lastError = error instanceof Error ? error : new Error('History provider request failed.');
-      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 350 * (attempt + 1)));
+      if (error?.nonRetryable || attempt === 2) break;
+      await new Promise((resolve) => setTimeout(resolve, 400 * Math.pow(2, attempt)));
     } finally {
       clearTimeout(timer);
     }
@@ -158,6 +168,9 @@ async function fetchEtherscanStyle(options: Options): Promise<EvmHistoryRow[]> {
       : env.EXPO_PUBLIC_ETHERSCAN_API_KEY;
   const common = '&address=' + encodeURIComponent(walletAddress) +
     '&startblock=0&endblock=99999999&page=1&offset=' + (options.limit || DEFAULT_LIMIT) + '&sort=desc';
+  if (chain !== 'ethereum' && !key) {
+    throw new Error(chain.toUpperCase() + ' explorer API key is not configured.');
+  }
   const auth = key ? '&apikey=' + encodeURIComponent(key) : '';
   const request = async (action: string, extra = '') => {
     const json = await getJson(base + '?module=account&action=' + action + common + extra + auth);
@@ -202,10 +215,12 @@ async function fetchEtherscanStyle(options: Options): Promise<EvmHistoryRow[]> {
 }
 
 async function fetchEtherscanV2(options: Options): Promise<EvmHistoryRow[]> {
-  if (options.network !== 'mainnet') throw new Error('Etherscan V2 fallback is only configured for EVM mainnets.');
+  // Etherscan V2 supports the configured Ethereum and Polygon testnets too.
   const key = (globalThis as any).process?.env?.EXPO_PUBLIC_ETHERSCAN_API_KEY;
   if (!key) throw new Error('Etherscan V2 fallback is not configured.');
-  const chainIds = { ethereum: 1, bnb: 56, polygon: 137 } as const;
+  const chainIds = options.network === 'mainnet'
+    ? { ethereum: 1, bnb: 56, polygon: 137 }
+    : { ethereum: 11155111, bnb: 97, polygon: 80002 };
   const base = 'https://api.etherscan.io/v2/api?chainid=' + chainIds[options.chain];
   const common = '&address=' + encodeURIComponent(options.walletAddress) +
     '&startblock=0&endblock=99999999&page=1&offset=' + (options.limit || DEFAULT_LIMIT) + '&sort=desc&apikey=' + encodeURIComponent(key);
@@ -233,30 +248,55 @@ async function fetchEtherscanV2(options: Options): Promise<EvmHistoryRow[]> {
   rows.push(...tokenRows.map((row: any) => mapEvmRow(row, options.walletAddress, options.symbol, true, options.chain, options.network)));
   return rows;
 }
+ 
+async function fetchBlockscout(options: Options): Promise<EvmHistoryRow[]> {
+  const hosts: Record<'ethereum' | 'polygon', Record<'mainnet' | 'testnet', string>> = {
+    ethereum: {
+      mainnet: 'https://eth.blockscout.com/api/v2',
+      testnet: 'https://eth-sepolia.blockscout.com/api/v2',
+    },
+    polygon: {
+      mainnet: 'https://polygon.blockscout.com/api/v2',
+      // Amoy is not currently served by the public Polygon Blockscout instance.
+      // It is handled by the configured Polygonscan/Etherscan API key fallback.
+      testnet: '',
+    },
+  };
+  if (options.chain === 'bnb') throw new Error('No public Blockscout indexer is configured for BNB Smart Chain.');
+  const host = hosts[options.chain][options.network];
+  if (!host) throw new Error('No public Blockscout indexer is configured for this network.');
+  const addressPath = '/addresses/' + encodeURIComponent(options.walletAddress);
+  const txUrl = host + addressPath + '/transactions';
+  const tokenUrl = host + addressPath + '/token-transfers?type=ERC-20&token=' +
+    encodeURIComponent(options.contractAddress);
 
-async function fetchPolygonBlockscout(options: Options): Promise<EvmHistoryRow[]> {
-  if (options.network !== 'mainnet') throw new Error('Blockscout fallback is only configured for Polygon mainnet.');
-  const base = 'https://polygon.blockscout.com/api/v2/addresses/' + encodeURIComponent(options.walletAddress);
   const [txResult, tokenResult] = await Promise.allSettled([
-    getJson(base + '/transactions'),
-    options.isNative
-      ? Promise.resolve({ items: [] })
-      : getJson(base + '/token-transfers?type=ERC-20&token=' + encodeURIComponent(options.contractAddress)),
+    getJson(txUrl),
+    options.isNative ? Promise.resolve({ items: [] }) : getJson(tokenUrl),
   ]);
-  if (txResult.status === 'rejected' && (options.isNative || tokenResult.status === 'rejected')) {
-    throw new Error('Polygon indexer unavailable: ' + String(txResult.reason?.message || tokenResult.reason?.message || 'request failed'));
+  if (txResult.status === 'rejected' || tokenResult.status === 'rejected') {
+    const failure = txResult.status === 'rejected' ? txResult.reason : (tokenResult as PromiseRejectedResult).reason;
+    throw new Error('Blockscout indexer failed: ' + String(failure?.message || 'request failed'));
   }
-  const txRows = txResult.status === 'fulfilled' && Array.isArray(txResult.value?.items) ? txResult.value.items : [];
-  const tokenRows = tokenResult.status === 'fulfilled' && Array.isArray(tokenResult.value?.items) ? tokenResult.value.items : [];
+  if (!Array.isArray(txResult.value?.items) || !Array.isArray(tokenResult.value?.items)) {
+    throw new Error('Blockscout returned an unexpected history response.');
+  }
+
+  const txRows = txResult.value.items;
+  const tokenRows = tokenResult.value.items;
   const contractRows = options.isNative ? txRows : txRows.filter((row: any) =>
     String(row.to?.hash || '').toLowerCase() === options.contractAddress.toLowerCase() ||
     String(row.from?.hash || '').toLowerCase() === options.contractAddress.toLowerCase()
   );
   const rows = contractRows.map((row: any) => {
     const mapped = mapEvmRow(row, options.walletAddress, options.symbol, false, options.chain, options.network);
-    return options.isNative ? mapped : { ...mapped, title: 'Contract interaction', detail: 'Called ' + options.name + ' contract', amount: '' };
+    return options.isNative
+      ? mapped
+      : { ...mapped, title: 'Contract interaction', detail: 'Called ' + options.name + ' contract', amount: '' };
   });
-  rows.push(...tokenRows.map((row: any) => mapEvmRow(row, options.walletAddress, options.symbol, true, options.chain, options.network)));
+  rows.push(...tokenRows.map((row: any) =>
+    mapEvmRow(row, options.walletAddress, options.symbol, true, options.chain, options.network)
+  ));
   return rows;
 }
 
@@ -267,13 +307,14 @@ export async function fetchEvmAssetHistory(options: Options): Promise<EvmHistory
   }
 
   const providers: Array<() => Promise<EvmHistoryRow[]>> = [];
-  if (options.chain === 'polygon' && options.network === 'mainnet') {
-    providers.push(() => fetchPolygonBlockscout(options));
+  // Prefer the chain's own indexed API for Ethereum and Polygon mainnet.
+  // Keep independent explorer APIs as failovers instead of relying on a
+  // single Etherscan-compatible gateway that may reject a chain ID.
+  if (options.chain === 'ethereum' || options.chain === 'polygon') {
+    providers.push(() => fetchBlockscout(options));
   }
   providers.push(() => fetchEtherscanStyle(options));
-  if (options.network === 'mainnet') {
-    providers.push(() => fetchEtherscanV2(options));
-  }
+  providers.push(() => fetchEtherscanV2(options));
 
   const errors: string[] = [];
   for (const provider of providers) {
