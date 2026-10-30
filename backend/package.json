@@ -1,0 +1,13 @@
+{
+  "name": "dexwallet-api",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "engines": { "node": "22.x" },
+  "scripts": {
+    "check:worker": "node --check indexer/worker.mjs"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "1.2.0"
+  }
+}

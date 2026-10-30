@@ -19,7 +19,7 @@ export default defineConfig({
   ],
   resolve: {
     alias: [
-      { find: '@/app', replacement: path.resolve(__dirname, './web-app/app') },
+      { find: '@/app', replacement: path.resolve(__dirname, './app') },
       { find: '@', replacement: path.resolve(__dirname, './src') },
     ],
   },

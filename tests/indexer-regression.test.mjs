@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const worker = readFileSync(new URL('../indexer/worker.mjs', import.meta.url), 'utf8');
-const historyApi = readFileSync(new URL('../api/indexed-history.ts', import.meta.url), 'utf8');
-const registerApi = readFileSync(new URL('../api/indexer/register-address.ts', import.meta.url), 'utf8');
+const worker = readFileSync(new URL('../backend/indexer/worker.mjs', import.meta.url), 'utf8');
+const historyApi = readFileSync(new URL('../backend/api/indexed-history.ts', import.meta.url), 'utf8');
+const registerApi = readFileSync(new URL('../backend/api/indexer/register-address.ts', import.meta.url), 'utf8');
 
 test('native transaction upsert promotes token-only placeholders and contract calls', () => {
   assert.match(worker, /WHEN EXCLUDED\.tx_type = 'contract_interaction' THEN 'contract_interaction'/);
@@ -34,4 +34,9 @@ test('keyset pagination distinguishes native rows and token log events at the sa
   assert.match(historyApi, /cursor\?\.rowType === 'token'/);
   assert.match(historyApi, /tr\.event_index < \$\{cursor\?\.eventIndex/);
   assert.match(historyApi, /_eventIndex - a\._eventIndex/);
+});
+
+test('indexed-history only advertises networks with a configured worker', () => {
+  assert.match(historyApi, /SUPPORTED_INDEXED_NETWORKS = new Set\(\['ethereum:mainnet', 'ethereum:testnet', 'polygon:mainnet'\]\)/);
+  assert.doesNotMatch(historyApi, /ALLOWED_CHAINS = new Set\(\['ethereum', 'polygon', 'bnb'\]\)/);
 });

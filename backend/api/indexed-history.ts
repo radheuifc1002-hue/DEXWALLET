@@ -9,8 +9,7 @@ type Response = {
   end(): void;
 };
 
-const ALLOWED_CHAINS = new Set(['ethereum', 'polygon', 'bnb']);
-const ALLOWED_NETWORKS = new Set(['mainnet', 'testnet']);
+const SUPPORTED_INDEXED_NETWORKS = new Set(['ethereum:mainnet', 'ethereum:testnet', 'polygon:mainnet']);
 const MAX_LIMIT = 50;
 const RATE_LIMIT_PER_MINUTE = 60;
 
@@ -163,7 +162,7 @@ export default async function handler(req: Request, res: Response) {
   const limit = Math.min(MAX_LIMIT, Math.max(1, Number(body.limit || MAX_LIMIT)));
   const cursor = body.cursor == null ? null : decodeCursor(body.cursor);
 
-  if (!ALLOWED_CHAINS.has(chain) || !ALLOWED_NETWORKS.has(network)) {
+  if (!SUPPORTED_INDEXED_NETWORKS.has(chain + ':' + network)) {
     sendError(res, 400, 'unsupported_chain_or_network', requestId); return;
   }
   if (!/^0x[a-fA-F0-9]{40}$/.test(wallet)) {
