@@ -270,7 +270,7 @@ export default async function handler(req: Request, res: Response) {
               OR (COALESCE(block_timestamp, first_seen_at) = ${cursor?.timestamp ?? null}::timestamptz AND tx_hash < ${cursor?.hash || ''})
               OR (COALESCE(block_timestamp, first_seen_at) = ${cursor?.timestamp ?? null}::timestamptz AND tx_hash = ${cursor?.hash || ''} AND ${cursor?.rowType === 'token'})
             )
-          ORDER BY COALESCE(block_timestamp, first_seen_at) DESC, lower(tx_hash) DESC
+          ORDER BY COALESCE(block_timestamp, first_seen_at) DESC, tx_hash DESC
           LIMIT ${limit + 1}
         `;
 
