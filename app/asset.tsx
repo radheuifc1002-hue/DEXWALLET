@@ -131,7 +131,7 @@ export default function AssetProfile() {
             history.length === 0 ? <View style={s.state}><Ionicons name="receipt-outline" size={32} color="#B1ABBE" /><Text style={s.stateText}>No transactions found for this asset.</Text></View> :
             history.map((item) => <ActivityRow key={item.id} item={item} />)}
         </View>
-        <TouchableOpacity style={s.providerCredit} onPress={() => Linking.openURL(asset.blockchain === 'ethereum' ? 'https://routescan.io' : asset.blockchain === 'bnb' ? 'https://binplorer.com' : asset.blockchain === 'polygon' ? 'https://polygon.blockscout.com' : 'https://explorer.solana.com')}><Text style={s.providerCreditText}>Transaction data by {asset.blockchain === 'ethereum' ? 'Routescan' : asset.blockchain === 'bnb' ? 'Binplorer' : asset.blockchain === 'polygon' ? 'Blockscout' : 'Solana RPC'}</Text></TouchableOpacity>
+        <TouchableOpacity style={s.providerCredit} onPress={() => Linking.openURL(asset.blockchain === 'ethereum' ? 'https://routescan.io' : asset.blockchain === 'bnb' ? 'https://binplorer.com' : asset.blockchain === 'polygon' ? 'https://polygon.blockscout.com' : 'https://explorer.solana.com')}><Text style={s.providerCreditText}>Transaction data by {asset.blockchain === 'ethereum' ? 'Routescan' : asset.blockchain === 'bnb' ? 'Binplorer' : asset.blockchain === 'polygon' ? 'Routescan' : 'Solana RPC'}</Text></TouchableOpacity>
         {!loading && history.length >= 50 ? <TouchableOpacity style={s.explorerMore} onPress={() => Linking.openURL(explorer)}><Text style={s.explorerText}>View explorer for more transactions</Text><Ionicons name="open-outline" size={16} color="#6C4CF1" /></TouchableOpacity> : null}
         <View style={{ height: 24 }} />
       </ScrollView>
