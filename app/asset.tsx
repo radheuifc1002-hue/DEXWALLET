@@ -2,8 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Linking, RefreshControl, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { ethers } from 'ethers';
 import { useWallet, Blockchain, Token } from '../context/WalletContext';
 import { fetchAssetHistory, getAssetExplorerUrl, WalletActivity } from '../mobile/services/transactionHistory';
+import { getEvmRpcConfig, getSolanaRpcEndpoint } from '../mobile/services/rpcManager';
 
 const SYMBOL: Record<Blockchain, string> = { ethereum: 'ETH', bnb: 'BNB', polygon: 'POL', solana: 'SOL' };
 const NAMES: Record<Blockchain, string> = { ethereum: 'Ethereum', bnb: 'BNB Chain', polygon: 'Polygon', solana: 'Solana' };
@@ -38,6 +40,7 @@ export default function AssetProfile() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [displayBalance, setDisplayBalance] = useState<string | null>(null);
 
   useEffect(() => {
     if (asset && selectedBlockchain !== asset.blockchain) setSelectedBlockchain(asset.blockchain);
@@ -49,9 +52,41 @@ export default function AssetProfile() {
     try {
       const rows = await fetchAssetHistory(asset.blockchain, network, walletAddress, asset);
       setHistory(rows.slice(0, 50));
+      if (asset.blockchain === 'solana') {
+        const rpc = getSolanaRpcEndpoint(network);
+        const method = async (name: string, params: unknown[]) => {
+          const response = await fetch(rpc, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: name, params }) });
+          if (!response.ok) throw new Error('Unable to fetch live asset balance.');
+          const json = await response.json();
+          if (json.error) throw new Error(json.error.message || 'Unable to fetch live asset balance.');
+          return json.result;
+        };
+        if (asset.contractAddress) {
+          const accounts = await method('getTokenAccountsByOwner', [walletAddress, { mint: asset.contractAddress }, { encoding: 'jsonParsed', commitment: 'confirmed' }]);
+          const raw = (accounts?.value || []).reduce((sum: bigint, item: any) => sum + BigInt(item.account.data.parsed.info.tokenAmount.amount || '0'), 0n);
+          setDisplayBalance(ethers.formatUnits(raw, asset.decimals ?? 0));
+        } else {
+          const result = await method('getBalance', [walletAddress, { commitment: 'confirmed' }]);
+          setDisplayBalance(ethers.formatUnits(BigInt(result.value), 9));
+        }
+      } else {
+        const config = getEvmRpcConfig(asset.blockchain as 'ethereum' | 'bnb' | 'polygon', network);
+        const provider = new ethers.JsonRpcProvider(config.rpc, config.chainId);
+        const chain = await provider.getNetwork();
+        if (Number(chain.chainId) !== config.chainId) throw new Error('RPC network mismatch while loading balance.');
+        if (asset.contractAddress) {
+          const contract = new ethers.Contract(asset.contractAddress, ['function balanceOf(address) view returns (uint256)'], provider);
+          const raw = await contract.balanceOf(walletAddress);
+          setDisplayBalance(ethers.formatUnits(raw, asset.decimals ?? 18));
+        } else {
+          const raw = await provider.getBalance(walletAddress);
+          setDisplayBalance(ethers.formatEther(raw));
+        }
+      }
     } catch (e: any) {
       setError(e?.message || 'Unable to load transaction history.');
       setHistory([]);
+      setDisplayBalance(null);
     } finally { setLoading(false); setRefreshing(false); }
   };
 
@@ -61,7 +96,7 @@ export default function AssetProfile() {
 
   const native = !asset.contractAddress;
   const explorer = getAssetExplorerUrl(asset.blockchain, network, walletAddress, asset.contractAddress);
-  const amount = Number.isFinite(asset.balance) ? asset.balance.toLocaleString(undefined, { maximumFractionDigits: 8 }) : '0';
+  const amount = displayBalance !== null ? Number(displayBalance).toLocaleString(undefined, { maximumFractionDigits: 8 }) : Number.isFinite(asset.balance) ? asset.balance.toLocaleString(undefined, { maximumFractionDigits: 8 }) : '0';
 
   return (
     <SafeAreaView style={s.container}>
