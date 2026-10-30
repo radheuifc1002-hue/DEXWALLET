@@ -2,11 +2,14 @@ name: Mobile quality gates
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, infra/phase-2-rpc-health-failover]
     paths:
       - "app/**"
       - "context/**"
       - "mobile/**"
+      - "api/**"
+      - "database/**"
+      - "indexer/**"
       - "components/**"
       - "package.json"
       - "package-lock.json"
@@ -67,3 +70,9 @@ jobs:
 
       - name: Verify bundle output
         run: test -s /tmp/xu-wallet-export/metadata.json
+
+      - name: Validate indexer worker syntax
+        run: node --check indexer/worker.mjs
+
+      - name: Build indexer worker container
+        run: docker build -t dexwallet-indexer ./indexer
