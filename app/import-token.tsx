@@ -44,7 +44,7 @@ export default function ImportToken() {
         if (decoded.length !== 32) throw new Error('Enter a valid Solana token mint address.');
         const rpc = getSolanaRpcEndpoint(network);
         const account = await solRpc(rpc, 'getAccountInfo', [value, { encoding: 'base64', commitment: 'confirmed' }]);
-        if (!account?.value || ![TOKEN_PROGRAM, TOKEN_2022_PROGRAM].includes(account.value.owner)) throw new Error('This address is not a supported SPL token mint.');
+        if (!account?.value || ![TOKEN_PROGRAM, TOKEN_2022_PROGRAM].includes(account.value.owner)) throw new Error('Token not found. This address is not a supported SPL token mint on the selected Solana network.');
         const mintData = Buffer.from(account.value.data[0], 'base64');
         if (mintData.length < 82) throw new Error('Invalid SPL mint account data.');
         const decimals = mintData[44];
@@ -67,7 +67,10 @@ export default function ImportToken() {
         const chain = await provider.getNetwork();
         if (Number(chain.chainId) !== config.chainId) throw new Error('RPC network mismatch. Import cancelled.');
         if (!ethers.isAddress(value)) throw new Error('Enter a valid token contract address.');
-        const contract = new ethers.Contract(ethers.getAddress(value), ABI, provider);
+        const checksumAddress = ethers.getAddress(value);
+        const bytecode = await provider.getCode(checksumAddress);
+        if (!bytecode || bytecode === '0x') throw new Error('Token not found. No smart contract exists at this address on the selected network.');
+        const contract = new ethers.Contract(checksumAddress, ABI, provider);
         const [name, symbol, decimals, rawBalance] = await Promise.all([
           contract.name(), contract.symbol(), contract.decimals(), contract.balanceOf(walletAddress),
         ]);
@@ -77,7 +80,13 @@ export default function ImportToken() {
       }
       setToken(found);
     } catch (e: any) {
-      setError(e?.shortMessage || e?.message || 'Unable to fetch token information.');
+      const message = String(e?.shortMessage || e?.message || '');
+      const code = String(e?.code || '');
+      if (/could not (decode|resolve).*result|call exception|bad data|missing revert data|no matching fragment|execution reverted|invalid opcode/i.test(message) || ['CALL_EXCEPTION', 'BAD_DATA'].includes(code)) {
+        setError('Token not found. This address does not expose valid token details on the selected network. Check the contract address and network.');
+      } else {
+        setError(message || 'Unable to fetch token information. Please check your connection and try again.');
+      }
     } finally { setLoading(false); }
   };
 
