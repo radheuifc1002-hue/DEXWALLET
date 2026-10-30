@@ -93,6 +93,24 @@ Security gate: private keys stay on-device. Validate address derivation and tran
 - Python workers for normalization, historical aggregation, anomaly screening and scheduled reconciliation.
 - Never present indicative market prices as guaranteed execution quotes.
 
+## 2A. Phase 2 implementation status (current branch)
+
+The `infra/phase-2-indexer` branch builds on PR #6 and adds the first server-indexing slice:
+
+- `api/indexed-history.ts`: POST-only history read API; validates EVM address, chain/network, token contract and pagination; caps responses at 50; returns stable cursor pagination; does not expose SQL/provider errors.
+- `api/indexer/register-address.ts`: explicit address enrollment and durable initial/incremental job enqueue.
+- `api/health.ts` and `api/ready.ts`: separate liveness and dependency readiness checks.
+- `database/migrations/001_initial_indexer_schema.sql`: nine additive tables, including an HMAC-keyed API rate-limit bucket table. The migration is tested on an isolated Neon branch; it has not yet been applied to the Neon main branch.
+- `indexer/worker.mjs`: separate long-running worker using atomic `FOR UPDATE SKIP LOCKED` claims, stale-job recovery, page-level jobs, idempotent upserts, bounded fetch timeouts, Retry-After-aware retries and dead-letter status.
+- `indexer/Dockerfile`: isolated worker container.
+- `mobile/services/transactionHistory.ts`: checks the server index first when the user opts in, then retains direct-provider fallback.
+- `app/(tabs)/settings.tsx`: opt-in control explains that public addresses and history are sent to the XU indexer; wallet secrets remain device-only.
+- API environment requirements: `DATABASE_URL` and a random `API_RATE_LIMIT_SECRET` of at least 32 characters. Keep both server-side and never use `EXPO_PUBLIC_*` for these values.
+
+**Initial indexer adapters:** Ethereum mainnet, Ethereum Sepolia and Polygon mainnet via Blockscout v2. BNB Chain and Polygon Amoy remain on direct mobile history providers until indexed providers and quota policies are verified.
+
+**Not yet production complete:** the main Neon migration and Vercel secrets are not active; the persistent worker has not been deployed to a worker host; periodic incremental scheduling, finality/reorg reconciliation, alert delivery, and operator dashboard remain to be completed. Do not advertise server-indexed history as active until readiness passes and worker sync has been observed end-to-end.
+
 ## 3. Provider registry: capability before URL
 
 Each provider entry must declare:
