@@ -104,6 +104,8 @@ var provider={
  signTransaction:async function(tx){if(!provider.isConnected)await provider.connect();if(!tx||typeof tx.serializeMessage!=="function")throw new Error("Unsupported Solana transaction");var r=await request("xu_solana_sign_transaction",{message:bytes(tx.serializeMessage())});return applySignature(tx,r.signature,provider.publicKey.toBase58());},
  signAllTransactions:async function(txs){if(!provider.isConnected)await provider.connect();if(!Array.isArray(txs)||txs.some(function(tx){return !tx||typeof tx.serializeMessage!=="function"}))throw new Error("Unsupported Solana transaction batch");var messages=txs.map(function(tx){return bytes(tx.serializeMessage())});var r=await request("xu_solana_sign_all_transactions",{messages:messages});return txs.map(function(tx,i){return applySignature(tx,r.signatures[i],provider.publicKey.toBase58());});}
 };
+window.__xuSolanaRestoreConnection=function(address){provider.publicKey=keyObject(address);provider.isConnected=true;emit('connect',provider.publicKey);};
+window.__xuSolanaClearConnection=function(){provider.publicKey=null;provider.isConnected=false;emit('disconnect');};
 window.solana=provider;window.phantom=window.phantom||{};window.phantom.solana=provider;
 })(); true;`;
 
@@ -112,7 +114,8 @@ export default function Browser() {
   const [connectedOrigin, setConnectedOrigin] = useState<string | null>(null);
   const [pendingApproval, setPendingApproval] = useState<any>(null);
   const approvalResolver = useRef<((approved: boolean) => void) | null>(null);
-  const connectedOriginRef = useRef<string | null>(null);
+  const connectedEvmOriginRef = useRef<string | null>(null);
+  const connectedSolanaOriginRef = useRef<string | null>(null);
   const pageUrlRef = useRef('');
   const [url, setUrl] = useState('');
   const [inputUrl, setInputUrl] = useState('');
@@ -147,7 +150,8 @@ export default function Browser() {
 
   useEffect(() => {
     if (isLocked) {
-      connectedOriginRef.current = null;
+      connectedEvmOriginRef.current = null;
+      connectedSolanaOriginRef.current = null;
       setConnectedOrigin(null);
       if (approvalResolver.current) finishApproval(false);
       webRef.current?.injectJavaScript('if(window.ethereum){window.ethereum.__selectedAddress=null;window.ethereum.emit("accountsChanged",[])}true;');
@@ -157,7 +161,8 @@ export default function Browser() {
     if (!chainConfig) return;
     const id = network === 'testnet' ? chainConfig[1] : chainConfig[0];
     const chainHex = '0x' + id.toString(16);
-    const account = connectedOriginRef.current ? walletAddresses?.[selectedBlockchain] : null;
+    let currentOrigin = ''; try { currentOrigin = new URL(pageUrlRef.current).origin; } catch {}
+    const account = connectedEvmOriginRef.current === currentOrigin ? walletAddresses?.[selectedBlockchain] : null;
     webRef.current?.injectJavaScript('if(window.ethereum){window.ethereum.__chainId=' + JSON.stringify(chainHex) + ';window.ethereum.__selectedAddress=' + JSON.stringify(account || null) + ';window.ethereum.emit("chainChanged",' + JSON.stringify(chainHex) + ');window.ethereum.emit("accountsChanged",' + JSON.stringify(account ? [account] : []) + ')}true;');
   }, [selectedBlockchain, network, walletAddresses, isLocked]);
 
@@ -189,14 +194,14 @@ export default function Browser() {
         const address = walletAddresses?.solana;
         if (!address) throw Object.assign(new Error('Solana wallet address unavailable.'),{code:4100});
         if (m.type === 'xu_solana_connect') {
-          const ok = connectedOriginRef.current === origin || await askApproval({kind:'connect',title:'Connect Solana wallet',origin,chainName:'Solana',details:['Share your Solana public address with this website.',address,'This does not authorize transactions.']});
+          const ok = connectedSolanaOriginRef.current === origin || await askApproval({kind:'connect',title:'Connect Solana wallet',origin,chainName:'Solana',details:['Share your Solana public address with this website.',address,'This does not authorize transactions.']});
           if (!ok) throw Object.assign(new Error('User rejected connection.'),{code:4001});
-          connectedOriginRef.current = origin; setConnectedOrigin(origin);
+          connectedSolanaOriginRef.current = origin; setConnectedOrigin(origin);
           respondSolana({publicKey:address}); return;
         }
-        if (connectedOriginRef.current !== origin) throw Object.assign(new Error('Connect this DApp first.'),{code:4100});
+        if (connectedSolanaOriginRef.current !== origin) throw Object.assign(new Error('Connect this DApp first.'),{code:4100});
         if (m.type === 'xu_solana_disconnect') {
-          connectedOriginRef.current = null; setConnectedOrigin(null); respondSolana({}); return;
+          connectedSolanaOriginRef.current = null; setConnectedOrigin(connectedEvmOriginRef.current === origin ? origin : null); respondSolana({}); return;
         }
         const messages: number[][] = m.type === 'xu_solana_sign_all_transactions' ? m.messages : [m.message];
         if (!Array.isArray(messages) || messages.length === 0 || messages.some((x:any)=>!Array.isArray(x)||x.length===0||x.length>1232||x.some((b:any)=>!Number.isInteger(b)||b<0||b>255))) {
@@ -243,14 +248,14 @@ export default function Browser() {
       let result: any;
       switch (m.method) {
         case 'eth_accounts':
-          result = connectedOriginRef.current === origin && address ? [address] : [];
+          result = connectedSolanaOriginRef.current === origin && address ? [address] : [];
           break;
         case 'eth_requestAccounts': {
           if (!address) throw Object.assign(new Error('Wallet address unavailable.'), {code:4100});
-          if (connectedOriginRef.current !== origin) {
+          if (connectedSolanaOriginRef.current !== origin) {
             const ok = await askApproval({kind:'connect',title:'Connect wallet',origin,chainName:cfg.name,details:['Share your public address with this website.',address,'This does not authorize transactions.']});
             if (!ok) throw Object.assign(new Error('User rejected connection.'), {code:4001});
-            connectedOriginRef.current = origin; setConnectedOrigin(origin);
+            connectedSolanaOriginRef.current = origin; setConnectedOrigin(origin);
           }
           result = [address];
           webRef.current?.injectJavaScript('if(window.ethereum){window.ethereum.__selectedAddress='+JSON.stringify(address)+';window.ethereum.__chainId='+JSON.stringify('0x'+chainId.toString(16))+';window.ethereum.emit("connect",{chainId:'+JSON.stringify('0x'+chainId.toString(16))+'});window.ethereum.emit("accountsChanged",'+JSON.stringify([address])+')}true;');
@@ -258,13 +263,13 @@ export default function Browser() {
         }
         case 'eth_chainId': result = '0x' + chainId.toString(16); break;
         case 'net_version': result = String(chainId); break;
-        case 'wallet_getPermissions': result = connectedOriginRef.current === origin ? [{parentCapability:'eth_accounts'}] : []; break;
+        case 'wallet_getPermissions': result = connectedSolanaOriginRef.current === origin ? [{parentCapability:'eth_accounts'}] : []; break;
         case 'wallet_requestPermissions': {
           if (!params[0]?.eth_accounts) throw Object.assign(new Error('Only eth_accounts permission is supported.'), {code:4200});
           if (!address) throw Object.assign(new Error('Wallet address unavailable.'), {code:4100});
-          const ok = connectedOriginRef.current === origin || await askApproval({kind:'connect',title:'Connect wallet',origin,chainName:cfg.name,details:['Allow this website to view your public address.',address]});
+          const ok = connectedSolanaOriginRef.current === origin || await askApproval({kind:'connect',title:'Connect wallet',origin,chainName:cfg.name,details:['Allow this website to view your public address.',address]});
           if (!ok) throw Object.assign(new Error('User rejected connection.'), {code:4001});
-          connectedOriginRef.current = origin; setConnectedOrigin(origin);
+          connectedSolanaOriginRef.current = origin; setConnectedOrigin(origin);
           webRef.current?.injectJavaScript('if(window.ethereum){window.ethereum.__selectedAddress='+JSON.stringify(address)+';window.ethereum.__chainId='+JSON.stringify('0x'+chainId.toString(16))+';window.ethereum.emit("connect",{chainId:'+JSON.stringify('0x'+chainId.toString(16))+'});window.ethereum.emit("accountsChanged",'+JSON.stringify([address])+')}true;');
           result = [{parentCapability:'eth_accounts'}]; break;
         }
@@ -285,7 +290,7 @@ export default function Browser() {
         case 'wallet_sendCalls':
           throw Object.assign(new Error('This transaction method is not supported. Submit transactions through the wallet approval flow.'), {code:4200});
         case 'eth_sendTransaction': {
-          if (connectedOriginRef.current !== origin) throw Object.assign(new Error('Connect this DApp first.'), {code:4100});
+          if (connectedSolanaOriginRef.current !== origin) throw Object.assign(new Error('Connect this DApp first.'), {code:4100});
           const tx = params[0];
           if (!tx || typeof tx !== 'object') throw Object.assign(new Error('Invalid transaction.'), {code:-32602});
           if (!address || !tx.from || String(tx.from).toLowerCase() !== address.toLowerCase()) throw Object.assign(new Error('Transaction sender does not match selected wallet.'), {code:4100});
@@ -367,7 +372,7 @@ export default function Browser() {
         case 'eth_signTypedData':
         case 'eth_signTypedData_v3':
         case 'eth_signTypedData_v4': {
-          if (connectedOriginRef.current !== origin) throw Object.assign(new Error('Connect this DApp first.'), {code:4100});
+          if (connectedSolanaOriginRef.current !== origin) throw Object.assign(new Error('Connect this DApp first.'), {code:4100});
           const typed = String(m.method).startsWith('eth_signTypedData');
           const rawSign = m.method === 'eth_sign';
           const signerAddress = rawSign || typed ? String(params[0] || '') : (ethers.isAddress(String(params[0] || '')) ? String(params[0]) : String(params[1] || ''));
@@ -574,7 +579,8 @@ export default function Browser() {
             try { oldOrigin = new URL(pageUrlRef.current).origin; } catch {}
             try { newOrigin = new URL(state.url).origin; } catch {}
             if (oldOrigin && newOrigin && oldOrigin !== newOrigin) {
-              connectedOriginRef.current = null;
+              connectedEvmOriginRef.current = null;
+              connectedSolanaOriginRef.current = null;
               setConnectedOrigin(null);
               if (approvalResolver.current) finishApproval(false);
             }
@@ -593,13 +599,21 @@ export default function Browser() {
               polygon: network === 'testnet' ? 80002 : 137,
             };
             const id = ids[selectedBlockchain];
-            if (id) {
-              const hex = '0x' + id.toString(16);
-              webRef.current?.injectJavaScript(
-                'if(window.ethereum){window.ethereum.__chainId=' + JSON.stringify(hex) +
-                ';window.ethereum.emit("connect",{chainId:' + JSON.stringify(hex) + '});}true;'
-              );
-            }
+            let pageOrigin = '';
+            try { pageOrigin = new URL(pageUrlRef.current).origin; } catch {}
+            const evmAddress = connectedEvmOriginRef.current === pageOrigin && selectedBlockchain !== 'solana'
+              ? walletAddresses?.[selectedBlockchain] || null : null;
+            const solanaAddress = connectedSolanaOriginRef.current === pageOrigin
+              ? walletAddresses?.solana || null : null;
+            const hex = id ? '0x' + id.toString(16) : null;
+            const script =
+              'if(window.ethereum){' +
+              (hex ? 'window.ethereum.__chainId=' + JSON.stringify(hex) + ';window.ethereum.emit("connect",{chainId:' + JSON.stringify(hex) + '});' : '') +
+              'window.ethereum.__selectedAddress=' + JSON.stringify(evmAddress) + ';window.ethereum.emit("accountsChanged",' + JSON.stringify(evmAddress ? [evmAddress] : []) + ');' +
+              '}' +
+              'if(window.__xuSolanaRestoreConnection&&' + JSON.stringify(solanaAddress) + '){window.__xuSolanaRestoreConnection(' + JSON.stringify(solanaAddress) + ');}' +
+              'true;';
+            webRef.current?.injectJavaScript(script);
           }}
           javaScriptEnabled
           domStorageEnabled
@@ -645,7 +659,7 @@ export default function Browser() {
           </View>
         </Modal>
 
-        {connectedOrigin ? <View style={styles.connectionBadge}><Ionicons name="checkmark-circle" size={15} color="#34D399" /><Text style={styles.connectionText}>Connected to {connectedOrigin}</Text><TouchableOpacity onPress={() => { connectedOriginRef.current = null; setConnectedOrigin(null); webRef.current?.injectJavaScript('if(window.ethereum){window.ethereum.__selectedAddress=null;window.ethereum.emit("accountsChanged",[])}true;'); }}><Text style={styles.disconnectText}>Disconnect</Text></TouchableOpacity></View> : null}
+        {connectedOrigin ? <View style={styles.connectionBadge}><Ionicons name="checkmark-circle" size={15} color="#34D399" /><Text style={styles.connectionText}>Connected to {connectedOrigin}</Text><TouchableOpacity onPress={() => { connectedEvmOriginRef.current = null; connectedSolanaOriginRef.current = null; setConnectedOrigin(null); webRef.current?.injectJavaScript('if(window.ethereum){window.ethereum.__selectedAddress=null;window.ethereum.emit("accountsChanged",[])}if(window.__xuSolanaClearConnection)window.__xuSolanaClearConnection();true;'); }}><Text style={styles.disconnectText}>Disconnect</Text></TouchableOpacity></View> : null}
         <View style={styles.navBar}>
           <TouchableOpacity onPress={() => webRef.current?.goBack()} disabled={!canGoBack} style={[styles.navBtn, !canGoBack && styles.navBtnDisabled]} accessibilityLabel="Go back">
             <Ionicons name="arrow-back" size={20} color="#211B35" />
