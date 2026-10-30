@@ -178,6 +178,7 @@ export default async function handler(req: Request, res: Response) {
 
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) { sendError(res, 503, 'database_not_configured', requestId); return; }
+  const sql = neon(databaseUrl);
   try {
     if (!(await enforceRateLimit(req))) {
       res.setHeader('Retry-After', '60');
