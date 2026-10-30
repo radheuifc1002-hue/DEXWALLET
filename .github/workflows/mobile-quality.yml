@@ -74,6 +74,9 @@ jobs:
       - name: Verify bundle output
         run: test -s /tmp/xu-wallet-export/metadata.json
 
+      - name: Run indexer regression tests
+        run: node --test tests/indexer-regression.test.mjs
+
       - name: Validate indexer worker syntax
         run: node --check indexer/worker.mjs
 
