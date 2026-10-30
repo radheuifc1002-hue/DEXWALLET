@@ -49,6 +49,20 @@ const EXPLORERS: Record<Blockchain, string> = {
 };
 const MAX_HISTORY = 50;
 
+function transactionExplorerUrl(chain: Blockchain, network: string, hash: string) {
+  if (chain === 'solana') return EXPLORERS.solana + hash + (network === 'testnet' ? '?cluster=devnet' : '');
+  if (network === 'testnet') {
+    const bases: Record<Blockchain, string> = {
+      ethereum: 'https://sepolia.etherscan.io/tx/',
+      bnb: 'https://testnet.bscscan.com/tx/',
+      polygon: 'https://amoy.polygonscan.com/tx/',
+      solana: EXPLORERS.solana,
+    };
+    return bases[chain] + hash;
+  }
+  return EXPLORERS[chain] + hash;
+}
+
 function shortAddress(value: string) {
   return value.length > 22 ? value.slice(0, 10) + '…' + value.slice(-8) : value;
 }
@@ -157,7 +171,7 @@ export default function AssetDetails() {
             timestamp: Number(item.blockTime || 0),
             incoming: false,
             failed: Boolean(item.err),
-            explorerUrl: EXPLORERS.solana + String(item.signature) + (network === 'testnet' ? '?cluster=devnet' : ''),
+            explorerUrl: transactionExplorerUrl('solana', network, String(item.signature)),
           }));
         } else {
           const parsed = await Promise.all(signatureRows.map(async (item: any) => {
@@ -202,7 +216,7 @@ export default function AssetDetails() {
             );
         result = nativeRows.map((row: any) => {
           const mapped = normalizeEvmRow(row, walletAddress, isNative ? CHAIN_SYMBOLS[chain] : symbol, false);
-          return { ...mapped, explorerUrl: EXPLORERS[chain] + mapped.hash };
+          return { ...mapped, explorerUrl: transactionExplorerUrl(chain, network, mapped.hash) };
         });
         if (!isNative) {
           const tokenUrl = base + '?module=account&action=tokentx&address=' + address +
