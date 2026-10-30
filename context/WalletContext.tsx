@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   deriveAddresses,
   saveWalletToStorage,
@@ -57,6 +58,9 @@ interface WalletContextType {
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
+const AUTO_LOCK_TIMER_KEY = 'xu_wallet_auto_lock_minutes';
+const BACKGROUND_AT_KEY = 'xu_wallet_background_at';
+
 const NATIVE_TOKEN_DEFS: { blockchain: Blockchain; id: string; name: string; symbol: string }[] = [
   { blockchain: 'ethereum', id: 'eth', name: 'Ethereum', symbol: 'ETH' },
   { blockchain: 'solana', id: 'sol', name: 'Solana', symbol: 'SOL' },
@@ -74,18 +78,26 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [walletAddresses, setWalletAddresses] = useState<WalletAddresses | null>(null);
   const [isLoadingBalances, setIsLoadingBalances] = useState(false);
   const [biometricEnabled, setBiometricEnabledState] = useState(false);
-  const [autoLockTimer, setAutoLockTimer] = useState(5);
+  const [autoLockTimer, setAutoLockTimerState] = useState(5);
   const [isLocked, setIsLocked] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const lastBackgroundAt = React.useRef<number | null>(null);
 
   useEffect(() => {
     const init = async () => {
       try {
-        const [storedPin, { addresses, created, mnemonic }, bio] = await Promise.all([
+        const [storedPin, { addresses, created, mnemonic }, bio, storedTimer, storedBackgroundAt] = await Promise.all([
           getPin(),
           loadWalletFromStorage(),
           getBiometricEnabled(),
+          AsyncStorage.getItem(AUTO_LOCK_TIMER_KEY),
+          AsyncStorage.getItem(BACKGROUND_AT_KEY),
         ]);
+        const parsedTimer = storedTimer === null ? 5 : Number(storedTimer);
+        const timer = [0, 1, 5, 15, 30].includes(parsedTimer) ? parsedTimer : 5;
+        setAutoLockTimerState(timer);
+        const backgroundAt = storedBackgroundAt ? Number(storedBackgroundAt) : null;
+        lastBackgroundAt.current = Number.isFinite(backgroundAt) ? backgroundAt : null;
         setPinState(storedPin);
         setBiometricEnabledState(bio);
         if (created && addresses) {
@@ -93,7 +105,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           setWalletAddresses(addresses);
           if (mnemonic) setSeedPhrase(mnemonic.split(' '));
           setTokens(NATIVE_TOKEN_DEFS.map((d) => ({ ...d, balance: 0, balanceUSD: 0 })));
-          setIsLocked(true);
+          const elapsedMs = lastBackgroundAt.current === null ? Number.POSITIVE_INFINITY : Date.now() - lastBackgroundAt.current;
+          setIsLocked(timer > 0 && elapsedMs >= timer * 60 * 1000);
         }
       } finally {
         setIsLoading(false);
@@ -103,13 +116,35 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
-      if (state === 'background' && isWalletCreated && autoLockTimer > 0) {
-        setIsLocked(true);
+    const sub = AppState.addEventListener('change', async (state: AppStateStatus) => {
+      if (!isWalletCreated) return;
+      if (state === 'background' || state === 'inactive') {
+        const timestamp = Date.now();
+        lastBackgroundAt.current = timestamp;
+        await AsyncStorage.setItem(BACKGROUND_AT_KEY, String(timestamp)).catch(() => {});
+        return;
+      }
+      if (state === 'active') {
+        let timestamp = lastBackgroundAt.current;
+        if (timestamp === null) {
+          const stored = await AsyncStorage.getItem(BACKGROUND_AT_KEY).catch(() => null);
+          timestamp = stored ? Number(stored) : null;
+        }
+        if (autoLockTimer > 0 && timestamp !== null && Number.isFinite(timestamp) && Date.now() - timestamp >= autoLockTimer * 60 * 1000) {
+          setIsLocked(true);
+        }
+        lastBackgroundAt.current = null;
+        await AsyncStorage.removeItem(BACKGROUND_AT_KEY).catch(() => {});
       }
     });
     return () => sub.remove();
   }, [isWalletCreated, autoLockTimer]);
+
+  const setAutoLockTimer = useCallback(async (value: number) => {
+    const safeValue = [0, 1, 5, 15, 30].includes(value) ? value : 5;
+    setAutoLockTimerState(safeValue);
+    await AsyncStorage.setItem(AUTO_LOCK_TIMER_KEY, String(safeValue));
+  }, []);
 
   const setPin = useCallback(async (value: string) => {
     await savePin(value);
