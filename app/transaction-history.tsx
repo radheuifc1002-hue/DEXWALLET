@@ -339,7 +339,7 @@ export default function TransactionHistory() {
       setLoadingMore(false);
       setRefreshing(false);
     }
-  }, [walletAddress, selectedBlockchain, network, beforeSignature, page]);
+  }, [walletAddress, selectedBlockchain, network, beforeSignature, page, polygonTxCursor, polygonTransferCursor]);
 
   useEffect(() => {
     void loadHistory(true);
