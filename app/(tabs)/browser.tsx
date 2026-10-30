@@ -16,7 +16,7 @@ import { SafeAreaView as SafeAreaContextView } from 'react-native-safe-area-cont
 import { Ionicons } from '@expo/vector-icons';
 import { ethers } from 'ethers';
 import { useWallet } from '../../context/WalletContext';
-import { getMnemonic } from '../../mobile/services/walletService';
+import { getMnemonic, signSolanaMessage } from '../../mobile/services/walletService';
 
 type DAppShortcut = {
   name: string;
@@ -76,6 +76,35 @@ var info={uuid:uuid,name:"XU Wallet",icon:"data:image/svg+xml,%3Csvg xmlns=%22ht
 function announce(){window.dispatchEvent(new CustomEvent("eip6963:announceProvider",{detail:{info:info,provider:w}}))}
 window.addEventListener("eip6963:requestProvider",announce);
 announce();
+})(); true;`;
+
+
+const SOLANA_INJECT = `(function(){
+if(window.solana&&window.solana.isXUWallet)return;
+var seq=500000, pending={}, listeners={};
+function emit(name,value){(listeners[name]||[]).forEach(function(fn){try{fn(value)}catch(_){}})}
+function request(type,payload){return new Promise(function(resolve,reject){var id=seq++;pending[id]={resolve:resolve,reject:reject};window.ReactNativeWebView.postMessage(JSON.stringify(Object.assign({type:type,id:id,origin:location.origin},payload||{})));});}
+window.__xuSolanaResolve=function(id,result,error){var p=pending[id];if(!p)return;delete pending[id];error?p.reject(Object.assign(new Error(error.message||"Request rejected"),{code:error.code||4001})):p.resolve(result);};
+function keyObject(value){return {toBase58:function(){return value},toString:function(){return value},toJSON:function(){return value},toBytes:function(){return decode58(value)},toBuffer:function(){return decode58(value)},equals:function(other){return !!other&&String(other.toBase58?other.toBase58():other)===value}};}
+function decode58(s){var alphabet="123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz",bytes=[0];for(var i=0;i<s.length;i++){var carry=alphabet.indexOf(s[i]);if(carry<0)throw new Error("Invalid public key");for(var j=0;j<bytes.length;j++){carry+=bytes[j]*58;bytes[j]=carry&255;carry>>=8;}while(carry){bytes.push(carry&255);carry>>=8;}}for(var k=0;k<s.length&&s[k]==="1";k++)bytes.push(0);return new Uint8Array(bytes.reverse());}
+function bytes(value){return Array.from(value instanceof Uint8Array?value:new Uint8Array(value));}
+function applySignature(tx,sig,pubkey){
+ if(tx&&tx.message&&Array.isArray(tx.signatures)){var keys=tx.message.staticAccountKeys||[];var ix=keys.findIndex(function(k){return k.toBase58&&k.toBase58()===pubkey});if(ix<0)throw new Error("Wallet is not a required signer for this transaction");tx.signatures[ix]=new Uint8Array(sig);return tx;}
+ if(tx&&Array.isArray(tx.signatures)&&typeof tx.addSignature==="function"){var entry=tx.signatures.find(function(x){return x.publicKey&&x.publicKey.toBase58()===pubkey});if(!entry)throw new Error("Wallet is not a required signer for this transaction");tx.addSignature(entry.publicKey,new Uint8Array(sig));return tx;}
+ throw new Error("Unsupported Solana transaction object");
+}
+var provider={
+ isXUWallet:true,isPhantom:true,isConnected:false,publicKey:null,
+ connect:async function(){var r=await request("xu_solana_connect");provider.publicKey=keyObject(r.publicKey);provider.isConnected=true;emit("connect",provider.publicKey);return {publicKey:provider.publicKey};},
+ disconnect:async function(){await request("xu_solana_disconnect");provider.publicKey=null;provider.isConnected=false;emit("disconnect");},
+ on:function(name,fn){(listeners[name]||(listeners[name]=[])).push(fn);return provider;},
+ off:function(name,fn){listeners[name]=(listeners[name]||[]).filter(function(x){return x!==fn});return provider;},
+ removeListener:function(name,fn){return provider.off(name,fn);},
+ signMessage:async function(message){if(!provider.isConnected)await provider.connect();var r=await request("xu_solana_sign_message",{message:bytes(message)});return {signature:new Uint8Array(r.signature),publicKey:provider.publicKey};},
+ signTransaction:async function(tx){if(!provider.isConnected)await provider.connect();if(!tx||typeof tx.serializeMessage!=="function")throw new Error("Unsupported Solana transaction");var r=await request("xu_solana_sign_transaction",{message:bytes(tx.serializeMessage())});return applySignature(tx,r.signature,provider.publicKey.toBase58());},
+ signAllTransactions:async function(txs){if(!provider.isConnected)await provider.connect();if(!Array.isArray(txs)||txs.some(function(tx){return !tx||typeof tx.serializeMessage!=="function"}))throw new Error("Unsupported Solana transaction batch");var messages=txs.map(function(tx){return bytes(tx.serializeMessage())});var r=await request("xu_solana_sign_all_transactions",{messages:messages});return txs.map(function(tx,i){return applySignature(tx,r.signatures[i],provider.publicKey.toBase58());});}
+};
+window.solana=provider;window.phantom=window.phantom||{};window.phantom.solana=provider;
 })(); true;`;
 
 export default function Browser() {
@@ -142,10 +171,49 @@ export default function Browser() {
   const handleProviderMessage = async (event: any) => {
     let m: any;
     try { m = JSON.parse(event.nativeEvent.data); } catch { return; }
-    if (m?.type !== 'xu_eip1193_request' || !Number.isInteger(m.id)) return;
+    if (!Number.isInteger(m?.id)) return;
     const actualUrl = event.nativeEvent.url || pageUrlRef.current || url;
     let origin = '';
     try { origin = new URL(actualUrl).origin; } catch {}
+    if (m.type && m.type.startsWith('xu_solana_')) {
+      const respondSolana = (result: any, error: any = null) => {
+        const r = JSON.stringify(result === undefined ? null : result).replace(/</g, '\\u003c');
+        const e = JSON.stringify(error).replace(/</g, '\\u003c');
+        webRef.current?.injectJavaScript('window.__xuSolanaResolve&&window.__xuSolanaResolve(' + m.id + ',' + r + ',' + e + ');true;');
+      };
+      if (!origin.startsWith('https://') || (m.origin && m.origin !== origin)) {
+        respondSolana(undefined, {code:4100,message:'Invalid DApp origin.'}); return;
+      }
+      try {
+        if (isLocked) throw Object.assign(new Error('Unlock XU Wallet before using DApps.'),{code:4100});
+        const address = walletAddresses?.solana;
+        if (!address) throw Object.assign(new Error('Solana wallet address unavailable.'),{code:4100});
+        if (m.type === 'xu_solana_connect') {
+          const ok = connectedOriginRef.current === origin || await askApproval({kind:'connect',title:'Connect Solana wallet',origin,chainName:'Solana',details:['Share your Solana public address with this website.',address,'This does not authorize transactions.']});
+          if (!ok) throw Object.assign(new Error('User rejected connection.'),{code:4001});
+          connectedOriginRef.current = origin; setConnectedOrigin(origin);
+          respondSolana({publicKey:address}); return;
+        }
+        if (connectedOriginRef.current !== origin) throw Object.assign(new Error('Connect this DApp first.'),{code:4100});
+        if (m.type === 'xu_solana_disconnect') {
+          connectedOriginRef.current = null; setConnectedOrigin(null); respondSolana({}); return;
+        }
+        const messages: number[][] = m.type === 'xu_solana_sign_all_transactions' ? m.messages : [m.message];
+        if (!Array.isArray(messages) || messages.length === 0 || messages.some((x:any)=>!Array.isArray(x)||x.length===0||x.length>1232||x.some((b:any)=>!Number.isInteger(b)||b<0||b>255))) {
+          throw Object.assign(new Error('Invalid Solana message payload.'),{code:-32602});
+        }
+        const kind = m.type === 'xu_solana_sign_message' ? 'signature' : 'transaction';
+        const preview = messages.map((bytes:number[],i:number)=>'Message '+(i+1)+': '+bytes.length+' bytes · '+bytes.slice(0,48).map((b:number)=>b.toString(16).padStart(2,'0')).join('')+(bytes.length>48?'…':''));
+        const ok = await askApproval({kind,title:m.type==='xu_solana_sign_message'?'Review Solana message signature':messages.length>1?'Review Solana transactions':'Review Solana transaction',origin,chainName:'Solana',details:['Account: '+address,'Origin: '+origin,...preview,'Signing does not broadcast the transaction. Verify the DApp and transaction details before approving.']});
+        if (!ok) throw Object.assign(new Error('User rejected signature.'),{code:4001});
+        const signatures = await Promise.all(messages.map((bytes:number[])=>signSolanaMessage(Uint8Array.from(bytes))));
+        respondSolana(m.type==='xu_solana_sign_all_transactions'?{signatures}:{signature:signatures[0]});
+      } catch(e:any) {
+        respondSolana(undefined,{code:typeof e?.code==='number'?e.code:-32603,message:String(e?.message||'Solana request failed')});
+      }
+      return;
+    }
+    if (m.type !== 'xu_eip1193_request') return;
     const respond = (result: any, error: any = null) => {
       const r = JSON.stringify(result === undefined ? null : result).replace(/</g, '\\u003c');
       const e = JSON.stringify(error).replace(/</g, '\\u003c');
@@ -537,7 +605,7 @@ export default function Browser() {
           domStorageEnabled
           sharedCookiesEnabled
           setSupportMultipleWindows={false}
-          injectedJavaScriptBeforeContentLoaded={EIP1193_INJECT}
+          injectedJavaScriptBeforeContentLoaded={EIP1193_INJECT + SOLANA_INJECT}
           onMessage={handleProviderMessage}
           originWhitelist={['https://*', 'http://*']}
           onShouldStartLoadWithRequest={(request) => request.url.startsWith('https://') || request.url.startsWith('http://')}
