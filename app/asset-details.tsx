@@ -15,7 +15,8 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { Blockchain, useWallet } from '../context/WalletContext';
-import { getEvmRpcConfig, getSolanaRpcEndpoint } from '../mobile/services/rpcManager';
+import { getSolanaRpcEndpoint } from '../mobile/services/rpcManager';
+import { fetchEvmAssetHistory } from '../mobile/services/transactionHistory';
 
 type HistoryRow = {
   id: string;
@@ -65,37 +66,6 @@ function transactionExplorerUrl(chain: Blockchain, network: string, hash: string
 
 function shortAddress(value: string) {
   return value.length > 22 ? value.slice(0, 10) + '…' + value.slice(-8) : value;
-}
-function amountFromRaw(value: string, decimals: number) {
-  const n = Number(value) / Math.pow(10, decimals);
-  return Number.isFinite(n) ? n.toLocaleString(undefined, { maximumFractionDigits: 6 }) : '';
-}
-function timestampFrom(value: any) {
-  const n = Number(value || 0);
-  return n > 1000000000000 ? Math.floor(n / 1000) : n;
-}
-function normalizeEvmRow(row: any, wallet: string, symbol: string, token: boolean): HistoryRow {
-  const from = String(row.from || '');
-  const to = String(row.to || '');
-  const incoming = from.toLowerCase() !== wallet.toLowerCase();
-  const decimals = token ? Number(row.tokenDecimal || 18) : 18;
-  const amount = amountFromRaw(String(row.value || '0'), Number.isFinite(decimals) ? decimals : 18);
-  const hash = String(row.hash || row.transactionHash || '');
-  const failed = String(row.isError || '0') === '1' || String(row.txreceipt_status || '1') === '0';
-  const tokenSymbol = token ? String(row.tokenSymbol || symbol) : symbol;
-  return {
-    id: hash + (token ? ':' + String(row.logIndex || row.transactionIndex || 'token') : ':native'),
-    hash,
-    title: token ? 'Token ' + (incoming ? 'received' : 'sent') : (incoming ? 'Received ' : 'Sent ') + tokenSymbol,
-    detail: token
-      ? String(row.tokenName || tokenSymbol) + ' · ' + (incoming ? 'From ' + shortAddress(from) : 'To ' + shortAddress(to))
-      : (incoming ? 'From ' + shortAddress(from) : 'To ' + shortAddress(to)),
-    amount: amount ? amount + ' ' + tokenSymbol : '',
-    timestamp: timestampFrom(row.timeStamp),
-    incoming,
-    failed,
-    explorerUrl: EXPLORERS.ethereum + hash,
-  };
 }
 
 export default function AssetDetails() {
@@ -196,50 +166,16 @@ export default function AssetDetails() {
           result = parsed.filter(Boolean) as HistoryRow[];
         }
       } else {
-        const config = getEvmRpcConfig(chain, network);
-        const networkName = network === 'mainnet' ? 'mainnet' : 'testnet';
-        const base = 'https://api.routescan.io/v2/network/' + networkName + '/evm/' + config.chainId + '/etherscan/api';
-        const address = encodeURIComponent(walletAddress);
-        const txUrl = base + '?module=account&action=txlist&address=' + address + '&startblock=0&endblock=99999999&page=1&offset=' + MAX_HISTORY + '&sort=desc';
-        const txResponse = await fetch(txUrl, { headers: { Accept: 'application/json' } });
-        if (!txResponse.ok) throw new Error('Transaction history service returned HTTP ' + txResponse.status + '.');
-        const txJson = await txResponse.json();
-        if (txJson.status === '0' && !/no transactions found/i.test(String(txJson.result || ''))) {
-          throw new Error(String(txJson.result || txJson.message || 'Unable to load transaction history.'));
-        }
-        const txRows = Array.isArray(txJson.result) ? txJson.result : [];
-        const nativeRows = isNative
-          ? txRows
-          : txRows.filter((row: any) =>
-              String(row.to || '').toLowerCase() === contractAddress.toLowerCase() ||
-              String(row.from || '').toLowerCase() === contractAddress.toLowerCase()
-            );
-        result = nativeRows.map((row: any) => {
-          const mapped = normalizeEvmRow(row, walletAddress, isNative ? CHAIN_SYMBOLS[chain] : symbol, false);
-          return {
-            ...mapped,
-            title: isNative ? mapped.title : 'Contract interaction',
-            detail: isNative ? mapped.detail : 'Called ' + name + ' contract',
-            amount: isNative ? mapped.amount : '',
-            explorerUrl: transactionExplorerUrl(chain, network, mapped.hash),
-          };
+        result = await fetchEvmAssetHistory({
+          chain,
+          network,
+          walletAddress,
+          contractAddress,
+          isNative,
+          name,
+          symbol,
+          limit: MAX_HISTORY,
         });
-        if (!isNative) {
-          const tokenUrl = base + '?module=account&action=tokentx&address=' + address +
-            '&contractaddress=' + encodeURIComponent(contractAddress) +
-            '&startblock=0&endblock=99999999&page=1&offset=' + MAX_HISTORY + '&sort=desc';
-          const tokenResponse = await fetch(tokenUrl, { headers: { Accept: 'application/json' } });
-          if (!tokenResponse.ok) throw new Error('Token transfer history service returned HTTP ' + tokenResponse.status + '.');
-          const tokenJson = await tokenResponse.json();
-          if (tokenJson.status === '0' && !/no transactions found/i.test(String(tokenJson.result || ''))) {
-            throw new Error(String(tokenJson.result || tokenJson.message || 'Unable to load token transfers.'));
-          }
-          const tokenRows = Array.isArray(tokenJson.result) ? tokenJson.result : [];
-          result = result.concat(tokenRows.map((row: any) => {
-            const mapped = normalizeEvmRow(row, walletAddress, symbol, true);
-            return { ...mapped, explorerUrl: EXPLORERS[chain] + mapped.hash };
-          }));
-        }
       }
       const seen = new Set<string>();
       result = result.filter((item) => {
