@@ -30,7 +30,8 @@ const HEALTH_KEY = '@xuwallet/rpc-health-v1';
 const REQUEST_TIMEOUT_MS = 4500;
 const FAILURE_COOLDOWN_MS = 60_000;
 const MAX_FAILURE_COOLDOWN_MS = 15 * 60_000;
-const HEALTH_CHECK_INTERVAL_MS = 5 * 60_000;
+const HEALTH_CHECK_INTERVAL_MS = 10 * 60_000;
+const HEALTH_FRESHNESS_MS = 90_000;
 
 const EXPECTED_CHAIN_IDS: Record<EvmChain, Record<RpcNetwork, number>> = {
   ethereum: { mainnet: 1, testnet: 11155111 },
@@ -301,9 +302,9 @@ export async function withEvmReadFallback<T>(
   for (const endpoint of endpoints) {
     const started = Date.now();
     try {
-      const actual = await postJsonRpc(endpoint.url, 'eth_chainId');
-      if (Number(BigInt(String(actual))) !== expectedChainId(chain, network)) {
-        throw new Error('RPC endpoint returned the wrong chain ID');
+      const previous = health[endpointKey(chain, network, endpoint.url)];
+      if (!previous || previous.consecutiveFailures > 0 || Date.now() - previous.lastCheckedAt > HEALTH_FRESHNESS_MS) {
+        await verifyEndpoint(chain, network, endpoint);
       }
       const result = await operation(endpoint.url, endpoint.chainId as number);
       markSuccess(chain, network, endpoint.url, Date.now() - started);
@@ -331,8 +332,10 @@ export async function withSolanaReadFallback<T>(
   for (const endpoint of endpoints) {
     const started = Date.now();
     try {
-      const result = await postJsonRpc(endpoint.url, 'getHealth');
-      if (result !== 'ok') throw new Error('Solana RPC health check failed');
+      const previous = health[endpointKey('solana', network, endpoint.url)];
+      if (!previous || previous.consecutiveFailures > 0 || Date.now() - previous.lastCheckedAt > HEALTH_FRESHNESS_MS) {
+        await verifyEndpoint('solana', network, endpoint);
+      }
       const value = await operation(endpoint.url);
       markSuccess('solana', network, endpoint.url, Date.now() - started);
       return value;
