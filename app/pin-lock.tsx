@@ -23,6 +23,7 @@ export default function PinLock() {
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const biometricInProgress = useRef(false);
   const mounted = useRef(true);
+  const biometricInProgress = useRef(false);
 
   const PIN_LENGTH = 6;
 
@@ -52,18 +53,17 @@ export default function PinLock() {
   }, [entered]);
 
   const tryBiometric = async () => {
-    if (biometricInProgress.current) return;
+    if (biometricInProgress.current || !mounted.current) return;
     biometricInProgress.current = true;
     try {
       const result = await LocalAuthentication.authenticateAsync({
         promptMessage: 'Unlock XU Wallet',
         cancelLabel: 'Use PIN',
-        fallbackLabel: 'Use PIN',
-        disableDeviceFallback: false,
+        disableDeviceFallback: true,
       });
       if (result.success && mounted.current) unlock();
     } catch {
-      // A cancelled or unavailable biometric prompt must leave PIN unlock usable.
+      // A cancelled, locked-out, or unavailable biometric prompt must leave PIN unlock usable.
     } finally {
       biometricInProgress.current = false;
     }
