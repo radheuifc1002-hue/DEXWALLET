@@ -193,23 +193,6 @@ export default function Home() {
           </View>
         </Modal>
 
-        <TouchableOpacity
-          style={styles.historyButton}
-          onPress={() => router.push('/transaction-history')}
-          activeOpacity={0.86}
-          accessibilityRole="button"
-          accessibilityLabel="View transaction history for selected blockchain"
-        >
-          <View style={styles.historyIconWrap}>
-            <Ionicons name="time-outline" size={22} color="#FFFFFF" />
-          </View>
-          <View style={styles.historyTextWrap}>
-            <Text style={styles.historyTitle}>Transaction history</Text>
-            <Text style={styles.historySubtitle}>View all activity on {selectedBlockchain === 'bnb' ? 'BNB Chain' : selectedBlockchain === 'polygon' ? 'Polygon' : selectedBlockchain === 'ethereum' ? 'Ethereum' : 'Solana'}</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
-        </TouchableOpacity>
-
         <View style={styles.assetsHeader}>
           <Text style={styles.sectionTitle}>Assets</Text>
           <TouchableOpacity style={styles.importButton} onPress={() => router.push('/import-token')} activeOpacity={0.8}>
@@ -229,6 +212,20 @@ export default function Home() {
               key={token.id}
               style={styles.tokenCard}
               activeOpacity={0.8}
+              onPress={() => router.push({
+                pathname: '/asset-details',
+                params: {
+                  assetId: token.id,
+                  name: token.name,
+                  symbol: token.symbol,
+                  blockchain: token.blockchain,
+                  contractAddress: token.contractAddress || '',
+                  decimals: String(token.decimals ?? 18),
+                  isNative: token.contractAddress ? 'false' : 'true',
+                },
+              })}
+              accessibilityRole="button"
+              accessibilityLabel={'Open ' + token.name + ' asset details and transaction history'}
             >
               <View
                 style={[
@@ -395,11 +392,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
-  historyButton: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 18, backgroundColor: '#6C4CF1', marginBottom: 22, shadowColor: '#6C4CF1', shadowOpacity: 0.18, shadowRadius: 10, shadowOffset: { width: 0, height: 5 }, elevation: 4 },
-  historyIconWrap: { width: 42, height: 42, borderRadius: 13, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-  historyTextWrap: { flex: 1 },
-  historyTitle: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
-  historySubtitle: { color: '#E9E3FF', fontSize: 11, marginTop: 4 },
   assetsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   importButton: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#6C4CF1', paddingHorizontal: 13, paddingVertical: 8, borderRadius: 10 },
   importButtonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
