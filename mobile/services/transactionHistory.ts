@@ -64,7 +64,7 @@ function formatEvmRows(rows: any[], chain: Blockchain, network: Network, wallet:
   });
 }
 
-async function fetchEvmHistory(chain: Exclude<Blockchain, 'solana'>, network: Network, wallet: string, asset: Token): Promise<WalletActivity[]> {
+async function fetchRoutescanHistory(chain: 'ethereum', network: Network, wallet: string, asset: Token): Promise<WalletActivity[]> {
   const base = { module: 'account', address: wallet, page: '1', offset: '50', sort: 'desc' };
   if (asset.contractAddress) {
     const contract = asset.contractAddress.toLowerCase();
@@ -81,19 +81,120 @@ async function fetchEvmHistory(chain: Exclude<Blockchain, 'solana'>, network: Ne
     return formatEvmRows([...merged.values()], chain, network, wallet, asset.symbol, contract)
       .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, 50);
   }
-  const [normal, internal, tokenTransfers] = await Promise.all([
+  const [normal, internal] = await Promise.all([
     routescan(chain, network, { ...base, action: 'txlist' }),
     routescan(chain, network, { ...base, action: 'txlistinternal' }).catch(() => []),
-    routescan(chain, network, { ...base, action: 'tokentx' }).catch(() => []),
   ]);
   const all = new Map<string, any>();
-  [...normal, ...internal, ...tokenTransfers].forEach((tx: any) => {
+  [...normal, ...internal].forEach((tx: any) => {
     const hash = String(tx.hash || tx.transactionHash || '');
-    const key = hash + String(tx.logIndex ?? tx.traceId ?? (tx.tokenSymbol || 'native'));
+    const key = hash + String(tx.traceId || 'native');
     if (hash) all.set(key, tx);
   });
   return formatEvmRows([...all.values()], chain, network, wallet, asset.symbol)
     .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, 50);
+}
+
+async function fetchJson(url: string) {
+  const response = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (response.status === 403) throw new Error('The transaction history provider denied access (HTTP 403).');
+  if (!response.ok) throw new Error(`Transaction history service returned HTTP ${response.status}.`);
+  return response.json();
+}
+
+async function fetchPolygonHistory(network: Network, wallet: string, asset: Token): Promise<WalletActivity[]> {
+  const host = network === 'mainnet' ? 'https://polygon.blockscout.com/api/v2' : 'https://polygon-amoy.blockscout.com/api/v2';
+  const address = encodeURIComponent(wallet);
+  const base = `${host}/addresses/${address}`;
+  const [normalBody, internalBody, transferBody] = await Promise.all([
+    fetchJson(`${base}/transactions`),
+    fetchJson(`${base}/internal-transactions`).catch(() => ({ items: [] })),
+    asset.contractAddress
+      ? fetchJson(`${base}/token-transfers?token=${encodeURIComponent(asset.contractAddress)}`).catch(() => ({ items: [] }))
+      : Promise.resolve({ items: [] }),
+  ]);
+  const normal = Array.isArray(normalBody.items) ? normalBody.items : [];
+  const internal = Array.isArray(internalBody.items) ? internalBody.items : [];
+  const transfers = Array.isArray(transferBody.items) ? transferBody.items : [];
+  const contract = asset.contractAddress?.toLowerCase();
+  const interactions = contract ? normal.filter((tx: any) =>
+    String(tx.to?.hash || tx.to || '').toLowerCase() === contract ||
+    String(tx.from?.hash || tx.from || '').toLowerCase() === contract
+  ) : [];
+  const selected = contract ? [...interactions, ...transfers] : [...normal, ...internal];
+  const unique = new Map<string, any>();
+  selected.forEach((tx: any) => {
+    const hash = String(tx.hash || tx.transaction_hash || tx.transactionHash || '');
+    const key = hash + String(tx.log_index ?? tx.index ?? tx.trace_id ?? 'tx');
+    if (hash) unique.set(key, tx);
+  });
+  return [...unique.values()].map((tx: any) => {
+    const from = String(tx.from?.hash || tx.from || '').toLowerCase();
+    const to = String(tx.to?.hash || tx.to || '').toLowerCase();
+    const mine = wallet.toLowerCase();
+    const direction = from === mine && to === mine ? 'self' : from === mine ? 'out' : to === mine ? 'in' : 'contract';
+    const hash = String(tx.hash || tx.transaction_hash || tx.transactionHash || '');
+    const token = tx.token || {};
+    const value = tx.total?.value || tx.value || tx.amount || '0';
+    const decimals = Number(token.decimals || tx.token_decimals || 18);
+    const amount = tx.token || tx.token?.symbol || tx.token_type
+      ? `${(Number(value) / (10 ** decimals)).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${token.symbol || asset.symbol}`
+      : undefined;
+    const failed = tx.status === 'error' || tx.status === 'failed' || tx.result === 'error';
+    const timestamp = tx.timestamp || tx.block_timestamp;
+    return {
+      id: hash + String(tx.log_index ?? tx.index ?? ''),
+      hash,
+      timestamp: timestamp ? Math.floor(new Date(timestamp).getTime() / 1000) : Number(tx.timestamp || 0) || null,
+      title: contract ? (tx.token ? `${token.symbol || asset.symbol} transfer` : 'Token contract interaction') : (direction === 'contract' ? 'Contract interaction' : direction === 'in' ? 'Received' : direction === 'out' ? 'Sent' : 'Internal transfer'),
+      subtitle: `${from.slice(0, 8)}… → ${to.slice(0, 8)}…`,
+      amount,
+      direction,
+      status: failed ? 'failed' : 'success',
+      explorerUrl: `https://polygonscan.com/tx/${hash}`,
+    } as WalletActivity;
+  }).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, 50);
+}
+
+async function fetchBnbHistory(wallet: string, asset: Token): Promise<WalletActivity[]> {
+  const base = 'https://api.binplorer.com';
+  const query = 'apiKey=freekey&limit=100&showZeroValues=true';
+  const path = asset.contractAddress ? 'getAddressHistory' : 'getAddressTransactions';
+  const data = await fetchJson(`${base}/${path}/${encodeURIComponent(wallet)}?${query}`);
+  const rows = Array.isArray(data) ? data : Array.isArray(data.operations) ? data.operations : [];
+  const contract = asset.contractAddress?.toLowerCase();
+  const filtered = contract ? rows.filter((tx: any) =>
+    String(tx.tokenInfo?.address || tx.token?.address || '').toLowerCase() === contract ||
+    String(tx.to || '').toLowerCase() === contract ||
+    String(tx.from || '').toLowerCase() === contract
+  ) : rows;
+  return filtered.slice(0, 50).map((tx: any) => {
+    const from = String(tx.from || '').toLowerCase();
+    const to = String(tx.to || tx.address || '').toLowerCase();
+    const mine = wallet.toLowerCase();
+    const direction = from === mine ? 'out' : to === mine ? 'in' : 'contract';
+    const hash = String(tx.transactionHash || tx.hash || tx.txHash || '');
+    const tokenInfo = tx.tokenInfo || {};
+    const amountValue = Number(tx.value || 0) / (10 ** Number(tokenInfo.decimals || asset.decimals || 18));
+    return {
+      id: hash + String(tx.logIndex || ''),
+      hash,
+      timestamp: Number(tx.timestamp || 0) || null,
+      title: contract ? (tx.type === 'transfer' ? `${tokenInfo.symbol || asset.symbol} transfer` : 'Token contract interaction') : (direction === 'out' ? 'Sent' : direction === 'in' ? 'Received' : 'Contract interaction'),
+      subtitle: `${from.slice(0, 8)}… → ${to.slice(0, 8)}…`,
+      amount: tx.value !== undefined ? `${amountValue.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${tokenInfo.symbol || asset.symbol}` : undefined,
+      direction,
+      status: 'success',
+      explorerUrl: `https://bscscan.com/tx/${hash}`,
+    } as WalletActivity;
+  }).filter((item: WalletActivity) => Boolean(item.hash)).sort((a: WalletActivity, b: WalletActivity) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, 50);
+}
+
+async function fetchEvmHistory(chain: Exclude<Blockchain, 'solana'>, network: Network, wallet: string, asset: Token): Promise<WalletActivity[]> {
+  if (chain === 'ethereum') return fetchRoutescanHistory(chain, network, wallet, asset);
+  if (chain === 'polygon') return fetchPolygonHistory(network, wallet, asset);
+  if (network === 'testnet') throw new Error('BNB testnet transaction indexing is not available in this build.');
+  return fetchBnbHistory(wallet, asset);
 }
 
 async function solRpc(url: string, method: string, params: unknown[]) {
@@ -113,7 +214,7 @@ async function fetchSolanaHistory(network: Network, wallet: string, asset: Token
     if (!addresses.length) return [];
   }
   const signatures = await Promise.all(addresses.map(async (address) =>
-    solRpc(rpc, 'getSignaturesForAddress', [address, { limit: 50 }, { commitment: 'confirmed' }])
+    solRpc(rpc, 'getSignaturesForAddress', [address, { limit: 50, commitment: 'confirmed' }])
   ));
   const unique = new Map<string, any>();
   signatures.flat().forEach((item: any) => unique.set(item.signature, item));
