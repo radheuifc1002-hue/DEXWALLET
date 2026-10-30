@@ -24,7 +24,7 @@ function ActivityRow({ item }: { item: WalletActivity }) {
       </View>
       <View style={s.activityRight}>
         {item.amount ? <Text style={s.activityAmount}>{item.amount}</Text> : null}
-        <Text style={[s.status, { color }]}>{item.status === 'failed' ? 'Failed' : 'Confirmed'}</Text>
+        <Text style={[s.status, { color }]}>{item.status === 'failed' ? 'Failed' : item.status === 'pending' ? 'Pending' : 'Confirmed'}</Text>
         <Ionicons name="open-outline" size={13} color="#A29BAF" style={{ marginTop: 5 }} />
       </View>
     </TouchableOpacity>
@@ -45,7 +45,7 @@ export default function AssetProfile() {
 
   useEffect(() => {
     if (asset && selectedBlockchain !== asset.blockchain) setSelectedBlockchain(asset.blockchain);
-  }, [asset?.id]);
+  }, [asset?.id, asset?.blockchain, selectedBlockchain, setSelectedBlockchain]);
 
   const loadHistory = async () => {
     if (!asset || isLocked) { setLoading(false); return; }
@@ -89,7 +89,7 @@ export default function AssetProfile() {
       const rows = await fetchAssetHistory(asset.blockchain, network, assetWalletAddress, asset);
       setHistory(rows.slice(0, 50));
     } catch (e: any) {
-      setError((previous) => previous || (e?.message || 'Unable to load transaction history.'));
+      setError(e?.message || 'Unable to load transaction history.');
       setHistory([]);
     } finally { setLoading(false); setRefreshing(false); }
   };
