@@ -27,12 +27,15 @@ type Review = { to: string; amount: string; fee: string; feeSymbol: string; netw
 
 export default function Send() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ assetId?: string; assetContract?: string; assetSymbol?: string; assetDecimals?: string }>();
+  const params = useLocalSearchParams<{ assetId?: string; assetChain?: string; assetContract?: string; assetSymbol?: string; assetDecimals?: string }>();
   const tokenContract = typeof params.assetContract === 'string' ? params.assetContract : '';
   const tokenSymbol = typeof params.assetSymbol === 'string' ? params.assetSymbol : '';
   const tokenDecimals = Number(params.assetDecimals || 18);
   const isTokenTransfer = Boolean(tokenContract);
   const { selectedBlockchain, setSelectedBlockchain, network, walletAddresses, isLocked } = useWallet();
+  const requestedChain = ['ethereum', 'bnb', 'polygon', 'solana'].includes(String(params.assetChain)) ? params.assetChain as Blockchain : null;
+  const activeBlockchain = requestedChain || selectedBlockchain;
+  useEffect(() => { if (requestedChain && selectedBlockchain !== requestedChain) setSelectedBlockchain(requestedChain); }, [requestedChain, selectedBlockchain, setSelectedBlockchain]);
   const [to, setTo] = useState('');
   const [amount, setAmount] = useState('');
   const [balance, setBalance] = useState<string | null>(null);
@@ -42,17 +45,17 @@ export default function Send() {
   const [review, setReview] = useState<Review | null>(null);
   const [hash, setHash] = useState('');
   const [error, setError] = useState('');
-  const address = walletAddresses?.[selectedBlockchain] || '';
-  const symbol = isTokenTransfer ? tokenSymbol : SYMBOL[selectedBlockchain];
+  const address = walletAddresses?.[activeBlockchain] || '';
+  const symbol = isTokenTransfer ? tokenSymbol : SYMBOL[activeBlockchain];
   const testnet = network === 'testnet';
-  const rpc = useMemo(() => selectedBlockchain === 'solana' ? null : getEvmRpcConfig(selectedBlockchain, testnet ? 'testnet' : 'mainnet'), [selectedBlockchain, testnet]);
+  const rpc = useMemo(() => activeBlockchain === 'solana' ? null : getEvmRpcConfig(activeBlockchain, testnet ? 'testnet' : 'mainnet'), [activeBlockchain, testnet]);
 
   const loadBalance = useCallback(async () => {
     if (!address || isLocked) { setBalance(null); return; }
     setLoadingBalance(true);
     try {
       let txHash = '';
-      if (selectedBlockchain === 'solana') {
+      if (activeBlockchain === 'solana') {
         if (isTokenTransfer) {
           const rpcUrl = getSolanaRpcEndpoint(network);
           const accounts = await solRpc(rpcUrl, 'getTokenAccountsByOwner', [address, { mint: tokenContract }, { encoding: 'jsonParsed', commitment: 'confirmed' }]);
@@ -77,7 +80,7 @@ export default function Send() {
       }
     } catch (e: any) { setBalance(null); setError(e?.message || 'Unable to load balance.'); }
     finally { setLoadingBalance(false); }
-  }, [address, isLocked, selectedBlockchain, network, rpc, isTokenTransfer, tokenContract, tokenDecimals]);
+  }, [address, isLocked, activeBlockchain, network, rpc, isTokenTransfer, tokenContract, tokenDecimals]);
 
   useEffect(() => { setReview(null); setError(''); setBalance(null); void loadBalance(); }, [loadBalance]);
 
@@ -90,7 +93,7 @@ export default function Send() {
     try {
       const mnemonic = await getMnemonic();
       if (!mnemonic) throw new Error('Wallet secret unavailable. Restore your wallet.');
-      if (selectedBlockchain === 'solana') {
+      if (activeBlockchain === 'solana') {
         if (isTokenTransfer) throw new Error('SPL token sending is not enabled yet. Native SOL transfers are supported.');
         const recipient = bs58.decode(to.trim());
         if (recipient.length !== 32) throw new Error('Enter a valid Solana address.');
@@ -130,7 +133,7 @@ export default function Send() {
           const data = token.interface.encodeFunctionData('transfer', [recipient, tokenAmount]);
           const gasLimit = await p.estimateGas({ from: address, to: tokenContract, data, value: 0n });
           fee = gasLimit * price;
-          if (fee > b) throw new Error(`Insufficient ${SYMBOL[selectedBlockchain]} to pay the network fee.`);
+          if (fee > b) throw new Error(`Insufficient ${SYMBOL[activeBlockchain]} to pay the network fee.`);
           tx = { to: tokenContract, data, value: 0n, gasLimit, chainId: rpc.chainId,
             ...(fees.maxFeePerGas && fees.maxPriorityFeePerGas ? { maxFeePerGas: fees.maxFeePerGas, maxPriorityFeePerGas: fees.maxPriorityFeePerGas } : { gasPrice: price }) };
         } else {
@@ -141,8 +144,8 @@ export default function Send() {
           tx = { to: recipient, value, gasLimit, chainId: rpc.chainId,
             ...(fees.maxFeePerGas && fees.maxPriorityFeePerGas ? { maxFeePerGas: fees.maxFeePerGas, maxPriorityFeePerGas: fees.maxPriorityFeePerGas } : { gasPrice: price }) };
         }
-        const netName = testnet ? (selectedBlockchain === 'ethereum' ? 'Sepolia' : selectedBlockchain === 'bnb' ? 'BNB Testnet' : 'Polygon Amoy') : LABEL[selectedBlockchain] + ' Mainnet';
-        setReview({ to: recipient, amount, fee: ethers.formatEther(fee), feeSymbol: SYMBOL[selectedBlockchain], network: netName, evmTx: tx });
+        const netName = testnet ? (activeBlockchain === 'ethereum' ? 'Sepolia' : activeBlockchain === 'bnb' ? 'BNB Testnet' : 'Polygon Amoy') : LABEL[activeBlockchain] + ' Mainnet';
+        setReview({ to: recipient, amount, fee: ethers.formatEther(fee), feeSymbol: SYMBOL[activeBlockchain], network: netName, evmTx: tx });
       }
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch (e: any) { setError(e?.shortMessage || e?.message || 'Unable to prepare transaction.'); setReview(null); }
@@ -155,7 +158,7 @@ export default function Send() {
     try {
       const mnemonic = await getMnemonic();
       if (!mnemonic) throw new Error('Wallet secret unavailable. Restore your wallet.');
-      if (selectedBlockchain === 'solana') {
+      if (activeBlockchain === 'solana') {
         if (!review.solMessage || !review.blockhash || review.lastValidBlockHeight === undefined) throw new Error('Transaction review expired. Review again.');
         const sig = await signSolanaMessage(review.solMessage);
         const raw = Uint8Array.from([...shortvec(1), ...sig, ...review.solMessage]);
@@ -195,14 +198,14 @@ export default function Send() {
       <Text style={s.eyebrow}>TRANSFER ASSETS</Text><Text style={s.title}>Send {symbol}</Text><Text style={s.sub}>{isTokenTransfer ? 'Transfer this token from your wallet.' : 'Transfer assets directly from your wallet.'}</Text>
       {!isTokenTransfer && <><Text style={s.label}>Network</Text>
       <View style={s.chains}>{(['ethereum', 'bnb', 'polygon', 'solana'] as Blockchain[]).map((c) =>
-        <TouchableOpacity key={c} style={[s.chain, selectedBlockchain === c && s.chainActive]} onPress={() => { setSelectedBlockchain(c); setReview(null); }}>
-          <Text style={[s.chainText, selectedBlockchain === c && s.chainTextActive]}>{SYMBOL[c]}</Text>
+        <TouchableOpacity key={c} style={[s.chain, activeBlockchain === c && s.chainActive]} onPress={() => { setSelectedBlockchain(c); setReview(null); }}>
+          <Text style={[s.chainText, activeBlockchain === c && s.chainTextActive]}>{SYMBOL[c]}</Text>
         </TouchableOpacity>)}</View></>}
-      <View style={s.balanceCard}><Ionicons name="wallet-outline" size={16} color="#6C4CF1" /><Text style={s.balanceLabel}>{testnet ? 'Testnet' : 'Mainnet'} · {LABEL[selectedBlockchain]}</Text><View style={{ flex: 1 }} /><Text style={s.balanceValue}>{loadingBalance ? 'Loading…' : balance === null ? '—' : Number(balance).toLocaleString(undefined, { maximumFractionDigits: 6 }) + ' ' + symbol}</Text></View>
+      <View style={s.balanceCard}><Ionicons name="wallet-outline" size={16} color="#6C4CF1" /><Text style={s.balanceLabel}>{testnet ? 'Testnet' : 'Mainnet'} · {LABEL[activeBlockchain]}</Text><View style={{ flex: 1 }} /><Text style={s.balanceValue}>{loadingBalance ? 'Loading…' : balance === null ? '—' : Number(balance).toLocaleString(undefined, { maximumFractionDigits: 6 }) + ' ' + symbol}</Text></View>
       <Text style={s.label}>Recipient address</Text>
-      <View style={s.inputCard}><TextInput value={to} onChangeText={(v) => { setTo(v); setReview(null); }} placeholder={selectedBlockchain === 'solana' ? 'Solana address' : '0x recipient address'} placeholderTextColor="#A09AAC" autoCapitalize="none" autoCorrect={false} style={s.input} /><TouchableOpacity onPress={() => setTo('')}><Ionicons name="close-circle" size={19} color="#9A95A8" /></TouchableOpacity></View>
+      <View style={s.inputCard}><TextInput value={to} onChangeText={(v) => { setTo(v); setReview(null); }} placeholder={activeBlockchain === 'solana' ? 'Solana address' : '0x recipient address'} placeholderTextColor="#A09AAC" autoCapitalize="none" autoCorrect={false} style={s.input} /><TouchableOpacity onPress={() => setTo('')}><Ionicons name="close-circle" size={19} color="#9A95A8" /></TouchableOpacity></View>
       <Text style={s.label}>Amount</Text>
-      <View style={s.amountCard}><TextInput value={amount} onChangeText={(v) => { setAmount(v.replace(/[^0-9.]/g, '')); setReview(null); }} placeholder="0.00" placeholderTextColor="#A09AAC" keyboardType="decimal-pad" style={s.amountInput} /><Text style={s.symbol}>{symbol}</Text><TouchableOpacity style={s.max} onPress={() => { if (balance) setAmount(Math.max(0, Number(balance) - (isTokenTransfer ? 0 : selectedBlockchain === 'solana' ? 0.00001 : 0.0005)).toFixed(8).replace(/0+$/, '').replace(/\.$/, '')); }}><Text style={s.maxText}>MAX</Text></TouchableOpacity></View>
+      <View style={s.amountCard}><TextInput value={amount} onChangeText={(v) => { setAmount(v.replace(/[^0-9.]/g, '')); setReview(null); }} placeholder="0.00" placeholderTextColor="#A09AAC" keyboardType="decimal-pad" style={s.amountInput} /><Text style={s.symbol}>{symbol}</Text><TouchableOpacity style={s.max} onPress={() => { if (balance) setAmount(Math.max(0, Number(balance) - (isTokenTransfer ? 0 : activeBlockchain === 'solana' ? 0.00001 : 0.0005)).toFixed(8).replace(/0+$/, '').replace(/\.$/, '')); }}><Text style={s.maxText}>MAX</Text></TouchableOpacity></View>
       <Text style={s.helper}>Available balance: {balance === null ? '—' : Number(balance).toLocaleString(undefined, { maximumFractionDigits: 8 }) + ' ' + symbol}</Text>
       {error ? <View style={s.error}><Ionicons name="alert-circle-outline" size={17} color="#B42318" /><Text style={s.errorText}>{error}</Text></View> : null}
       {review ? <View style={s.review}>
