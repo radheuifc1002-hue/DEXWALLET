@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { ethers } from 'ethers';
@@ -27,6 +27,11 @@ type Review = { to: string; amount: string; fee: string; feeSymbol: string; netw
 
 export default function Send() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ assetId?: string; assetContract?: string; assetSymbol?: string; assetDecimals?: string }>();
+  const tokenContract = typeof params.assetContract === 'string' ? params.assetContract : '';
+  const tokenSymbol = typeof params.assetSymbol === 'string' ? params.assetSymbol : '';
+  const tokenDecimals = Number(params.assetDecimals || 18);
+  const isTokenTransfer = Boolean(tokenContract);
   const { selectedBlockchain, setSelectedBlockchain, network, walletAddresses, isLocked } = useWallet();
   const [to, setTo] = useState('');
   const [amount, setAmount] = useState('');
@@ -38,7 +43,7 @@ export default function Send() {
   const [hash, setHash] = useState('');
   const [error, setError] = useState('');
   const address = walletAddresses?.[selectedBlockchain] || '';
-  const symbol = SYMBOL[selectedBlockchain];
+  const symbol = isTokenTransfer ? tokenSymbol : SYMBOL[selectedBlockchain];
   const testnet = network === 'testnet';
   const rpc = useMemo(() => selectedBlockchain === 'solana' ? null : getEvmRpcConfig(selectedBlockchain, testnet ? 'testnet' : 'mainnet'), [selectedBlockchain, testnet]);
 
@@ -52,13 +57,20 @@ export default function Send() {
         setBalance(ethers.formatUnits(BigInt(r.value), 9));
       } else if (rpc) {
         const p = new ethers.JsonRpcProvider(rpc.rpc, rpc.chainId);
-        const [b, n] = await Promise.all([p.getBalance(address), p.getNetwork()]);
+        const n = await p.getNetwork();
         if (Number(n.chainId) !== rpc.chainId) throw new Error('RPC network mismatch.');
-        setBalance(ethers.formatEther(b));
+        if (isTokenTransfer) {
+          const token = new ethers.Contract(tokenContract, ['function balanceOf(address) view returns (uint256)'], p);
+          const b = await token.balanceOf(address);
+          setBalance(ethers.formatUnits(b, tokenDecimals));
+        } else {
+          const b = await p.getBalance(address);
+          setBalance(ethers.formatEther(b));
+        }
       }
     } catch (e: any) { setBalance(null); setError(e?.message || 'Unable to load balance.'); }
     finally { setLoadingBalance(false); }
-  }, [address, isLocked, selectedBlockchain, network, rpc]);
+  }, [address, isLocked, selectedBlockchain, network, rpc, isTokenTransfer, tokenContract, tokenDecimals]);
 
   useEffect(() => { setReview(null); setError(''); setBalance(null); void loadBalance(); }, [loadBalance]);
 
@@ -72,6 +84,7 @@ export default function Send() {
       const mnemonic = await getMnemonic();
       if (!mnemonic) throw new Error('Wallet secret unavailable. Restore your wallet.');
       if (selectedBlockchain === 'solana') {
+        if (isTokenTransfer) throw new Error('SPL token sending is not enabled yet. Native SOL transfers are supported.');
         const recipient = bs58.decode(to.trim());
         if (recipient.length !== 32) throw new Error('Enter a valid Solana address.');
         if (to.trim() === address) throw new Error('Recipient must be different from your own address.');
@@ -96,16 +109,33 @@ export default function Send() {
         const p = new ethers.JsonRpcProvider(rpc.rpc, rpc.chainId);
         const [n, b, fees] = await Promise.all([p.getNetwork(), p.getBalance(address), p.getFeeData()]);
         if (Number(n.chainId) !== rpc.chainId) throw new Error('RPC network mismatch. Transaction cancelled.');
-        const value = ethers.parseEther(amount);
-        const gasLimit = await p.estimateGas({ from: address, to: ethers.getAddress(to.trim()), value });
+        const recipient = ethers.getAddress(to.trim());
         const price = fees.maxFeePerGas ?? fees.gasPrice;
         if (!price) throw new Error('Unable to estimate network fee.');
-        const fee = gasLimit * price;
-        if (value + fee > b) throw new Error('Insufficient balance for amount plus network fee.');
-        const tx: ethers.TransactionRequest = { to: ethers.getAddress(to.trim()), value, gasLimit, chainId: rpc.chainId,
-          ...(fees.maxFeePerGas && fees.maxPriorityFeePerGas ? { maxFeePerGas: fees.maxFeePerGas, maxPriorityFeePerGas: fees.maxPriorityFeePerGas } : { gasPrice: price }) };
+        let tx: ethers.TransactionRequest;
+        let fee: bigint;
+        if (isTokenTransfer) {
+          if (!Number.isInteger(tokenDecimals) || tokenDecimals < 0 || tokenDecimals > 255) throw new Error('Invalid token decimals.');
+          const tokenAmount = ethers.parseUnits(amount, tokenDecimals);
+          const token = new ethers.Contract(tokenContract, ['function balanceOf(address) view returns (uint256)', 'function transfer(address,uint256) returns (bool)'], p);
+          const tokenBalance = await token.balanceOf(address);
+          if (tokenAmount > tokenBalance) throw new Error('Insufficient token balance.');
+          const data = token.interface.encodeFunctionData('transfer', [recipient, tokenAmount]);
+          const gasLimit = await p.estimateGas({ from: address, to: tokenContract, data, value: 0n });
+          fee = gasLimit * price;
+          if (fee > b) throw new Error(`Insufficient ${SYMBOL[selectedBlockchain]} to pay the network fee.`);
+          tx = { to: tokenContract, data, value: 0n, gasLimit, chainId: rpc.chainId,
+            ...(fees.maxFeePerGas && fees.maxPriorityFeePerGas ? { maxFeePerGas: fees.maxFeePerGas, maxPriorityFeePerGas: fees.maxPriorityFeePerGas } : { gasPrice: price }) };
+        } else {
+          const value = ethers.parseEther(amount);
+          const gasLimit = await p.estimateGas({ from: address, to: recipient, value });
+          fee = gasLimit * price;
+          if (value + fee > b) throw new Error('Insufficient balance for amount plus network fee.');
+          tx = { to: recipient, value, gasLimit, chainId: rpc.chainId,
+            ...(fees.maxFeePerGas && fees.maxPriorityFeePerGas ? { maxFeePerGas: fees.maxFeePerGas, maxPriorityFeePerGas: fees.maxPriorityFeePerGas } : { gasPrice: price }) };
+        }
         const netName = testnet ? (selectedBlockchain === 'ethereum' ? 'Sepolia' : selectedBlockchain === 'bnb' ? 'BNB Testnet' : 'Polygon Amoy') : LABEL[selectedBlockchain] + ' Mainnet';
-        setReview({ to: ethers.getAddress(to.trim()), amount, fee: ethers.formatEther(fee), feeSymbol: symbol, network: netName, evmTx: tx });
+        setReview({ to: recipient, amount, fee: ethers.formatEther(fee), feeSymbol: SYMBOL[selectedBlockchain], network: netName, evmTx: tx });
       }
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch (e: any) { setError(e?.shortMessage || e?.message || 'Unable to prepare transaction.'); setReview(null); }
@@ -153,10 +183,10 @@ export default function Send() {
   </View></SafeAreaView>;
 
   return <SafeAreaView style={s.container}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-    <View style={s.header}><TouchableOpacity onPress={() => router.back()} style={s.back}><Ionicons name="arrow-back" size={22} color="#211B35" /></TouchableOpacity><Text style={s.headerTitle}>Send</Text><View style={{ width: 40 }} /></View>
+    <View style={s.header}><TouchableOpacity onPress={() => router.back()} style={s.back}><Ionicons name="arrow-back" size={22} color="#211B35" /></TouchableOpacity><Text style={s.headerTitle}>{isTokenTransfer ? `Send ${tokenSymbol}` : 'Send'}</Text><View style={{ width: 40 }} /></View>
     <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
-      <Text style={s.eyebrow}>TRANSFER ASSETS</Text><Text style={s.title}>Send crypto</Text><Text style={s.sub}>Transfer assets directly from your wallet.</Text>
-      <Text style={s.label}>Network</Text>
+      <Text style={s.eyebrow}>TRANSFER ASSETS</Text><Text style={s.title}>Send {symbol}</Text><Text style={s.sub}>{isTokenTransfer ? 'Transfer this token from your wallet.' : 'Transfer assets directly from your wallet.'}</Text>
+      {!isTokenTransfer ? <><Text style={s.label}>Network</Text>
       <View style={s.chains}>{(['ethereum', 'bnb', 'polygon', 'solana'] as Blockchain[]).map((c) =>
         <TouchableOpacity key={c} style={[s.chain, selectedBlockchain === c && s.chainActive]} onPress={() => { setSelectedBlockchain(c); setReview(null); }}>
           <Text style={[s.chainText, selectedBlockchain === c && s.chainTextActive]}>{SYMBOL[c]}</Text>
