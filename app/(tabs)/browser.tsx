@@ -248,14 +248,14 @@ export default function Browser() {
       let result: any;
       switch (m.method) {
         case 'eth_accounts':
-          result = connectedSolanaOriginRef.current === origin && address ? [address] : [];
+          result = connectedEvmOriginRef.current === origin && address ? [address] : [];
           break;
         case 'eth_requestAccounts': {
           if (!address) throw Object.assign(new Error('Wallet address unavailable.'), {code:4100});
-          if (connectedSolanaOriginRef.current !== origin) {
+          if (connectedEvmOriginRef.current !== origin) {
             const ok = await askApproval({kind:'connect',title:'Connect wallet',origin,chainName:cfg.name,details:['Share your public address with this website.',address,'This does not authorize transactions.']});
             if (!ok) throw Object.assign(new Error('User rejected connection.'), {code:4001});
-            connectedSolanaOriginRef.current = origin; setConnectedOrigin(origin);
+            connectedEvmOriginRef.current = origin; setConnectedOrigin(origin);
           }
           result = [address];
           webRef.current?.injectJavaScript('if(window.ethereum){window.ethereum.__selectedAddress='+JSON.stringify(address)+';window.ethereum.__chainId='+JSON.stringify('0x'+chainId.toString(16))+';window.ethereum.emit("connect",{chainId:'+JSON.stringify('0x'+chainId.toString(16))+'});window.ethereum.emit("accountsChanged",'+JSON.stringify([address])+')}true;');
@@ -263,13 +263,13 @@ export default function Browser() {
         }
         case 'eth_chainId': result = '0x' + chainId.toString(16); break;
         case 'net_version': result = String(chainId); break;
-        case 'wallet_getPermissions': result = connectedSolanaOriginRef.current === origin ? [{parentCapability:'eth_accounts'}] : []; break;
+        case 'wallet_getPermissions': result = connectedEvmOriginRef.current === origin ? [{parentCapability:'eth_accounts'}] : []; break;
         case 'wallet_requestPermissions': {
           if (!params[0]?.eth_accounts) throw Object.assign(new Error('Only eth_accounts permission is supported.'), {code:4200});
           if (!address) throw Object.assign(new Error('Wallet address unavailable.'), {code:4100});
-          const ok = connectedSolanaOriginRef.current === origin || await askApproval({kind:'connect',title:'Connect wallet',origin,chainName:cfg.name,details:['Allow this website to view your public address.',address]});
+          const ok = connectedEvmOriginRef.current === origin || await askApproval({kind:'connect',title:'Connect wallet',origin,chainName:cfg.name,details:['Allow this website to view your public address.',address]});
           if (!ok) throw Object.assign(new Error('User rejected connection.'), {code:4001});
-          connectedSolanaOriginRef.current = origin; setConnectedOrigin(origin);
+          connectedEvmOriginRef.current = origin; setConnectedOrigin(origin);
           webRef.current?.injectJavaScript('if(window.ethereum){window.ethereum.__selectedAddress='+JSON.stringify(address)+';window.ethereum.__chainId='+JSON.stringify('0x'+chainId.toString(16))+';window.ethereum.emit("connect",{chainId:'+JSON.stringify('0x'+chainId.toString(16))+'});window.ethereum.emit("accountsChanged",'+JSON.stringify([address])+')}true;');
           result = [{parentCapability:'eth_accounts'}]; break;
         }
@@ -290,7 +290,7 @@ export default function Browser() {
         case 'wallet_sendCalls':
           throw Object.assign(new Error('This transaction method is not supported. Submit transactions through the wallet approval flow.'), {code:4200});
         case 'eth_sendTransaction': {
-          if (connectedSolanaOriginRef.current !== origin) throw Object.assign(new Error('Connect this DApp first.'), {code:4100});
+          if (connectedEvmOriginRef.current !== origin) throw Object.assign(new Error('Connect this DApp first.'), {code:4100});
           const tx = params[0];
           if (!tx || typeof tx !== 'object') throw Object.assign(new Error('Invalid transaction.'), {code:-32602});
           if (!address || !tx.from || String(tx.from).toLowerCase() !== address.toLowerCase()) throw Object.assign(new Error('Transaction sender does not match selected wallet.'), {code:4100});
