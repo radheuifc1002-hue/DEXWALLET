@@ -8,7 +8,7 @@ import bs58 from 'bs58';
 import { Buffer } from 'buffer';
 import { useWallet, Blockchain } from '../context/WalletContext';
 import { getMnemonic, signSolanaMessage } from '../mobile/services/walletService';
-import { getEvmRpcConfig, getSolanaRpcEndpoint } from '../mobile/services/rpcManager';
+import { getEvmRpcConfig, getSolanaRpcEndpoint, withEvmReadFallback, withSolanaReadFallback } from '../mobile/services/rpcManager';
 
 const SYMBOL: Record<Blockchain, string> = { ethereum: 'ETH', bnb: 'BNB', polygon: 'POL', solana: 'SOL' };
 const LABEL: Record<Blockchain, string> = { ethereum: 'Ethereum', bnb: 'BNB Chain', polygon: 'Polygon', solana: 'Solana' };
@@ -16,11 +16,17 @@ const shortvec = (n: number) => { const a: number[] = []; while (n >= 128) { a.p
 const u32 = (n: number) => [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255];
 const u64 = (n: bigint) => { const a: number[] = []; for (let i = 0n; i < 8n; i++) a.push(Number((n >> (8n * i)) & 255n)); return a; };
 async function solRpc(url: string, method: string, params: unknown[] = []) {
-  const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) });
-  if (!r.ok) throw new Error('Solana RPC request failed.');
-  const j = await r.json();
-  if (j.error) throw new Error(j.error.message || 'Solana RPC request failed.');
-  return j.result;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+  try {
+    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }), signal: controller.signal });
+    if (!r.ok) throw new Error('Solana RPC returned HTTP ' + r.status + '.');
+    const j = await r.json();
+    if (j.error) throw new Error(j.error.message || 'Solana RPC request failed.');
+    return j.result;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 type Review = { to: string; amount: string; fee: string; feeSymbol: string; network: string; evmTx?: ethers.TransactionRequest; solMessage?: Uint8Array; blockhash?: string; lastValidBlockHeight?: number };
@@ -46,15 +52,18 @@ export default function Send() {
     if (!address || isLocked) { setBalance(null); return; }
     setLoadingBalance(true);
     try {
-      let txHash = '';
       if (selectedBlockchain === 'solana') {
-        const r = await solRpc(getSolanaRpcEndpoint(network), 'getBalance', [address, { commitment: 'confirmed' }]);
-        setBalance(ethers.formatUnits(BigInt(r.value), 9));
-      } else if (rpc) {
-        const p = new ethers.JsonRpcProvider(rpc.rpc, rpc.chainId);
-        const [b, n] = await Promise.all([p.getBalance(address), p.getNetwork()]);
-        if (Number(n.chainId) !== rpc.chainId) throw new Error('RPC network mismatch.');
-        setBalance(ethers.formatEther(b));
+        const lamports = await withSolanaReadFallback(network, async (endpoint) => {
+          const result = await solRpc(endpoint, 'getBalance', [address, { commitment: 'confirmed' }]);
+          return result.value;
+        });
+        setBalance(ethers.formatUnits(BigInt(lamports), 9));
+      } else {
+        const balanceWei = await withEvmReadFallback(selectedBlockchain, network, async (endpoint, chainId) => {
+          const provider = new ethers.JsonRpcProvider(endpoint, chainId);
+          return provider.getBalance(address);
+        });
+        setBalance(ethers.formatEther(balanceWei));
       }
     } catch (e: any) { setBalance(null); setError(e?.message || 'Unable to load balance.'); }
     finally { setLoadingBalance(false); }
@@ -69,6 +78,7 @@ export default function Send() {
     if (!amount.trim() || !Number.isFinite(Number(amount)) || Number(amount) <= 0) { setError('Enter a valid amount.'); return; }
     setPreparing(true);
     try {
+      let txHash = '';
       const mnemonic = await getMnemonic();
       if (!mnemonic) throw new Error('Wallet secret unavailable. Restore your wallet.');
       if (selectedBlockchain === 'solana') {
@@ -76,36 +86,41 @@ export default function Send() {
         if (recipient.length !== 32) throw new Error('Enter a valid Solana address.');
         if (to.trim() === address) throw new Error('Recipient must be different from your own address.');
         const lamports = ethers.parseUnits(amount, 9);
-        const url = getSolanaRpcEndpoint(network);
-        const [latest, b] = await Promise.all([
-          solRpc(url, 'getLatestBlockhash', [{ commitment: 'confirmed' }]),
-          solRpc(url, 'getBalance', [address, { commitment: 'confirmed' }]),
-        ]);
-        const keys = [...bs58.decode(address), ...recipient, ...bs58.decode('11111111111111111111111111111111')];
-        const data = [...u32(2), ...u64(lamports)];
-        const msg = Uint8Array.from([1, 0, 1, ...shortvec(3), ...keys, ...bs58.decode(latest.value.blockhash), ...shortvec(1), 2, ...shortvec(2), 0, 1, ...shortvec(data.length), ...data]);
-        const feeResult = await solRpc(url, 'getFeeForMessage', [Buffer.from(msg).toString('base64'), { commitment: 'confirmed', encoding: 'base64' }]);
-        if (feeResult.value === null) throw new Error('Unable to estimate network fee.');
-        const fee = BigInt(feeResult.value);
-        if (lamports + fee > BigInt(b.value)) throw new Error('Insufficient SOL for amount and network fee.');
-        setReview({ to: to.trim(), amount, fee: ethers.formatUnits(fee, 9), feeSymbol: 'SOL', network: testnet ? 'Solana Devnet' : 'Solana Mainnet', solMessage: msg, blockhash: latest.value.blockhash, lastValidBlockHeight: latest.value.lastValidBlockHeight });
+        const prepared = await withSolanaReadFallback(network, async (url) => {
+          const [latest, b] = await Promise.all([
+            solRpc(url, 'getLatestBlockhash', [{ commitment: 'confirmed' }]),
+            solRpc(url, 'getBalance', [address, { commitment: 'confirmed' }]),
+          ]);
+          const keys = [...bs58.decode(address), ...recipient, ...bs58.decode('11111111111111111111111111111111')];
+          const data = [...u32(2), ...u64(lamports)];
+          const msg = Uint8Array.from([1, 0, 1, ...shortvec(3), ...keys, ...bs58.decode(latest.value.blockhash), ...shortvec(1), 2, ...shortvec(2), 0, 1, ...shortvec(data.length), ...data]);
+          const feeResult = await solRpc(url, 'getFeeForMessage', [Buffer.from(msg).toString('base64'), { commitment: 'confirmed', encoding: 'base64' }]);
+          if (feeResult.value === null) throw new Error('Unable to estimate network fee.');
+          const fee = BigInt(feeResult.value);
+          if (lamports + fee > BigInt(b.value)) throw new Error('Insufficient SOL for amount and network fee.');
+          return { to: to.trim(), amount, fee: ethers.formatUnits(fee, 9), feeSymbol: 'SOL', network: testnet ? 'Solana Devnet' : 'Solana Mainnet', solMessage: msg, blockhash: latest.value.blockhash, lastValidBlockHeight: latest.value.lastValidBlockHeight };
+        });
+        setReview(prepared);
       } else {
         if (!ethers.isAddress(to.trim())) throw new Error('Enter a valid EVM wallet address.');
         if (to.trim().toLowerCase() === address.toLowerCase()) throw new Error('Recipient must be different from your own address.');
         if (!rpc) throw new Error('Unsupported network.');
-        const p = new ethers.JsonRpcProvider(rpc.rpc, rpc.chainId);
-        const [n, b, fees] = await Promise.all([p.getNetwork(), p.getBalance(address), p.getFeeData()]);
-        if (Number(n.chainId) !== rpc.chainId) throw new Error('RPC network mismatch. Transaction cancelled.');
-        const value = ethers.parseEther(amount);
-        const gasLimit = await p.estimateGas({ from: address, to: ethers.getAddress(to.trim()), value });
-        const price = fees.maxFeePerGas ?? fees.gasPrice;
-        if (!price) throw new Error('Unable to estimate network fee.');
-        const fee = gasLimit * price;
-        if (value + fee > b) throw new Error('Insufficient balance for amount plus network fee.');
-        const tx: ethers.TransactionRequest = { to: ethers.getAddress(to.trim()), value, gasLimit, chainId: rpc.chainId,
-          ...(fees.maxFeePerGas && fees.maxPriorityFeePerGas ? { maxFeePerGas: fees.maxFeePerGas, maxPriorityFeePerGas: fees.maxPriorityFeePerGas } : { gasPrice: price }) };
-        const netName = testnet ? (selectedBlockchain === 'ethereum' ? 'Sepolia' : selectedBlockchain === 'bnb' ? 'BNB Testnet' : 'Polygon Amoy') : LABEL[selectedBlockchain] + ' Mainnet';
-        setReview({ to: ethers.getAddress(to.trim()), amount, fee: ethers.formatEther(fee), feeSymbol: symbol, network: netName, evmTx: tx });
+        const prepared = await withEvmReadFallback(selectedBlockchain, network, async (endpoint, chainId) => {
+          const provider = new ethers.JsonRpcProvider(endpoint, chainId);
+          const [balanceWei, fees] = await Promise.all([provider.getBalance(address), provider.getFeeData()]);
+          const value = ethers.parseEther(amount);
+          const recipient = ethers.getAddress(to.trim());
+          const gasLimit = await provider.estimateGas({ from: address, to: recipient, value });
+          const price = fees.maxFeePerGas ?? fees.gasPrice;
+          if (!price) throw new Error('Unable to estimate network fee.');
+          const fee = gasLimit * price;
+          if (value + fee > balanceWei) throw new Error('Insufficient balance for amount plus network fee.');
+          const tx: ethers.TransactionRequest = { to: recipient, value, gasLimit, chainId,
+            ...(fees.maxFeePerGas && fees.maxPriorityFeePerGas ? { maxFeePerGas: fees.maxFeePerGas, maxPriorityFeePerGas: fees.maxPriorityFeePerGas } : { gasPrice: price }) };
+          const netName = testnet ? (selectedBlockchain === 'ethereum' ? 'Sepolia' : selectedBlockchain === 'bnb' ? 'BNB Testnet' : 'Polygon Amoy') : LABEL[selectedBlockchain] + ' Mainnet';
+          return { to: recipient, amount, fee: ethers.formatEther(fee), feeSymbol: symbol, network: netName, evmTx: tx };
+        });
+        setReview(prepared);
       }
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch (e: any) { setError(e?.shortMessage || e?.message || 'Unable to prepare transaction.'); setReview(null); }
