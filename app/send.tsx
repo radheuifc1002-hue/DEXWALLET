@@ -56,6 +56,7 @@ export default function Send() {
     if (!address || isLocked) { setBalance(null); return; }
     setLoadingBalance(true);
     try {
+      let txHash = '';
       if (selectedBlockchain === 'solana') {
         const r = await solRpc(SOL_RPC[network], 'getBalance', [address, { commitment: 'confirmed' }]);
         setBalance(ethers.formatUnits(BigInt(r.value), 9));
@@ -131,8 +132,8 @@ export default function Send() {
         if (!review.solMessage || !review.blockhash || review.lastValidBlockHeight === undefined) throw new Error('Transaction review expired. Review again.');
         const sig = await signSolanaMessage(review.solMessage);
         const raw = Uint8Array.from([...shortvec(1), ...sig, ...review.solMessage]);
-        hash = await solRpc(SOL_RPC[network], 'sendTransaction', [Buffer.from(raw).toString('base64'), { encoding: 'base64', preflightCommitment: 'confirmed', skipPreflight: false }]);
-        const c = await solRpc(SOL_RPC[network], 'confirmTransaction', [{ signature: hash, blockhash: review.blockhash, lastValidBlockHeight: review.lastValidBlockHeight }, { commitment: 'confirmed' }]);
+        txHash = await solRpc(SOL_RPC[network], 'sendTransaction', [Buffer.from(raw).toString('base64'), { encoding: 'base64', preflightCommitment: 'confirmed', skipPreflight: false }]);
+        const c = await solRpc(SOL_RPC[network], 'confirmTransaction', [{ signature: txHash, blockhash: review.blockhash, lastValidBlockHeight: review.lastValidBlockHeight }, { commitment: 'confirmed' }]);
         if (c.value?.err) throw new Error('Solana transaction failed on chain.');
       } else {
         if (!rpc || !review.evmTx) throw new Error('Transaction review expired. Review again.');
@@ -142,10 +143,10 @@ export default function Send() {
         const w = ethers.HDNodeWallet.fromPhrase(mnemonic).connect(p);
         if (w.address.toLowerCase() !== address.toLowerCase()) throw new Error('Signing account does not match selected wallet.');
         const tx = await w.sendTransaction(review.evmTx);
-        hash = tx.hash;
+        txHash = tx.hash;
         await tx.wait(1);
       }
-      setHash(hash);
+      setHash(txHash);
       setReview(null);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       void loadBalance();
