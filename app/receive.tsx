@@ -7,7 +7,7 @@ import {
   ScrollView,
   TouchableOpacity,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import QRCode from 'react-native-qrcode-svg';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
@@ -30,6 +30,8 @@ const CHAIN_COLORS: Record<string, string> = {
 
 export default function Receive() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ assetSymbol?: string; assetName?: string; assetContract?: string }>();
+  const assetSymbol = typeof params.assetSymbol === 'string' ? params.assetSymbol : '';
   const { walletAddresses, selectedBlockchain, setSelectedBlockchain } = useWallet();
   const [copied, setCopied] = useState(false);
 
@@ -55,12 +57,12 @@ export default function Receive() {
         <TouchableOpacity style={styles.back} onPress={() => router.back()}>
           <Ionicons name="close" size={24} color="#FFFFFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Receive</Text>
+        <Text style={styles.headerTitle}>{assetSymbol ? `Receive ${assetSymbol}` : 'Receive'}</Text>
         <View style={{ width: 32 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
-        <View style={styles.chainTabs}>
+        {!assetSymbol && <View style={styles.chainTabs}>
           {CHAINS.map((chain) => (
             <TouchableOpacity
               key={chain}
@@ -81,7 +83,7 @@ export default function Receive() {
               </Text>
             </TouchableOpacity>
           ))}
-        </View>
+        </View>}
 
         {address ? (
           <>
@@ -100,7 +102,7 @@ export default function Receive() {
                 />
               </View>
               <Text style={styles.chainLabel}>
-                {CHAIN_SYMBOLS[selectedBlockchain]} Address
+                {assetSymbol || CHAIN_SYMBOLS[selectedBlockchain]} Address
               </Text>
             </View>
 
@@ -125,8 +127,7 @@ export default function Receive() {
             <View style={styles.warning}>
               <Ionicons name="information-circle-outline" size={16} color="#9B97B2" />
               <Text style={styles.warningText}>
-                Only send {CHAIN_SYMBOLS[selectedBlockchain]} and compatible tokens to
-                this address.
+                Only send {assetSymbol || CHAIN_SYMBOLS[selectedBlockchain]} on {selectedBlockchain === 'bnb' ? 'BNB Chain' : selectedBlockchain === 'polygon' ? 'Polygon' : selectedBlockchain === 'ethereum' ? 'Ethereum' : 'Solana'} to this address. For imported tokens, use the same token contract and network.
               </Text>
             </View>
           </>
