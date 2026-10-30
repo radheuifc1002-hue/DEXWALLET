@@ -34,7 +34,8 @@ function ActivityRow({ item }: { item: WalletActivity }) {
 export default function AssetProfile() {
   const router = useRouter();
   const params = useLocalSearchParams<{ id?: string }>();
-  const { tokens, selectedBlockchain, network, walletAddress, setSelectedBlockchain, isLocked } = useWallet();
+  const { tokens, selectedBlockchain, network, assetWalletAddresses, setSelectedBlockchain, isLocked } = useWallet();
+  const assetWalletAddress = asset ? (assetWalletAddresses?.[asset.blockchain] || '') : '';
   const asset = useMemo(() => tokens.find((token) => token.id === params.id), [tokens, params.id]);
   const [history, setHistory] = useState<WalletActivity[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,11 +61,11 @@ export default function AssetProfile() {
           return json.result;
         };
         if (asset.contractAddress) {
-          const accounts = await method('getTokenAccountsByOwner', [walletAddress, { mint: asset.contractAddress }, { encoding: 'jsonParsed', commitment: 'confirmed' }]);
+          const accounts = await method('getTokenAccountsByOwner', [assetWalletAddress, { mint: asset.contractAddress }, { encoding: 'jsonParsed', commitment: 'confirmed' }]);
           const raw = (accounts?.value || []).reduce((sum: bigint, item: any) => sum + BigInt(item.account.data.parsed.info.tokenAmount.amount || '0'), 0n);
           setDisplayBalance(ethers.formatUnits(raw, asset.decimals ?? 0));
         } else {
-          const result = await method('getBalance', [walletAddress, { commitment: 'confirmed' }]);
+          const result = await method('getBalance', [assetWalletAddress, { commitment: 'confirmed' }]);
           setDisplayBalance(ethers.formatUnits(BigInt(result.value), 9));
         }
       } else {
@@ -74,10 +75,10 @@ export default function AssetProfile() {
         if (Number(chain.chainId) !== config.chainId) throw new Error('RPC network mismatch while loading balance.');
         if (asset.contractAddress) {
           const contract = new ethers.Contract(asset.contractAddress, ['function balanceOf(address) view returns (uint256)'], provider);
-          const raw = await contract.balanceOf(walletAddress);
+          const raw = await contract.balanceOf(assetWalletAddress);
           setDisplayBalance(ethers.formatUnits(raw, asset.decimals ?? 18));
         } else {
-          const raw = await provider.getBalance(walletAddress);
+          const raw = await provider.getBalance(assetWalletAddress);
           setDisplayBalance(ethers.formatEther(raw));
         }
       }
@@ -86,7 +87,7 @@ export default function AssetProfile() {
       setError(e?.message || 'Unable to load live balance.');
     }
     try {
-      const rows = await fetchAssetHistory(asset.blockchain, network, walletAddress, asset);
+      const rows = await fetchAssetHistory(asset.blockchain, network, assetWalletAddress, asset);
       setHistory(rows.slice(0, 50));
     } catch (e: any) {
       setError((previous) => previous || (e?.message || 'Unable to load transaction history.'));
@@ -94,12 +95,12 @@ export default function AssetProfile() {
     } finally { setLoading(false); setRefreshing(false); }
   };
 
-  useEffect(() => { setLoading(true); void loadHistory(); }, [asset?.id, walletAddress, network, isLocked]);
+  useEffect(() => { setLoading(true); void loadHistory(); }, [asset?.id, assetWalletAddress, network, isLocked]);
 
   if (!asset) return <SafeAreaView style={s.container}><View style={s.empty}><Text style={s.emptyTitle}>Asset unavailable</Text><TouchableOpacity onPress={() => router.back()}><Text style={s.link}>Go back</Text></TouchableOpacity></View></SafeAreaView>;
 
   const native = !asset.contractAddress;
-  const explorer = getAssetExplorerUrl(asset.blockchain, network, walletAddress, asset.contractAddress);
+  const explorer = getAssetExplorerUrl(asset.blockchain, network, assetWalletAddress, asset.contractAddress);
   const amount = displayBalance !== null ? Number(displayBalance).toLocaleString(undefined, { maximumFractionDigits: 8 }) : Number.isFinite(asset.balance) ? asset.balance.toLocaleString(undefined, { maximumFractionDigits: 8 }) : '0';
 
   return (
@@ -137,8 +138,8 @@ export default function AssetProfile() {
       <View style={s.bottomActions}>
         <TouchableOpacity style={s.sendButton} onPress={() => {
           setSelectedBlockchain(asset.blockchain);
-          if (asset.contractAddress) router.push({ pathname: '/send', params: { assetId: asset.id, assetContract: asset.contractAddress, assetSymbol: asset.symbol, assetDecimals: String(asset.decimals ?? 18) } });
-          else router.push('/send');
+          if (asset.contractAddress) router.push({ pathname: '/send', params: { assetId: asset.id, assetChain: asset.blockchain, assetContract: asset.contractAddress, assetSymbol: asset.symbol, assetDecimals: String(asset.decimals ?? 18) } });
+          else router.push({ pathname: '/send', params: { assetChain: asset.blockchain } });
         }}><Ionicons name="arrow-up" size={19} color="#FFFFFF" /><Text style={s.sendText}>Send {asset.symbol}</Text></TouchableOpacity>
         <TouchableOpacity style={s.receiveButton} onPress={() => { setSelectedBlockchain(asset.blockchain); router.push({ pathname: '/receive', params: { assetSymbol: asset.symbol, assetName: asset.name, ...(asset.contractAddress ? { assetContract: asset.contractAddress } : {}) } }); }}><Ionicons name="arrow-down" size={19} color="#6C4CF1" /><Text style={s.receiveText}>Receive</Text></TouchableOpacity>
       </View>
