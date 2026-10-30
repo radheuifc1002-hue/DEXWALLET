@@ -69,10 +69,10 @@ export default async function handler(req: any, res: any) {
       VALUES (${chain}, ${network}, ${addressKey}, ${address}, 'pending')
       ON CONFLICT (chain, network, address_key)
       DO UPDATE SET address_display = EXCLUDED.address_display, updated_at = NOW()
-      RETURNING sync_status, last_indexed_at, last_indexed_block
+      RETURNING sync_status, last_indexed_at, last_indexed_block, cursor
     `;
     const state = states[0];
-    const initial = !state.last_indexed_at;
+    const initial = state.sync_status !== 'idle' || !state.last_indexed_at;
     const shouldQueue = initial || Date.now() - new Date(state.last_indexed_at).getTime() > 5 * 60 * 1000;
     if (shouldQueue) {
       const active = await sql`
