@@ -10,6 +10,7 @@ on:
       - "api/**"
       - "database/**"
       - "indexer/**"
+      - "tests/**"
       - "components/**"
       - "package.json"
       - "package-lock.json"
