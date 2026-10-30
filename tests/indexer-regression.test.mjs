@@ -37,6 +37,28 @@ test('keyset pagination distinguishes native rows and token log events at the sa
 });
 
 test('indexed-history only advertises networks with a configured worker', () => {
-  assert.match(historyApi, /SUPPORTED_INDEXED_NETWORKS = new Set\(\['ethereum:mainnet', 'ethereum:testnet', 'polygon:mainnet'\]\)/);
-  assert.doesNotMatch(historyApi, /ALLOWED_CHAINS = new Set\(\['ethereum', 'polygon', 'bnb'\]\)/);
+  assert.match(historyApi, /'bnb:mainnet', 'bnb:testnet', 'solana:mainnet', 'solana:devnet'/);
+  assert.match(registerApi, /chain === 'bnb'.*chain === 'solana'/s);
+});
+
+test('BNB mainnet and testnet use the Routescan Blockscout adapter with server-side API key', () => {
+  assert.match(worker, /'bnb:mainnet': 'https:\/\/blockscout\.routescan\.io\/56\/api\/v2'/);
+  assert.match(worker, /'bnb:testnet': 'https:\/\/blockscout\.routescan\.io\/97\/api\/v2'/);
+  assert.match(worker, /ROUTESCAN_API_KEY is required for BNB indexing/);
+  assert.match(worker, /'x-api-key': process\.env\.ROUTESCAN_API_KEY/);
+});
+
+test('Solana mainnet and devnet use Helius address history and transfer pagination', () => {
+  assert.match(worker, /HELIUS_API_KEY is required for Solana indexing/);
+  assert.match(worker, /getTransactionsForAddress/);
+  assert.match(worker, /getTransfersByAddress/);
+  assert.match(worker, /tokenAccounts: 'balanceChanged'/);
+  assert.match(worker, /paginationToken/);
+  assert.match(worker, /SOL_NATIVE_MINT = 'native:SOL'/);
+});
+
+test('Solana wallet addresses and transaction signatures preserve base58 case', () => {
+  assert.match(registerApi, /\[1-9A-HJ-NP-Za-km-z\]\{32,44\}/);
+  assert.match(historyApi, /\[1-9A-HJ-NP-Za-km-z\]\{32,100\}/);
+  assert.match(historyApi, /const addressKey = isSolana \? wallet : wallet\.toLowerCase\(\)/);
 });
