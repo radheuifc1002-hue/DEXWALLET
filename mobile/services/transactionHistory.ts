@@ -1,4 +1,5 @@
 import type { Blockchain } from '../../context/WalletContext';
+import { isIndexedHistoryEnabled } from './indexedHistoryPreference';
 
 export type EvmHistoryRow = {
   id: string;
@@ -311,6 +312,7 @@ async function fetchBlockscout(options: Options): Promise<EvmHistoryRow[]> {
 const INDEXED_HISTORY_API = 'https://dexwallet-omega.vercel.app/api/indexed-history';
 
 async function fetchIndexedHistory(options: Options): Promise<EvmHistoryRow[] | null> {
+  if (!(await isIndexedHistoryEnabled())) return null;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 4500);
   try {
@@ -330,8 +332,24 @@ async function fetchIndexedHistory(options: Options): Promise<EvmHistoryRow[] | 
     if (!response.ok) return null;
     const payload = await response.json();
     // A cache miss means the background indexer has not completed the initial
-    // sync yet. Preserve the existing device-direct provider fallback.
-    if (payload?.indexed !== true) return null;
+    // sync yet. Enqueue an opt-in sync, then preserve device-direct fallback.
+    if (payload?.indexed !== true) {
+      const registerController = new AbortController();
+      const registerTimer = setTimeout(() => registerController.abort(), 2500);
+      try {
+        await fetch('https://dexwallet-omega.vercel.app/api/indexer/register-address', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ chain: options.chain, network: options.network, walletAddress: options.walletAddress }),
+          signal: registerController.signal,
+        });
+      } catch {
+        // Indexer enrollment is best-effort; direct provider history remains available.
+      } finally {
+        clearTimeout(registerTimer);
+      }
+      return null;
+    }
     if (!Array.isArray(payload.rows)) return null;
     return payload.rows.slice(0, options.limit || DEFAULT_LIMIT).filter((row: any) =>
       row && typeof row.hash === 'string' && typeof row.id === 'string' &&
