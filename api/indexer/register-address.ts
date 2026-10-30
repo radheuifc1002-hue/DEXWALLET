@@ -87,8 +87,8 @@ export default async function handler(req: any, res: any) {
         const jobKey = jobType + ':' + chain + ':' + network + ':' + addressKey + ':' + bucketId;
         await sql`
           INSERT INTO public.indexer_jobs
-            (job_key, job_type, chain, network, address_key, status, priority, max_attempts)
-          VALUES (${jobKey}, ${jobType}, ${chain}, ${network}, ${addressKey}, 'queued', 50, 8)
+            (job_key, job_type, chain, network, address_key, cursor, status, priority, max_attempts)
+          VALUES (${jobKey}, ${jobType}, ${chain}, ${network}, ${addressKey}, ${state.cursor || null}, 'queued', 50, 8)
           ON CONFLICT (job_key) DO NOTHING
         `;
         await sql`
