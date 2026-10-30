@@ -17,11 +17,14 @@ on:
       - "tsconfig.json"
       - ".github/workflows/mobile-quality.yml"
   push:
-    branches: [main]
+    branches: [main, infra/phase-2-rpc-health-failover]
     paths:
       - "app/**"
       - "context/**"
       - "mobile/**"
+      - "api/**"
+      - "database/**"
+      - "indexer/**"
       - "components/**"
       - "package.json"
       - "package-lock.json"
