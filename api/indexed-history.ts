@@ -250,7 +250,7 @@ export default async function handler(req: Request, res: Response) {
           ${cursor?.timestamp || null}::timestamptz IS NULL
           OR COALESCE(tr.block_timestamp, tx.block_timestamp, tx.first_seen_at) < ${cursor?.timestamp || null}::timestamptz
           OR (COALESCE(tr.block_timestamp, tx.block_timestamp, tx.first_seen_at) = ${cursor?.timestamp ?? null}::timestamptz AND lower(tr.tx_hash) < ${cursor?.hash || ''})
-          OR (COALESCE(tr.block_timestamp, tx.block_timestamp, tx.first_seen_at) = ${cursor?.timestamp ?? null}::timestamptz AND lower(tr.tx_hash) = ${cursor?.hash || ''} AND (${cursor?.rowType === 'native'} OR tr.event_index < ${cursor?.eventIndex ?? -1}))
+          OR (COALESCE(tr.block_timestamp, tx.block_timestamp, tx.first_seen_at) = ${cursor?.timestamp ?? null}::timestamptz AND lower(tr.tx_hash) = ${cursor?.hash || ''} AND (${cursor?.rowType === 'token'} AND tr.event_index < ${cursor?.eventIndex ?? -1}))
         )
       ORDER BY COALESCE(tr.block_timestamp, tx.block_timestamp, tx.first_seen_at) DESC, lower(tr.tx_hash) DESC, tr.event_index DESC
       LIMIT ${limit + 1}
