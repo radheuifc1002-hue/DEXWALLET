@@ -65,7 +65,7 @@ function explorerPrefix(chain: string, network: string) {
   return network === 'mainnet' ? 'https://bscscan.com/tx/' : 'https://testnet.bscscan.com/tx/';
 }
 
-async function enforceRateLimit(sql: ReturnType<typeof neon>, req: Request) {
+async function enforceRateLimit(req: Request) {
   const secret = process.env.API_RATE_LIMIT_SECRET;
   if (!secret || secret.length < 32) throw new Error('RATE_LIMIT_NOT_CONFIGURED');
   const realIp = req.headers?.['x-real-ip'];
@@ -74,6 +74,7 @@ async function enforceRateLimit(sql: ReturnType<typeof neon>, req: Request) {
     (typeof forwarded === 'string' ? forwarded.split(',').pop()?.trim() : '') || 'unknown';
   const minute = Math.floor(Date.now() / 60000);
   const bucketKey = createHmac('sha256', secret).update(ip + ':' + minute).digest('hex');
+  const sql = neon(process.env.DATABASE_URL!);
   const rows = await sql`
     INSERT INTO public.api_rate_limits (bucket_key, request_count, window_started_at, expires_at)
     VALUES (${bucketKey}, 1, to_timestamp(${minute * 60}), to_timestamp(${(minute + 2) * 60}))
@@ -81,7 +82,8 @@ async function enforceRateLimit(sql: ReturnType<typeof neon>, req: Request) {
     DO UPDATE SET request_count = public.api_rate_limits.request_count + 1
     RETURNING request_count
   `;
-  return Number(rows[0]?.request_count || 0) <= RATE_LIMIT_PER_MINUTE;
+  const firstRow = (rows as unknown as Array<{ request_count: number }>)[0];
+  return Number(firstRow?.request_count || 0) <= RATE_LIMIT_PER_MINUTE;
 }
 
 function mapTransaction(row: any, wallet: string, chain: string, network: string) {
@@ -176,10 +178,8 @@ export default async function handler(req: Request, res: Response) {
 
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) { sendError(res, 503, 'database_not_configured', requestId); return; }
-  const sql = neon(databaseUrl);
-
   try {
-    if (!(await enforceRateLimit(sql, req))) {
+    if (!(await enforceRateLimit(req))) {
       res.setHeader('Retry-After', '60');
       sendError(res, 429, 'rate_limit_exceeded', requestId);
       return;
@@ -192,7 +192,7 @@ export default async function handler(req: Request, res: Response) {
       WHERE chain = ${chain} AND network = ${network} AND address_key = ${addressKey}
       LIMIT 1
     `;
-    const sync = syncRows[0];
+    const sync = (syncRows as unknown as Array<{ sync_status: string; last_indexed_at: string | null }>)[0];
     if (!sync || !sync.last_indexed_at || !['idle', 'degraded', 'syncing'].includes(String(sync.sync_status))) {
       res.status(200).json({ indexed: false, rows: [], nextCursor: null, requestId });
       return;
