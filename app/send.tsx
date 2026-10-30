@@ -116,6 +116,8 @@ export default function Send() {
     if (chain !== 'solana' && recipient.trim().toLowerCase() === fromAddress.toLowerCase()) throw new Error('You cannot send funds to your own address.');
     if (chain === 'solana' && recipient.trim() === fromAddress) throw new Error('You cannot send funds to your own address.');
     if (parsedAmount === null || parsedAmount <= 0n) throw new Error('Enter a valid amount greater than zero.');
+    if (chain === 'solana' && parsedAmount > 18446744073709551615n) throw new Error('Amount exceeds the maximum Solana transfer value.');
+    if (chain !== 'solana' && parsedAmount > (2n ** 256n - 1n)) throw new Error('Amount exceeds the maximum supported transaction value.');
     if (!nativeToken) throw new Error('The selected network asset is unavailable.');
   };
 
