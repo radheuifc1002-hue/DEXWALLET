@@ -30,10 +30,9 @@ const CHAIN_COLORS: Record<string, string> = {
 
 export default function Receive() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ assetSymbol?: string; assetName?: string; assetContract?: string }>();
+  const params = useLocalSearchParams<{ assetChain?: string; assetSymbol?: string; assetName?: string; assetContract?: string }>();
   const assetSymbol = typeof params.assetSymbol === 'string' ? params.assetSymbol : '';
   const { walletAddresses, selectedBlockchain, setSelectedBlockchain } = useWallet();
-  const params = useLocalSearchParams<{ assetChain?: string; assetSymbol?: string; assetName?: string }>();
   const requestedChain = ['ethereum', 'bnb', 'polygon', 'solana'].includes(String(params.assetChain)) ? params.assetChain as keyof typeof CHAIN_SYMBOLS : null;
   const activeBlockchain = requestedChain || selectedBlockchain;
   const [copied, setCopied] = useState(false);
@@ -104,7 +103,7 @@ export default function Receive() {
                 />
               </View>
               <Text style={styles.chainLabel}>
-                {assetSymbol || CHAIN_SYMBOLS[activeBlockchain]} Address
+                {params.assetName || assetSymbol || CHAIN_SYMBOLS[activeBlockchain]} · {CHAIN_SYMBOLS[activeBlockchain]} Address
               </Text>
             </View>
 
