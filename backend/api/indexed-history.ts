@@ -91,16 +91,17 @@ function mapTransaction(row: any, wallet: string, chain: string, network: string
   const to = String(row.to_address || '');
   const incoming = chain === 'solana' ? from !== wallet : from.toLowerCase() !== wallet.toLowerCase();
   const hash = String(row.tx_hash || '');
-  const symbol = String(row.asset_symbol || (chain === 'ethereum' ? 'ETH' : chain === 'polygon' ? 'POL' : 'BNB'));
+  const symbol = String(row.asset_symbol || (chain === 'ethereum' ? 'ETH' : chain === 'polygon' ? 'POL' : chain === 'solana' ? 'SOL' : 'BNB'));
   const timestamp = Math.floor(new Date(row.activity_time).getTime() / 1000);
   const failed = row.tx_status === 'failed';
   const contractInteraction = row.tx_type === 'contract_interaction';
   return {
     id: hash + ':native',
     hash,
-    title: contractInteraction ? 'Contract interaction' : (incoming ? 'Received ' : 'Sent ') + symbol,
+    title: contractInteraction ? 'Contract interaction' : (chain === 'solana' && row.tx_type === 'other' ? 'Solana transaction' : (incoming ? 'Received ' : 'Sent ') + symbol),
     detail: contractInteraction
       ? 'Contract interaction · ' + (incoming ? 'From ' : 'To ') + (incoming ? from : to).slice(0, 10) + '…' + (incoming ? from : to).slice(-6)
+      : chain === 'solana' && row.tx_type === 'other' ? 'Solana on-chain activity'
       : (incoming ? 'From ' : 'To ') + (incoming ? from : to).slice(0, 10) + '…' + (incoming ? from : to).slice(-6),
     amount: contractInteraction ? '' : formatRaw(row.value_raw, row.value_decimals) + ' ' + symbol,
     timestamp: Number.isFinite(timestamp) ? timestamp : 0,
@@ -130,7 +131,7 @@ function mapTokenTransfer(row: any, wallet: string, chain: string, network: stri
     timestamp: Number.isFinite(timestamp) ? timestamp : 0,
     incoming,
     failed: row.tx_status === 'failed',
-    explorerUrl: explorerPrefix(chain, network) + hash,
+    explorerUrl: explorerPrefix(chain, network) + hash + (chain === 'solana' && network === 'devnet' ? '?cluster=devnet' : ''),
     _sortTime: new Date(row.activity_time).getTime(),
     _rowType: 'token',
     _eventIndex: Number(row.event_index),
@@ -251,7 +252,7 @@ export default async function handler(req: Request, res: Response) {
               OR (COALESCE(block_timestamp, first_seen_at) = ${cursor?.timestamp ?? null}::timestamptz AND tx_hash = ${cursor?.hash || ''} AND ${cursor?.rowType === 'token'})
             )
             AND tx_type <> 'token_transfer'
-          ORDER BY COALESCE(block_timestamp, first_seen_at) DESC, lower(tx_hash) DESC
+          ORDER BY COALESCE(block_timestamp, first_seen_at) DESC, tx_hash DESC
           LIMIT ${limit + 1}
         `
       : await sql`
@@ -260,14 +261,14 @@ export default async function handler(req: Request, res: Response) {
                  COALESCE(block_timestamp, first_seen_at) AS activity_time
           FROM public.indexed_transactions
           WHERE chain = ${chain} AND network = ${network}
-            AND (lower(from_address) = ${addressKey} OR lower(to_address) = ${addressKey})
+            AND (($chain = 'solana' AND (from_address = ${addressKey} OR to_address = ${addressKey})) OR ($chain <> 'solana' AND (lower(from_address) = ${addressKey} OR lower(to_address) = ${addressKey})))
             AND (($chain = 'solana' AND (from_address = ${contract} OR to_address = ${contract})) OR ($chain <> 'solana' AND (lower(from_address) = ${contract.toLowerCase()} OR lower(to_address) = ${contract.toLowerCase()})))
             AND tx_type = 'contract_interaction'
             AND (
               ${cursor?.timestamp || null}::timestamptz IS NULL
               OR COALESCE(block_timestamp, first_seen_at) < ${cursor?.timestamp || null}::timestamptz
-              OR (COALESCE(block_timestamp, first_seen_at) = ${cursor?.timestamp ?? null}::timestamptz AND lower(tx_hash) < ${cursor?.hash || ''})
-              OR (COALESCE(block_timestamp, first_seen_at) = ${cursor?.timestamp ?? null}::timestamptz AND lower(tx_hash) = ${cursor?.hash || ''} AND ${cursor?.rowType === 'token'})
+              OR (COALESCE(block_timestamp, first_seen_at) = ${cursor?.timestamp ?? null}::timestamptz AND tx_hash < ${cursor?.hash || ''})
+              OR (COALESCE(block_timestamp, first_seen_at) = ${cursor?.timestamp ?? null}::timestamptz AND tx_hash = ${cursor?.hash || ''} AND ${cursor?.rowType === 'token'})
             )
           ORDER BY COALESCE(block_timestamp, first_seen_at) DESC, lower(tx_hash) DESC
           LIMIT ${limit + 1}
