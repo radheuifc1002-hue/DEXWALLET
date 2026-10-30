@@ -7,18 +7,8 @@ import { ethers } from 'ethers';
 import bs58 from 'bs58';
 import { Buffer } from 'buffer';
 import { useWallet, Blockchain, Token } from '../context/WalletContext';
+import { getEvmRpcConfig, getSolanaRpcEndpoint } from '../mobile/services/rpcManager';
 
-const EVM: Record<string, { chainId: number; rpc: string }> = {
-  ethereum: { chainId: 1, rpc: 'https://ethereum-rpc.publicnode.com' },
-  bnb: { chainId: 56, rpc: 'https://bsc-rpc.publicnode.com' },
-  polygon: { chainId: 137, rpc: 'https://polygon-bor-rpc.publicnode.com' },
-};
-const TEST: Record<string, { chainId: number; rpc: string }> = {
-  ethereum: { chainId: 11155111, rpc: 'https://ethereum-sepolia-rpc.publicnode.com' },
-  bnb: { chainId: 97, rpc: 'https://bsc-testnet-rpc.publicnode.com' },
-  polygon: { chainId: 80002, rpc: 'https://polygon-amoy-bor-rpc.publicnode.com' },
-};
-const SOL_RPC = { mainnet: 'https://api.mainnet-beta.solana.com', testnet: 'https://api.devnet.solana.com' };
 const ABI = ['function name() view returns (string)', 'function symbol() view returns (string)', 'function decimals() view returns (uint8)', 'function balanceOf(address) view returns (uint256)'];
 const TOKEN_PROGRAM = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
 const TOKEN_2022_PROGRAM = 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb';
@@ -52,7 +42,7 @@ export default function ImportToken() {
       if (isSolana) {
         const decoded = bs58.decode(value);
         if (decoded.length !== 32) throw new Error('Enter a valid Solana token mint address.');
-        const rpc = SOL_RPC[network];
+        const rpc = getSolanaRpcEndpoint(network);
         const account = await solRpc(rpc, 'getAccountInfo', [value, { encoding: 'base64', commitment: 'confirmed' }]);
         if (!account?.value || ![TOKEN_PROGRAM, TOKEN_2022_PROGRAM].includes(account.value.owner)) throw new Error('This address is not a supported SPL token mint.');
         const mintData = Buffer.from(account.value.data[0], 'base64');
@@ -72,7 +62,7 @@ export default function ImportToken() {
         } catch {}
         found = { id: `custom-${selectedBlockchain}-${value}`, name, symbol, balance, balanceUSD: 0, contractAddress: value, decimals, blockchain: selectedBlockchain };
       } else {
-        const config = network === 'testnet' ? TEST[selectedBlockchain] : EVM[selectedBlockchain];
+        const config = getEvmRpcConfig(selectedBlockchain, network);
         const provider = new ethers.JsonRpcProvider(config.rpc, config.chainId);
         const chain = await provider.getNetwork();
         if (Number(chain.chainId) !== config.chainId) throw new Error('RPC network mismatch. Import cancelled.');

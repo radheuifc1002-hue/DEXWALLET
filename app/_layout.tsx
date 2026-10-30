@@ -1,6 +1,7 @@
 import { useEffect, useState, Component, ReactNode } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { WalletProvider, useWallet } from '../context/WalletContext';
+import { initializeRpcManager } from '../mobile/services/rpcManager';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -107,6 +108,7 @@ export default function RootLayout() {
   const [globalError, setGlobalError] = useState<string | null>(null);
 
   useEffect(() => {
+    void initializeRpcManager();
     const prev = (ErrorUtils as any).getGlobalHandler();
     (ErrorUtils as any).setGlobalHandler((err: Error, isFatal: boolean) => {
       setGlobalError(`[${isFatal ? 'FATAL' : 'ERROR'}] ${err?.message}\n\n${err?.stack}`);

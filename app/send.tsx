@@ -8,20 +8,10 @@ import bs58 from 'bs58';
 import { Buffer } from 'buffer';
 import { useWallet, Blockchain } from '../context/WalletContext';
 import { getMnemonic, signSolanaMessage } from '../mobile/services/walletService';
+import { getEvmRpcConfig, getSolanaRpcEndpoint } from '../mobile/services/rpcManager';
 
-const EVM: Record<string, { symbol: string; name: string; chainId: number; rpc: string }> = {
-  ethereum: { symbol: 'ETH', name: 'Ethereum', chainId: 1, rpc: 'https://ethereum-rpc.publicnode.com' },
-  bnb: { symbol: 'BNB', name: 'BNB Chain', chainId: 56, rpc: 'https://bsc-rpc.publicnode.com' },
-  polygon: { symbol: 'POL', name: 'Polygon', chainId: 137, rpc: 'https://polygon-bor-rpc.publicnode.com' },
-};
-const TEST: Record<string, { chainId: number; rpc: string }> = {
-  ethereum: { chainId: 11155111, rpc: 'https://ethereum-sepolia-rpc.publicnode.com' },
-  bnb: { chainId: 97, rpc: 'https://bsc-testnet-rpc.publicnode.com' },
-  polygon: { chainId: 80002, rpc: 'https://polygon-amoy-bor-rpc.publicnode.com' },
-};
 const SYMBOL: Record<Blockchain, string> = { ethereum: 'ETH', bnb: 'BNB', polygon: 'POL', solana: 'SOL' };
 const LABEL: Record<Blockchain, string> = { ethereum: 'Ethereum', bnb: 'BNB Chain', polygon: 'Polygon', solana: 'Solana' };
-const SOL_RPC = { mainnet: 'https://api.mainnet-beta.solana.com', testnet: 'https://api.devnet.solana.com' };
 const shortvec = (n: number) => { const a: number[] = []; while (n >= 128) { a.push((n & 127) | 128); n >>>= 7; } a.push(n); return a; };
 const u32 = (n: number) => [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255];
 const u64 = (n: bigint) => { const a: number[] = []; for (let i = 0n; i < 8n; i++) a.push(Number((n >> (8n * i)) & 255n)); return a; };
@@ -50,7 +40,7 @@ export default function Send() {
   const address = walletAddresses?.[selectedBlockchain] || '';
   const symbol = SYMBOL[selectedBlockchain];
   const testnet = network === 'testnet';
-  const rpc = useMemo(() => selectedBlockchain === 'solana' ? null : (testnet ? TEST[selectedBlockchain] : EVM[selectedBlockchain]), [selectedBlockchain, testnet]);
+  const rpc = useMemo(() => selectedBlockchain === 'solana' ? null : getEvmRpcConfig(selectedBlockchain, testnet ? 'testnet' : 'mainnet'), [selectedBlockchain, testnet]);
 
   const loadBalance = useCallback(async () => {
     if (!address || isLocked) { setBalance(null); return; }
@@ -58,7 +48,7 @@ export default function Send() {
     try {
       let txHash = '';
       if (selectedBlockchain === 'solana') {
-        const r = await solRpc(SOL_RPC[network], 'getBalance', [address, { commitment: 'confirmed' }]);
+        const r = await solRpc(getSolanaRpcEndpoint(network), 'getBalance', [address, { commitment: 'confirmed' }]);
         setBalance(ethers.formatUnits(BigInt(r.value), 9));
       } else if (rpc) {
         const p = new ethers.JsonRpcProvider(rpc.rpc, rpc.chainId);
@@ -86,7 +76,7 @@ export default function Send() {
         if (recipient.length !== 32) throw new Error('Enter a valid Solana address.');
         if (to.trim() === address) throw new Error('Recipient must be different from your own address.');
         const lamports = ethers.parseUnits(amount, 9);
-        const url = SOL_RPC[network];
+        const url = getSolanaRpcEndpoint(network);
         const [latest, b] = await Promise.all([
           solRpc(url, 'getLatestBlockhash', [{ commitment: 'confirmed' }]),
           solRpc(url, 'getBalance', [address, { commitment: 'confirmed' }]),
@@ -132,8 +122,8 @@ export default function Send() {
         if (!review.solMessage || !review.blockhash || review.lastValidBlockHeight === undefined) throw new Error('Transaction review expired. Review again.');
         const sig = await signSolanaMessage(review.solMessage);
         const raw = Uint8Array.from([...shortvec(1), ...sig, ...review.solMessage]);
-        txHash = await solRpc(SOL_RPC[network], 'sendTransaction', [Buffer.from(raw).toString('base64'), { encoding: 'base64', preflightCommitment: 'confirmed', skipPreflight: false }]);
-        const c = await solRpc(SOL_RPC[network], 'confirmTransaction', [{ signature: txHash, blockhash: review.blockhash, lastValidBlockHeight: review.lastValidBlockHeight }, { commitment: 'confirmed' }]);
+        txHash = await solRpc(getSolanaRpcEndpoint(network), 'sendTransaction', [Buffer.from(raw).toString('base64'), { encoding: 'base64', preflightCommitment: 'confirmed', skipPreflight: false }]);
+        const c = await solRpc(getSolanaRpcEndpoint(network), 'confirmTransaction', [{ signature: txHash, blockhash: review.blockhash, lastValidBlockHeight: review.lastValidBlockHeight }, { commitment: 'confirmed' }]);
         if (c.value?.err) throw new Error('Solana transaction failed on chain.');
       } else {
         if (!rpc || !review.evmTx) throw new Error('Transaction review expired. Review again.');
