@@ -78,7 +78,6 @@ export default function Send() {
     if (!amount.trim() || !Number.isFinite(Number(amount)) || Number(amount) <= 0) { setError('Enter a valid amount.'); return; }
     setPreparing(true);
     try {
-      let txHash = '';
       const mnemonic = await getMnemonic();
       if (!mnemonic) throw new Error('Wallet secret unavailable. Restore your wallet.');
       if (selectedBlockchain === 'solana') {
@@ -131,6 +130,7 @@ export default function Send() {
     if (!review || sending) return;
     setSending(true); setError('');
     try {
+      let txHash = '';
       const mnemonic = await getMnemonic();
       if (!mnemonic) throw new Error('Wallet secret unavailable. Restore your wallet.');
       if (selectedBlockchain === 'solana') {
