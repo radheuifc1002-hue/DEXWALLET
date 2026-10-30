@@ -7,6 +7,6 @@
     "start": "node worker.mjs"
   },
   "dependencies": {
-    "@neondatabase/serverless": "1.0.2"
+    "@neondatabase/serverless": "1.2.0"
   }
 }
