@@ -28,26 +28,35 @@ export default function Settings() {
   const [bioToggling, setBioToggling] = useState(false);
 
   const handleBioToggle = async (val: boolean) => {
-    if (val) {
-      const hw = await LocalAuthentication.hasHardwareAsync();
-      const enrolled = await LocalAuthentication.isEnrolledAsync();
-      if (!hw || !enrolled) {
-        Alert.alert(
-          'Biometrics Unavailable',
-          'Your device does not have biometric authentication enrolled.',
-          [{ text: 'OK' }]
-        );
-        return;
-      }
-      const result = await LocalAuthentication.authenticateAsync({
-        promptMessage: 'Enable biometric unlock',
-      });
-      if (!result.success) return;
-    }
     setBioToggling(true);
-    await setBiometricEnabled(val);
-    setBioToggling(false);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    try {
+      if (val) {
+        const [hw, enrolled] = await Promise.all([
+          LocalAuthentication.hasHardwareAsync(),
+          LocalAuthentication.isEnrolledAsync(),
+        ]);
+        if (!hw || !enrolled) {
+          Alert.alert(
+            'Biometrics Unavailable',
+            'Your device does not have biometric authentication enrolled.',
+            [{ text: 'OK' }]
+          );
+          return;
+        }
+        const result = await LocalAuthentication.authenticateAsync({
+          promptMessage: 'Enable biometric unlock',
+          cancelLabel: 'Cancel',
+          fallbackLabel: 'Use PIN',
+        });
+        if (!result.success) return;
+      }
+      await setBiometricEnabled(val);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {
+      Alert.alert('Biometric Error', 'Biometric authentication could not be started. You can still unlock using your PIN.');
+    } finally {
+      setBioToggling(false);
+    }
   };
 
   const handleRemoveWallet = () => {
