@@ -9,7 +9,7 @@ type Response = {
   end(): void;
 };
 
-const SUPPORTED_INDEXED_NETWORKS = new Set(['ethereum:mainnet', 'ethereum:testnet', 'polygon:mainnet']);
+const SUPPORTED_INDEXED_NETWORKS = new Set(['ethereum:mainnet', 'ethereum:testnet', 'polygon:mainnet', 'bnb:mainnet', 'bnb:testnet', 'solana:mainnet', 'solana:devnet']);
 const MAX_LIMIT = 50;
 const RATE_LIMIT_PER_MINUTE = 60;
 
@@ -36,11 +36,11 @@ function decodeCursor(value: unknown): { timestamp: string; hash: string; rowTyp
   try {
     const parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'));
     if (typeof parsed.timestamp !== 'string' || !Number.isFinite(Date.parse(parsed.timestamp))) return null;
-    if (typeof parsed.hash !== 'string' || !/^0x[a-fA-F0-9]{64}$/.test(parsed.hash)) return null;
+    if (typeof parsed.hash !== 'string' || !(/^0x[a-fA-F0-9]{64}$/.test(parsed.hash) || /^[1-9A-HJ-NP-Za-km-z]{32,100}$/.test(parsed.hash))) return null;
     if (!['native', 'token'].includes(parsed.rowType) || !Number.isInteger(parsed.eventIndex)) return null;
     return {
       timestamp: new Date(parsed.timestamp).toISOString(),
-      hash: parsed.hash.toLowerCase(),
+      hash: /^0x/.test(parsed.hash) ? parsed.hash.toLowerCase() : parsed.hash,
       rowType: parsed.rowType,
       eventIndex: parsed.eventIndex,
     };
@@ -61,7 +61,8 @@ function formatRaw(rawValue: unknown, decimalsValue: unknown): string {
 function explorerPrefix(chain: string, network: string) {
   if (chain === 'ethereum') return network === 'mainnet' ? 'https://etherscan.io/tx/' : 'https://sepolia.etherscan.io/tx/';
   if (chain === 'polygon') return network === 'mainnet' ? 'https://polygonscan.com/tx/' : 'https://amoy.polygonscan.com/tx/';
-  return network === 'mainnet' ? 'https://bscscan.com/tx/' : 'https://testnet.bscscan.com/tx/';
+  if (chain === 'bnb') return network === 'mainnet' ? 'https://bscscan.com/tx/' : 'https://testnet.bscscan.com/tx/';
+  return network === 'mainnet' ? 'https://explorer.solana.com/tx/' : 'https://explorer.solana.com/tx/';
 }
 
 async function enforceRateLimit(req: Request) {
@@ -88,7 +89,7 @@ async function enforceRateLimit(req: Request) {
 function mapTransaction(row: any, wallet: string, chain: string, network: string) {
   const from = String(row.from_address || '');
   const to = String(row.to_address || '');
-  const incoming = from.toLowerCase() !== wallet.toLowerCase();
+  const incoming = chain === 'solana' ? from !== wallet : from.toLowerCase() !== wallet.toLowerCase();
   const hash = String(row.tx_hash || '');
   const symbol = String(row.asset_symbol || (chain === 'ethereum' ? 'ETH' : chain === 'polygon' ? 'POL' : 'BNB'));
   const timestamp = Math.floor(new Date(row.activity_time).getTime() / 1000);
@@ -105,7 +106,7 @@ function mapTransaction(row: any, wallet: string, chain: string, network: string
     timestamp: Number.isFinite(timestamp) ? timestamp : 0,
     incoming,
     failed,
-    explorerUrl: explorerPrefix(chain, network) + hash,
+    explorerUrl: explorerPrefix(chain, network) + hash + (chain === 'solana' && network === 'devnet' ? '?cluster=devnet' : ''),
     _sortTime: new Date(row.activity_time).getTime(),
     _rowType: 'native',
     _eventIndex: -1,
@@ -115,14 +116,15 @@ function mapTransaction(row: any, wallet: string, chain: string, network: string
 function mapTokenTransfer(row: any, wallet: string, chain: string, network: string) {
   const from = String(row.from_address || '');
   const to = String(row.to_address || '');
-  const incoming = from.toLowerCase() !== wallet.toLowerCase();
+  const incoming = chain === 'solana' ? from !== wallet : from.toLowerCase() !== wallet.toLowerCase();
   const hash = String(row.tx_hash || '');
-  const symbol = String(row.token_symbol || 'TOKEN');
+  const nativeSol = chain === 'solana' && row.token_address === 'native:SOL';
+  const symbol = nativeSol ? 'SOL' : String(row.token_symbol || 'TOKEN');
   const timestamp = Math.floor(new Date(row.activity_time).getTime() / 1000);
   return {
     id: hash + ':token:' + String(row.event_index),
     hash,
-    title: 'Token ' + (incoming ? 'received' : 'sent'),
+    title: nativeSol ? (incoming ? 'Received SOL' : 'Sent SOL') : 'Token ' + (incoming ? 'received' : 'sent'),
     detail: symbol + ' · ' + (incoming ? 'From ' : 'To ') + (incoming ? from : to).slice(0, 10) + '…' + (incoming ? from : to).slice(-6),
     amount: formatRaw(row.amount_raw, row.token_decimals) + ' ' + symbol,
     timestamp: Number.isFinite(timestamp) ? timestamp : 0,
@@ -165,10 +167,13 @@ export default async function handler(req: Request, res: Response) {
   if (!SUPPORTED_INDEXED_NETWORKS.has(chain + ':' + network)) {
     sendError(res, 400, 'unsupported_chain_or_network', requestId); return;
   }
-  if (!/^0x[a-fA-F0-9]{40}$/.test(wallet)) {
+  const isSolana = chain === 'solana';
+  const validAddress = isSolana ? /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(wallet) : /^0x[a-fA-F0-9]{40}$/.test(wallet);
+  if (!validAddress) {
     sendError(res, 400, 'invalid_wallet_address', requestId); return;
   }
-  if (!isNative && !/^0x[a-fA-F0-9]{40}$/.test(contract)) {
+  const validContract = isSolana ? /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(contract) : /^0x[a-fA-F0-9]{40}$/.test(contract);
+  if (!isNative && !validContract) {
     sendError(res, 400, 'invalid_token_contract', requestId); return;
   }
   if (!Number.isInteger(limit) || limit < 1 || (body.cursor != null && !cursor)) {
@@ -185,7 +190,7 @@ export default async function handler(req: Request, res: Response) {
       return;
     }
 
-    const addressKey = wallet.toLowerCase();
+    const addressKey = isSolana ? wallet : wallet.toLowerCase();
     const syncRows = await sql`
       SELECT sync_status, last_indexed_at, last_indexed_block, cursor
       FROM public.address_sync_state
@@ -238,12 +243,12 @@ export default async function handler(req: Request, res: Response) {
                  COALESCE(block_timestamp, first_seen_at) AS activity_time
           FROM public.indexed_transactions
           WHERE chain = ${chain} AND network = ${network}
-            AND (lower(from_address) = ${addressKey} OR lower(to_address) = ${addressKey})
+            AND (($chain = 'solana' AND (from_address = ${addressKey} OR to_address = ${addressKey})) OR ($chain <> 'solana' AND (lower(from_address) = ${addressKey} OR lower(to_address) = ${addressKey})))
             AND (
               ${cursor?.timestamp || null}::timestamptz IS NULL
               OR COALESCE(block_timestamp, first_seen_at) < ${cursor?.timestamp || null}::timestamptz
-              OR (COALESCE(block_timestamp, first_seen_at) = ${cursor?.timestamp ?? null}::timestamptz AND lower(tx_hash) < ${cursor?.hash || ''})
-              OR (COALESCE(block_timestamp, first_seen_at) = ${cursor?.timestamp ?? null}::timestamptz AND lower(tx_hash) = ${cursor?.hash || ''} AND ${cursor?.rowType === 'token'})
+              OR (COALESCE(block_timestamp, first_seen_at) = ${cursor?.timestamp ?? null}::timestamptz AND tx_hash < ${cursor?.hash || ''})
+              OR (COALESCE(block_timestamp, first_seen_at) = ${cursor?.timestamp ?? null}::timestamptz AND tx_hash = ${cursor?.hash || ''} AND ${cursor?.rowType === 'token'})
             )
             AND tx_type <> 'token_transfer'
           ORDER BY COALESCE(block_timestamp, first_seen_at) DESC, lower(tx_hash) DESC
@@ -256,7 +261,7 @@ export default async function handler(req: Request, res: Response) {
           FROM public.indexed_transactions
           WHERE chain = ${chain} AND network = ${network}
             AND (lower(from_address) = ${addressKey} OR lower(to_address) = ${addressKey})
-            AND (lower(from_address) = ${contract.toLowerCase()} OR lower(to_address) = ${contract.toLowerCase()})
+            AND (($chain = 'solana' AND (from_address = ${contract} OR to_address = ${contract})) OR ($chain <> 'solana' AND (lower(from_address) = ${contract.toLowerCase()} OR lower(to_address) = ${contract.toLowerCase()})))
             AND tx_type = 'contract_interaction'
             AND (
               ${cursor?.timestamp || null}::timestamptz IS NULL
@@ -268,8 +273,8 @@ export default async function handler(req: Request, res: Response) {
           LIMIT ${limit + 1}
         `;
 
-    const tokenRows = isNative ? [] : await sql`
-      SELECT tr.tx_hash, tr.event_index, tr.from_address, tr.to_address,
+    const tokenRows = isNative && chain !== 'solana' ? [] : await sql`
+      SELECT tr.tx_hash, tr.event_index, tr.token_address, tr.from_address, tr.to_address,
              tr.token_symbol, tr.token_decimals, tr.amount_raw::text,
              COALESCE(tr.block_timestamp, tx.block_timestamp, tx.first_seen_at) AS activity_time,
              tx.tx_status
@@ -277,15 +282,15 @@ export default async function handler(req: Request, res: Response) {
       JOIN public.indexed_transactions tx
         ON tx.chain = tr.chain AND tx.network = tr.network AND tx.tx_hash = tr.tx_hash
       WHERE tr.chain = ${chain} AND tr.network = ${network}
-        AND lower(tr.token_address) = ${contract.toLowerCase()}
-        AND (lower(tr.from_address) = ${addressKey} OR lower(tr.to_address) = ${addressKey})
+        AND (($chain = 'solana' AND tr.token_address = ${isNative ? 'native:SOL' : contract}) OR ($chain <> 'solana' AND lower(tr.token_address) = ${contract.toLowerCase()}))
+        AND (($chain = 'solana' AND (tr.from_address = ${addressKey} OR tr.to_address = ${addressKey})) OR ($chain <> 'solana' AND (lower(tr.from_address) = ${addressKey} OR lower(tr.to_address) = ${addressKey})))
         AND (
           ${cursor?.timestamp || null}::timestamptz IS NULL
           OR COALESCE(tr.block_timestamp, tx.block_timestamp, tx.first_seen_at) < ${cursor?.timestamp || null}::timestamptz
-          OR (COALESCE(tr.block_timestamp, tx.block_timestamp, tx.first_seen_at) = ${cursor?.timestamp ?? null}::timestamptz AND lower(tr.tx_hash) < ${cursor?.hash || ''})
-          OR (COALESCE(tr.block_timestamp, tx.block_timestamp, tx.first_seen_at) = ${cursor?.timestamp ?? null}::timestamptz AND lower(tr.tx_hash) = ${cursor?.hash || ''} AND (${cursor?.rowType === 'token'} AND tr.event_index < ${cursor?.eventIndex ?? -1}))
+          OR (COALESCE(tr.block_timestamp, tx.block_timestamp, tx.first_seen_at) = ${cursor?.timestamp ?? null}::timestamptz AND tr.tx_hash < ${cursor?.hash || ''})
+          OR (COALESCE(tr.block_timestamp, tx.block_timestamp, tx.first_seen_at) = ${cursor?.timestamp ?? null}::timestamptz AND tr.tx_hash = ${cursor?.hash || ''} AND (${cursor?.rowType === 'token'} AND tr.event_index < ${cursor?.eventIndex ?? -1}))
         )
-      ORDER BY COALESCE(tr.block_timestamp, tx.block_timestamp, tx.first_seen_at) DESC, lower(tr.tx_hash) DESC, tr.event_index DESC
+      ORDER BY COALESCE(tr.block_timestamp, tx.block_timestamp, tx.first_seen_at) DESC, tr.tx_hash DESC, tr.event_index DESC
       LIMIT ${limit + 1}
     `;
 
