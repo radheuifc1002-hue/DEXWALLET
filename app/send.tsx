@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator, Alert, KeyboardAvoidingView, Linking, Platform,
   SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
@@ -17,7 +17,7 @@ import { getMnemonic, getPin } from '../mobile/services/walletService';
 
 type Chain = 'ethereum' | 'bnb' | 'polygon' | 'solana';
 type Quote = { fee: string; total: string; balance: string; rawFee: bigint; rawAmount: bigint; address: string; symbol: string };
-type Result = { hash: string; explorer: string; status: 'confirmed' | 'pending' };
+type Result = { hash: string; explorer: string; status: 'confirmed' | 'pending' | 'failed' };
 
 const CHAINS: Record<Chain, { name: string; symbol: string; decimals: number; chainId?: number; testChainId?: number; rpc: string; testRpc: string; explorer: string; testExplorer: string }> = {
   ethereum: { name: 'Ethereum', symbol: 'ETH', decimals: 18, chainId: 1, testChainId: 11155111, rpc: 'https://ethereum-rpc.publicnode.com', testRpc: 'https://ethereum-sepolia-rpc.publicnode.com', explorer: 'https://etherscan.io/tx/', testExplorer: 'https://sepolia.etherscan.io/tx/' },
@@ -79,11 +79,27 @@ export default function Send() {
   const [stage, setStage] = useState<'form' | 'review' | 'result'>('form');
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState('');
+  const [liveBalance, setLiveBalance] = useState<string | null>(null);
   const sendingRef = useRef(false);
   const isTestnet = network === 'testnet';
   const rpc = isTestnet ? config.testRpc : config.rpc;
   const explorer = isTestnet ? config.testExplorer : config.explorer;
   const symbol = config.symbol;
+
+  useEffect(() => {
+    let active = true;
+    setLiveBalance(null);
+    const loadBalance = async () => {
+      try {
+        const raw = chain === 'solana'
+          ? BigInt((await rpcCall(rpc, 'getBalance', [fromAddress, { commitment: 'confirmed' }])).value)
+          : await new ethers.JsonRpcProvider(rpc, isTestnet ? config.testChainId! : config.chainId!, { staticNetwork: true }).getBalance(fromAddress);
+        if (active) setLiveBalance(ethers.formatUnits(raw, config.decimals));
+      } catch { if (active) setLiveBalance(null); }
+    };
+    if (fromAddress) void loadBalance();
+    return () => { active = false; };
+  }, [chain, config, fromAddress, isTestnet, rpc]);
 
   const parsedAmount = useMemo(() => {
     if (!/^\\d+(\\.\\d*)?$/.test(amount.trim()) || !config) return null;
@@ -180,9 +196,18 @@ export default function Send() {
         setPinInput('');
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         try {
-          await rpcCall(rpc, 'confirmTransaction', [{ signature: hash, blockhash: latest.value.blockhash, lastValidBlockHeight: latest.value.lastValidBlockHeight }, { commitment: 'confirmed' }]);
-          setResult({ hash, explorer: explorer + hash, status: 'confirmed' });
-        } catch { /* The signature is submitted; explorer can show its eventual status. */ }
+          for (let attempt = 0; attempt < 40; attempt++) {
+            const statuses = await rpcCall(rpc, 'getSignatureStatuses', [[hash], { searchTransactionHistory: true }]);
+            const status = statuses.value?.[0];
+            if (status?.err) { setResult({ hash, explorer: explorer + hash, status: 'failed' }); break; }
+            if (status && (status.confirmationStatus === 'confirmed' || status.confirmationStatus === 'finalized' || status.confirmations === null)) {
+              setResult({ hash, explorer: explorer + hash, status: 'confirmed' }); break;
+            }
+            const height = await rpcCall(rpc, 'getBlockHeight', [{ commitment: 'confirmed' }]);
+            if (height > latest.value.lastValidBlockHeight) break;
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+          }
+        } catch { /* The signature is submitted; the explorer can show its eventual status. */ }
       } else {
         const chainId = isTestnet ? config.testChainId! : config.chainId!;
         const provider = new ethers.JsonRpcProvider(rpc, chainId, { staticNetwork: true });
@@ -210,7 +235,7 @@ export default function Send() {
           if (receipt?.status === 1) setResult({ hash, explorer: explorer + hash, status: 'confirmed' });
           else throw new Error('Transaction reverted.');
         } catch (e: any) {
-          if (e?.code === 'CALL_EXCEPTION') throw new Error('Transaction was included but reverted. Check the explorer for details.');
+          if (e?.code === 'CALL_EXCEPTION') setResult({ hash, explorer: explorer + hash, status: 'failed' });
           // A broadcast transaction remains pending/confirming; retain its hash.
         }
       }
@@ -233,10 +258,10 @@ export default function Send() {
       <SafeAreaView style={styles.container}>
         <View style={styles.resultWrap}>
           <View style={[styles.resultIcon, result.status === 'confirmed' && styles.successIcon]}>
-            <Ionicons name={result.status === 'confirmed' ? 'checkmark' : 'time-outline'} size={34} color={result.status === 'confirmed' ? '#059669' : '#6C4CF1'} />
+            <Ionicons name={result.status === 'confirmed' ? 'checkmark' : result.status === 'failed' ? 'close' : 'time-outline'} size={34} color={result.status === 'confirmed' ? '#059669' : result.status === 'failed' ? '#DC2626' : '#6C4CF1'} />
           </View>
-          <Text style={styles.title}>{result.status === 'confirmed' ? 'Transaction confirmed' : 'Transaction submitted'}</Text>
-          <Text style={styles.subtitle}>{result.status === 'confirmed' ? 'Your transfer is confirmed on the network.' : 'Your transaction was broadcast. Confirmation may take a little time.'}</Text>
+          <Text style={styles.title}>{result.status === 'confirmed' ? 'Transaction confirmed' : result.status === 'failed' ? 'Transaction failed' : 'Transaction submitted'}</Text>
+          <Text style={styles.subtitle}>{result.status === 'confirmed' ? 'Your transfer is confirmed on the network.' : result.status === 'failed' ? 'The network rejected or reverted this transaction. Open the explorer for details.' : 'Your transaction was broadcast. Confirmation may take a little time.'}</Text>
           <View style={styles.hashCard}>
             <Text style={styles.label}>TRANSACTION HASH</Text>
             <Text selectable style={styles.hashText}>{result.hash}</Text>
@@ -292,7 +317,7 @@ export default function Send() {
               </View>
               <View style={styles.balanceRow}>
                 <Text style={styles.balanceText}>Available wallet balance</Text>
-                <Text style={styles.balanceValue}>{nativeToken ? nativeToken.balance.toFixed(6) : '—'} {symbol}</Text>
+                <Text style={styles.balanceValue}>{liveBalance !== null ? Number(liveBalance).toFixed(6) : nativeToken ? nativeToken.balance.toFixed(6) : '—'} {symbol}</Text>
               </View>
               <View style={styles.notice}>
                 <Ionicons name="shield-checkmark-outline" size={17} color="#6C4CF1" />
