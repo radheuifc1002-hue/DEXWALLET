@@ -372,7 +372,7 @@ export default function Browser() {
         case 'eth_signTypedData':
         case 'eth_signTypedData_v3':
         case 'eth_signTypedData_v4': {
-          if (connectedSolanaOriginRef.current !== origin) throw Object.assign(new Error('Connect this DApp first.'), {code:4100});
+          if (connectedEvmOriginRef.current !== origin) throw Object.assign(new Error('Connect this DApp first.'), {code:4100});
           const typed = String(m.method).startsWith('eth_signTypedData');
           const rawSign = m.method === 'eth_sign';
           const signerAddress = rawSign || typed ? String(params[0] || '') : (ethers.isAddress(String(params[0] || '')) ? String(params[0]) : String(params[1] || ''));
