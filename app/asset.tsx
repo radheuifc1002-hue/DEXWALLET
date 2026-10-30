@@ -140,7 +140,7 @@ export default function AssetProfile() {
           if (asset.contractAddress) router.push({ pathname: '/send', params: { assetId: asset.id, assetContract: asset.contractAddress, assetSymbol: asset.symbol, assetDecimals: String(asset.decimals ?? 18) } });
           else router.push('/send');
         }}><Ionicons name="arrow-up" size={19} color="#FFFFFF" /><Text style={s.sendText}>Send {asset.symbol}</Text></TouchableOpacity>
-        <TouchableOpacity style={s.receiveButton} onPress={() => { setSelectedBlockchain(asset.blockchain); router.push('/receive'); }}><Ionicons name="arrow-down" size={19} color="#6C4CF1" /><Text style={s.receiveText}>Receive</Text></TouchableOpacity>
+        <TouchableOpacity style={s.receiveButton} onPress={() => { setSelectedBlockchain(asset.blockchain); router.push({ pathname: '/receive', params: { assetSymbol: asset.symbol, assetName: asset.name, ...(asset.contractAddress ? { assetContract: asset.contractAddress } : {}) } }); }}><Ionicons name="arrow-down" size={19} color="#6C4CF1" /><Text style={s.receiveText}>Receive</Text></TouchableOpacity>
       </View>
     </SafeAreaView>
   );
