@@ -574,7 +574,7 @@ export default function Browser() {
                   <TouchableOpacity style={styles.recentOpen} onPress={() => navigate(app.url)} activeOpacity={0.75}>
                     <DAppLogo domain={app.domain} name={app.name} logoUrl={app.logoUrl} />
                     <View style={styles.recentTextWrap}>
-                      <Text style={styles.recentName} numberOfLines={1} textAlign="center">{app.name}</Text>
+                      <Text style={[styles.recentName, { textAlign: "center" }]} numberOfLines={1}>{app.name}</Text>
                       <Text style={styles.recentUrl} numberOfLines={1} ellipsizeMode="tail">{app.url}</Text>
                     </View>
                   </TouchableOpacity>
