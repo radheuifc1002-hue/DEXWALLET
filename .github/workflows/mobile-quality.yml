@@ -7,9 +7,9 @@ on:
       - "app/**"
       - "context/**"
       - "mobile/**"
-      - "api/**"
-      - "database/**"
-      - "indexer/**"
+      - "backend/api/**"
+      - "backend/database/**"
+      - "backend/indexer/**"
       - "tests/**"
       - "components/**"
       - "package.json"
@@ -23,9 +23,9 @@ on:
       - "app/**"
       - "context/**"
       - "mobile/**"
-      - "api/**"
-      - "database/**"
-      - "indexer/**"
+      - "backend/api/**"
+      - "backend/database/**"
+      - "backend/indexer/**"
       - "components/**"
       - "package.json"
       - "package-lock.json"
@@ -79,7 +79,7 @@ jobs:
         run: node --test tests/indexer-regression.test.mjs
 
       - name: Validate indexer worker syntax
-        run: node --check indexer/worker.mjs
+        run: node --check backend/indexer/worker.mjs
 
       - name: Build indexer worker container
-        run: docker build -t dexwallet-indexer ./indexer
+        run: docker build -t dexwallet-indexer ./backend/indexer

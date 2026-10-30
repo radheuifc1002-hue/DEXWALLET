@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const worker = readFileSync(new URL('../indexer/worker.mjs', import.meta.url), 'utf8');
-const historyApi = readFileSync(new URL('../api/indexed-history.ts', import.meta.url), 'utf8');
-const registerApi = readFileSync(new URL('../api/indexer/register-address.ts', import.meta.url), 'utf8');
+const worker = readFileSync(new URL('../backend/indexer/worker.mjs', import.meta.url), 'utf8');
+const historyApi = readFileSync(new URL('../backend/api/indexed-history.ts', import.meta.url), 'utf8');
+const registerApi = readFileSync(new URL('../backend/api/indexer/register-address.ts', import.meta.url), 'utf8');
 
 test('native transaction upsert promotes token-only placeholders and contract calls', () => {
   assert.match(worker, /WHEN EXCLUDED\.tx_type = 'contract_interaction' THEN 'contract_interaction'/);
