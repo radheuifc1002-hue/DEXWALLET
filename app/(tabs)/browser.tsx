@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   View,
   Text,
@@ -23,6 +24,7 @@ type DAppShortcut = {
   url: string;
   domain: string;
   category: string;
+  logoUrl?: string;
 };
 
 const DAPP_SHORTCUTS: DAppShortcut[] = [
@@ -40,7 +42,7 @@ const DAPP_SHORTCUTS: DAppShortcut[] = [
   { name: 'Magic Eden', url: 'https://magiceden.io', domain: 'magiceden.io', category: 'NFT' },
 ];
 
-function DAppLogo({ domain, name }: { domain: string; name: string }) {
+function DAppLogo({ domain, name, logoUrl }: { domain: string; name: string; logoUrl?: string }) {
   const [failed, setFailed] = useState(false);
   if (failed) {
     return (
@@ -52,7 +54,7 @@ function DAppLogo({ domain, name }: { domain: string; name: string }) {
   return (
     <View style={styles.logoFrame}>
       <Image
-        source={{ uri: `https://www.google.com/s2/favicons?domain=${domain}&sz=128` }}
+        source={{ uri: logoUrl || `https://www.google.com/s2/favicons?domain=${domain}&sz=128` }}
         style={styles.dappLogo}
         resizeMode="contain"
         onError={() => setFailed(true)}
@@ -123,7 +125,26 @@ export default function Browser() {
   const [canGoForward, setCanGoForward] = useState(false);
   const [loading, setLoading] = useState(false);
   const [recentDApps, setRecentDApps] = useState<DAppShortcut[]>([]);
+  const [recentReady, setRecentReady] = useState(false);
   const webRef = useRef<WebView>(null);
+
+  useEffect(() => {
+    let active = true;
+    AsyncStorage.getItem('xu_wallet_recently_visited_v1').then((raw) => {
+      if (!active) return;
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) setRecentDApps(parsed.filter((item) => item && typeof item.url === 'string').slice(0, 12));
+        } catch { /* Ignore malformed browser history. */ }
+      }
+    }).catch(() => {}).finally(() => { if (active) setRecentReady(true); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (recentReady) AsyncStorage.setItem('xu_wallet_recently_visited_v1', JSON.stringify(recentDApps)).catch(() => {});
+  }, [recentDApps, recentReady]);
 
   useEffect(() => {
     const ids: Record<string, number> = {
@@ -179,6 +200,19 @@ export default function Browser() {
   const handleProviderMessage = async (event: any) => {
     let m: any;
     try { m = JSON.parse(event.nativeEvent.data); } catch { return; }
+    if (m?.type === 'xu_page_metadata') {
+      try {
+        const currentOrigin = new URL(pageUrlRef.current || url).origin;
+        if (new URL(String(m.pageUrl || '')).origin !== currentOrigin) return;
+        const title = typeof m.title === 'string' ? m.title.trim().slice(0, 60) : '';
+        const logo = typeof m.logo === 'string' && /^https:\/\//i.test(m.logo) ? m.logo : undefined;
+        setRecentDApps((previous) => previous.map((item) => {
+          try { if (new URL(item.url).origin === currentOrigin) return { ...item, name: title || item.name, logoUrl: logo || item.logoUrl }; } catch {}
+          return item;
+        }));
+      } catch { /* Ignore invalid metadata. */ }
+      return;
+    }
     if (!Number.isInteger(m?.id)) return;
     const actualUrl = event.nativeEvent.url || pageUrlRef.current || url;
     let origin = '';
@@ -433,7 +467,10 @@ export default function Browser() {
     } catch {
       recentItem = { name: trimmed.slice(0, 24), url: dest, domain: '', category: 'Recently visited' };
     }
-    setRecentDApps((previous) => [recentItem, ...previous.filter((item) => item.url !== recentItem.url)].slice(0, 6));
+    setRecentDApps((previous) => {
+      const old = previous.find((item) => item.url === recentItem.url);
+      return [{ ...recentItem, logoUrl: old?.logoUrl }, ...previous.filter((item) => item.url !== recentItem.url)].slice(0, 12);
+    });
     setUrl(dest);
     setInputUrl(dest);
   };
@@ -523,16 +560,30 @@ export default function Browser() {
             </View>
             <Ionicons name="time-outline" size={18} color="#777286" />
           </View>
-          {recentDApps.length > 0 ? recentDApps.map((app) => (
-            <TouchableOpacity key={app.url} style={styles.recentItem} onPress={() => navigate(app.url)} activeOpacity={0.75}>
-              <View style={styles.recentIcon}><Ionicons name="globe-outline" size={17} color="#6C4CF1" /></View>
-              <View style={styles.recentTextWrap}>
-                <Text style={styles.recentName} numberOfLines={1}>{app.name}</Text>
-                <Text style={styles.recentUrl} numberOfLines={1}>{app.domain || app.url}</Text>
+          {recentDApps.length > 0 ? (
+            <>
+              <View style={styles.recentActions}>
+                <Text style={styles.recentCount}>{recentDApps.length} saved</Text>
+                <TouchableOpacity onPress={() => setRecentDApps([])} accessibilityLabel="Clear recently visited">
+                  <Text style={styles.clearRecent}>Clear all</Text>
+                </TouchableOpacity>
               </View>
-              <Ionicons name="arrow-up-right" size={17} color="#9A95A8" />
-            </TouchableOpacity>
-          )) : (
+              {recentDApps.map((app) => (
+                <View key={app.url} style={styles.recentItem}>
+                  <TouchableOpacity style={styles.recentOpen} onPress={() => navigate(app.url)} activeOpacity={0.75}>
+                    <DAppLogo domain={app.domain} name={app.name} logoUrl={app.logoUrl} />
+                    <View style={styles.recentTextWrap}>
+                      <Text style={styles.recentName} numberOfLines={1}>{app.name}</Text>
+                      <Text style={styles.recentUrl} numberOfLines={1}>{app.url}</Text>
+                    </View>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.removeRecent} onPress={() => setRecentDApps((previous) => previous.filter((item) => item.url !== app.url))} accessibilityLabel={`Remove ${app.name} from recently visited`}>
+                    <Ionicons name="close" size={17} color="#9A95A8" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </>
+          ) : (
             <View style={styles.recentEmpty}>
               <Ionicons name="time-outline" size={20} color="#9A95A8" />
               <Text style={styles.recentEmptyText}>Your recently visited sites will appear here.</Text>
@@ -616,7 +667,8 @@ export default function Browser() {
               '}' +
               'if(window.__xuSolanaRestoreConnection&&' + JSON.stringify(solanaAddress) + '){window.__xuSolanaRestoreConnection(' + JSON.stringify(solanaAddress) + ');}' +
               'true;';
-            webRef.current?.injectJavaScript(script);
+            webRef.current?.injectJavaScript(script +
+              'try{var selectors=[\'meta[property="og:image"]\',\'meta[name="twitter:image"]\',\'link[rel="apple-touch-icon"]\',\'link[rel~="icon"]\'];var logo="";for(var i=0;i<selectors.length;i++){var el=document.querySelector(selectors[i]);var value=el&&(el.content||el.href);if(value){logo=new URL(value,location.href).href;if(logo.indexOf("https:")!==0)logo="";if(logo)break;}}var siteName=document.querySelector(\'meta[property="og:site_name"]\');window.ReactNativeWebView.postMessage(JSON.stringify({type:"xu_page_metadata",pageUrl:location.href,title:(siteName&&siteName.content)||document.title,logo:logo}));}catch(_){}true;');
           }}
           javaScriptEnabled
           domStorageEnabled
@@ -740,6 +792,18 @@ const styles = StyleSheet.create({
   dappLogo: { width: 34, height: 34 },
   logoFallback: { width: 43, height: 43, borderRadius: 14, backgroundColor: '#F3F0FF', alignItems: 'center', justifyContent: 'center' },
   logoInitial: { color: '#6C4CF1', fontSize: 20, fontWeight: '800' },
+  recentSection: { marginTop: 4, paddingBottom: 12 },
+  recentActions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: -5, marginBottom: 8 },
+  recentCount: { color: '#9A95A8', fontSize: 10 },
+  clearRecent: { color: '#6C4CF1', fontSize: 11, fontWeight: '700' },
+  recentItem: { flexDirection: 'row', alignItems: 'center', minHeight: 66, paddingHorizontal: 10, marginBottom: 8, borderWidth: 1, borderColor: '#E8E4F3', borderRadius: 14, backgroundColor: '#FFFFFF' },
+  recentOpen: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, minWidth: 0 },
+  recentTextWrap: { flex: 1, minWidth: 0 },
+  recentName: { color: '#211B35', fontSize: 12, fontWeight: '700' },
+  recentUrl: { color: '#777286', fontSize: 10, marginTop: 4 },
+  removeRecent: { width: 34, height: 40, alignItems: 'center', justifyContent: 'center' },
+  recentEmpty: { minHeight: 66, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, borderWidth: 1, borderColor: '#E8E4F3', borderRadius: 14 },
+  recentEmptyText: { color: '#9A95A8', fontSize: 11 },
   dappName: { color: '#211B35', fontSize: 10, fontWeight: '700', textAlign: 'center' },
   dappCategory: { color: '#777286', fontSize: 9, textAlign: 'center' },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.72)', justifyContent: 'flex-end' },
