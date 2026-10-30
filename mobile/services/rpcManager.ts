@@ -138,6 +138,22 @@ function markSuccess(chain: RpcChain, network: RpcNetwork, url: string, latencyM
   persistHealth();
 }
 
+function shouldFailover(error: unknown): boolean {
+  const value = error as { code?: string; name?: string; message?: string };
+  const code = String(value?.code || '').toUpperCase();
+  const message = String(value?.message || error || '').toLowerCase();
+
+  // These are valid application/transaction outcomes, not evidence that an RPC
+  // endpoint is unhealthy. Do not punish a provider for a reverted call or
+  // insufficient funds.
+  if (['CALL_EXCEPTION', 'INSUFFICIENT_FUNDS', 'INVALID_ARGUMENT', 'ACTION_REJECTED'].includes(code)) return false;
+  if (/insufficient (balance|funds)|execution reverted|call exception|invalid address|invalid argument|unable to estimate network fee/.test(message)) return false;
+
+  return value?.name === 'AbortError' ||
+    ['NETWORK_ERROR', 'SERVER_ERROR', 'TIMEOUT', 'BAD_DATA', 'ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'ECONNABORTED'].includes(code) ||
+    /network request failed|fetch failed|timed out|timeout|http (408|425|429|5\d\d)|rate.?limit|too many requests|gateway|socket|connection reset|wrong chain id|malformed json|invalid json-rpc response/.test(message);
+}
+
 function markFailure(chain: RpcChain, network: RpcNetwork, url: string, error: unknown) {
   const key = endpointKey(chain, network, url);
   const previous = health[key];
@@ -164,9 +180,14 @@ function getEndpoints(chain: RpcChain, network: RpcNetwork): RpcEndpoint[] {
     state: health[endpointKey(chain, network, url)],
   }));
   const healthy = endpoints.filter((item) => !item.state || item.state.cooldownUntil <= now);
-  const candidates = healthy.length > 0 ? healthy : endpoints;
+  const allCoolingDown = healthy.length === 0;
+  const candidates = allCoolingDown ? endpoints : healthy;
   return candidates
     .sort((a, b) => {
+      if (allCoolingDown) {
+        const cooldownDifference = (a.state?.cooldownUntil ?? 0) - (b.state?.cooldownUntil ?? 0);
+        if (cooldownDifference !== 0) return cooldownDifference;
+      }
       const aLatency = a.state?.latencyMs ?? Number.MAX_SAFE_INTEGER;
       const bLatency = b.state?.latencyMs ?? Number.MAX_SAFE_INTEGER;
       return aLatency - bLatency || a.index - b.index;
@@ -310,6 +331,7 @@ export async function withEvmReadFallback<T>(
       markSuccess(chain, network, endpoint.url, Date.now() - started);
       return result;
     } catch (error) {
+      if (!shouldFailover(error)) throw error;
       lastError = error;
       markFailure(chain, network, endpoint.url, error);
     }
@@ -340,6 +362,7 @@ export async function withSolanaReadFallback<T>(
       markSuccess('solana', network, endpoint.url, Date.now() - started);
       return value;
     } catch (error) {
+      if (!shouldFailover(error)) throw error;
       lastError = error;
       markFailure('solana', network, endpoint.url, error);
     }
