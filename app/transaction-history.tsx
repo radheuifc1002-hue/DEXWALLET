@@ -31,6 +31,7 @@ export default function TransactionHistory() {
   const { selectedBlockchain, network, walletAddress } = useWallet();
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const explorerUrl = useMemo(
     () => getExplorerUrl(selectedBlockchain, network, walletAddress),
     [selectedBlockchain, network, walletAddress],
@@ -62,7 +63,7 @@ export default function TransactionHistory() {
           <Ionicons name="cloud-offline-outline" size={42} color="#9A95A8" />
           <Text style={styles.stateTitle}>Unable to load transaction history</Text>
           <Text style={styles.stateBody}>The explorer may be temporarily unavailable. You can retry or open it in your browser.</Text>
-          <TouchableOpacity style={styles.retry} onPress={() => { setFailed(false); setLoading(true); }}>
+          <TouchableOpacity style={styles.retry} onPress={() => { setFailed(false); setLoading(true); setReloadKey((value) => value + 1); }}>
             <Ionicons name="refresh" size={17} color="#FFFFFF" />
             <Text style={styles.retryText}>Try again</Text>
           </TouchableOpacity>
@@ -74,13 +75,13 @@ export default function TransactionHistory() {
         <View style={styles.webWrap}>
           {loading ? <View style={styles.loading}><ActivityIndicator size="large" color="#6C4CF1" /><Text style={styles.loadingText}>Loading on-chain activity…</Text></View> : null}
           <WebView
-            key={explorerUrl}
+            key={`${explorerUrl}:${reloadKey}`}
             source={{ uri: explorerUrl }}
             onLoadStart={() => { setLoading(true); setFailed(false); }}
             onLoadEnd={() => setLoading(false)}
             onError={() => { setLoading(false); setFailed(true); }}
             onHttpError={(event) => {
-              if (event.nativeEvent.statusCode >= 500) { setLoading(false); setFailed(true); }
+              if (event.nativeEvent.statusCode >= 400) { setLoading(false); setFailed(true); }
             }}
             javaScriptEnabled
             domStorageEnabled
