@@ -53,8 +53,15 @@ export default function Send() {
     try {
       let txHash = '';
       if (selectedBlockchain === 'solana') {
-        const r = await solRpc(getSolanaRpcEndpoint(network), 'getBalance', [address, { commitment: 'confirmed' }]);
-        setBalance(ethers.formatUnits(BigInt(r.value), 9));
+        if (isTokenTransfer) {
+          const rpcUrl = getSolanaRpcEndpoint(network);
+          const accounts = await solRpc(rpcUrl, 'getTokenAccountsByOwner', [address, { mint: tokenContract }, { encoding: 'jsonParsed', commitment: 'confirmed' }]);
+          const raw = (accounts?.value || []).reduce((sum: bigint, item: any) => sum + BigInt(item.account.data.parsed.info.tokenAmount.amount || '0'), 0n);
+          setBalance(ethers.formatUnits(raw, tokenDecimals));
+        } else {
+          const r = await solRpc(getSolanaRpcEndpoint(network), 'getBalance', [address, { commitment: 'confirmed' }]);
+          setBalance(ethers.formatUnits(BigInt(r.value), 9));
+        }
       } else if (rpc) {
         const p = new ethers.JsonRpcProvider(rpc.rpc, rpc.chainId);
         const n = await p.getNetwork();
