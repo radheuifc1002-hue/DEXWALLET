@@ -28,17 +28,23 @@ function parseBody(body: unknown): Record<string, unknown> | null {
   return body as Record<string, unknown>;
 }
 
-function encodeCursor(timestamp: string, hash: string) {
-  return Buffer.from(JSON.stringify({ timestamp, hash }), 'utf8').toString('base64url');
+function encodeCursor(timestamp: string, hash: string, rowType: 'native' | 'token', eventIndex: number) {
+  return Buffer.from(JSON.stringify({ timestamp, hash, rowType, eventIndex }), 'utf8').toString('base64url');
 }
 
-function decodeCursor(value: unknown): { timestamp: string; hash: string } | null {
+function decodeCursor(value: unknown): { timestamp: string; hash: string; rowType: 'native' | 'token'; eventIndex: number } | null {
   if (typeof value !== 'string' || value.length > 512) return null;
   try {
     const parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'));
     if (typeof parsed.timestamp !== 'string' || !Number.isFinite(Date.parse(parsed.timestamp))) return null;
     if (typeof parsed.hash !== 'string' || !/^0x[a-fA-F0-9]{64}$/.test(parsed.hash)) return null;
-    return { timestamp: new Date(parsed.timestamp).toISOString(), hash: parsed.hash.toLowerCase() };
+    if (!['native', 'token'].includes(parsed.rowType) || !Number.isInteger(parsed.eventIndex)) return null;
+    return {
+      timestamp: new Date(parsed.timestamp).toISOString(),
+      hash: parsed.hash.toLowerCase(),
+      rowType: parsed.rowType,
+      eventIndex: parsed.eventIndex,
+    };
   } catch { return null; }
 }
 
@@ -100,6 +106,8 @@ function mapTransaction(row: any, wallet: string, chain: string, network: string
     failed,
     explorerUrl: explorerPrefix(chain, network) + hash,
     _sortTime: new Date(row.activity_time).getTime(),
+    _rowType: 'native',
+    _eventIndex: -1,
   };
 }
 
@@ -121,6 +129,8 @@ function mapTokenTransfer(row: any, wallet: string, chain: string, network: stri
     failed: row.tx_status === 'failed',
     explorerUrl: explorerPrefix(chain, network) + hash,
     _sortTime: new Date(row.activity_time).getTime(),
+    _rowType: 'token',
+    _eventIndex: Number(row.event_index),
   };
 }
 
@@ -199,8 +209,10 @@ export default async function handler(req: Request, res: Response) {
             AND (
               ${cursor?.timestamp || null}::timestamptz IS NULL
               OR COALESCE(block_timestamp, first_seen_at) < ${cursor?.timestamp || null}::timestamptz
-              OR (COALESCE(block_timestamp, first_seen_at) = ${cursor?.timestamp || null}::timestamptz AND lower(tx_hash) < ${cursor?.hash || ''})
+              OR (COALESCE(block_timestamp, first_seen_at) = ${cursor?.timestamp ?? null}::timestamptz AND lower(tx_hash) < ${cursor?.hash || ''})
+              OR (COALESCE(block_timestamp, first_seen_at) = ${cursor?.timestamp ?? null}::timestamptz AND lower(tx_hash) = ${cursor?.hash || ''} AND ${cursor?.rowType === 'token'})
             )
+            AND tx_type <> 'token_transfer'
           ORDER BY COALESCE(block_timestamp, first_seen_at) DESC, lower(tx_hash) DESC
           LIMIT ${limit + 1}
         `
@@ -216,7 +228,8 @@ export default async function handler(req: Request, res: Response) {
             AND (
               ${cursor?.timestamp || null}::timestamptz IS NULL
               OR COALESCE(block_timestamp, first_seen_at) < ${cursor?.timestamp || null}::timestamptz
-              OR (COALESCE(block_timestamp, first_seen_at) = ${cursor?.timestamp || null}::timestamptz AND lower(tx_hash) < ${cursor?.hash || ''})
+              OR (COALESCE(block_timestamp, first_seen_at) = ${cursor?.timestamp ?? null}::timestamptz AND lower(tx_hash) < ${cursor?.hash || ''})
+              OR (COALESCE(block_timestamp, first_seen_at) = ${cursor?.timestamp ?? null}::timestamptz AND lower(tx_hash) = ${cursor?.hash || ''} AND ${cursor?.rowType === 'token'})
             )
           ORDER BY COALESCE(block_timestamp, first_seen_at) DESC, lower(tx_hash) DESC
           LIMIT ${limit + 1}
@@ -236,7 +249,8 @@ export default async function handler(req: Request, res: Response) {
         AND (
           ${cursor?.timestamp || null}::timestamptz IS NULL
           OR COALESCE(tr.block_timestamp, tx.block_timestamp, tx.first_seen_at) < ${cursor?.timestamp || null}::timestamptz
-          OR (COALESCE(tr.block_timestamp, tx.block_timestamp, tx.first_seen_at) = ${cursor?.timestamp || null}::timestamptz AND lower(tr.tx_hash) < ${cursor?.hash || ''})
+          OR (COALESCE(tr.block_timestamp, tx.block_timestamp, tx.first_seen_at) = ${cursor?.timestamp ?? null}::timestamptz AND lower(tr.tx_hash) < ${cursor?.hash || ''})
+          OR (COALESCE(tr.block_timestamp, tx.block_timestamp, tx.first_seen_at) = ${cursor?.timestamp ?? null}::timestamptz AND lower(tr.tx_hash) = ${cursor?.hash || ''} AND (${cursor?.rowType === 'native'} OR tr.event_index < ${cursor?.eventIndex ?? -1}))
         )
       ORDER BY COALESCE(tr.block_timestamp, tx.block_timestamp, tx.first_seen_at) DESC, lower(tr.tx_hash) DESC, tr.event_index DESC
       LIMIT ${limit + 1}
@@ -245,19 +259,19 @@ export default async function handler(req: Request, res: Response) {
     const mapped = [
       ...nativeRows.map((row: any) => mapTransaction(row, wallet, chain, network)),
       ...tokenRows.map((row: any) => mapTokenTransfer(row, wallet, chain, network)),
-    ].sort((a: any, b: any) => b._sortTime - a._sortTime || b.hash.localeCompare(a.hash));
+    ].sort((a: any, b: any) => b._sortTime - a._sortTime || b.hash.localeCompare(a.hash) || b._eventIndex - a._eventIndex);
 
     const hasMore = mapped.length > limit;
     const page = mapped.slice(0, limit);
     const last = page[page.length - 1] as any;
     const nextCursor = hasMore && last
-      ? encodeCursor(new Date(last._sortTime).toISOString(), last.hash)
+      ? encodeCursor(new Date(last._sortTime).toISOString(), last.hash, last._rowType, last._eventIndex)
       : null;
 
     res.status(200).json({
       indexed: true,
       syncStatus: sync.sync_status,
-      rows: page.map(({ _sortTime, ...row }: any) => row),
+      rows: page.map(({ _sortTime, _rowType, _eventIndex, ...row }: any) => row),
       nextCursor,
       requestId,
     });
