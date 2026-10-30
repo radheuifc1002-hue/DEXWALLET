@@ -80,7 +80,7 @@ export default function ImportToken() {
           ]);
         } catch (metadataError: any) {
           const detail = String(metadataError?.shortMessage || metadataError?.message || '').toLowerCase();
-          if (metadataError?.code === 'BAD_DATA' || metadataError?.code === 'CALL_EXCEPTION' || detail.includes('could not decode result data') || detail.includes('could not coalesce error') || detail.includes('execution reverted')) {
+          if (metadataError?.code === 'BAD_DATA' || metadataError?.code === 'CALL_EXCEPTION' || detail.includes('could not decode result data') || detail.includes('execution reverted')) {
             throw new Error(`Token not found. This contract does not expose standard ERC-20 token details on ${selectedBlockchain === 'bnb' ? 'BNB Chain' : selectedBlockchain === 'polygon' ? 'Polygon' : 'Ethereum'}.`);
           }
           throw metadataError;
