@@ -151,6 +151,20 @@ export default function Home() {
               <Text style={styles.actionLabel}>Receive</Text>
             </TouchableOpacity>
           </View>
+          <TouchableOpacity
+            style={styles.historyButton}
+            onPress={() => router.push('/transaction-history')}
+            activeOpacity={0.82}
+            accessibilityRole="button"
+            accessibilityLabel={`View ${selectedBlockchain} transaction history`}
+          >
+            <View style={styles.historyIcon}><Ionicons name="receipt-outline" size={19} color="#FFFFFF" /></View>
+            <View style={styles.historyTextWrap}>
+              <Text style={styles.historyTitle}>Transaction history</Text>
+              <Text style={styles.historySubtitle}>View activity on {selectedBlockchain === 'bnb' ? 'BNB Chain' : selectedBlockchain === 'polygon' ? 'Polygon' : selectedBlockchain === 'ethereum' ? 'Ethereum' : 'Solana'}</Text>
+            </View>
+            <Ionicons name="arrow-forward" size={18} color="#6C4CF1" />
+          </TouchableOpacity>
         </View>
 
         <Modal
@@ -378,6 +392,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
+  historyButton: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 68, marginTop: 16, paddingHorizontal: 13, paddingVertical: 10, borderRadius: 15, backgroundColor: '#F8F6FF', borderWidth: 1, borderColor: '#E8E1FF' },
+  historyIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#6C4CF1', alignItems: 'center', justifyContent: 'center' },
+  historyTextWrap: { flex: 1 },
+  historyTitle: { color: '#211B35', fontSize: 14, fontWeight: '800' },
+  historySubtitle: { color: '#777286', fontSize: 11, marginTop: 3 },
   assetsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   importButton: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#6C4CF1', paddingHorizontal: 13, paddingVertical: 8, borderRadius: 10 },
   importButtonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
