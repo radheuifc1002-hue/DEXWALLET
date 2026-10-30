@@ -211,14 +211,21 @@ async function fetchBnbBinplorer(wallet: string, asset: Token): Promise<WalletAc
 async function fetchEvmHistory(chain: Exclude<Blockchain, 'solana'>, network: Network, wallet: string, asset: Token): Promise<WalletActivity[]> {
   if (chain === 'ethereum') return fetchRoutescanHistory(chain, network, wallet, asset);
   if (chain === 'polygon') {
+    // Routescan's Etherscan-compatible API supports keyless reads. Prefer it
+    // over the Polygon Blockscout host, which can return HTTP 403 in some
+    // mobile/network environments. Keep Blockscout as a secondary source.
     try {
-      return await fetchPolygonBlockscout(network, wallet, asset);
-    } catch {
-      try {
-        return await fetchRoutescanHistory(chain, network, wallet, asset);
-      } catch {
-        throw new Error('Polygon transaction history is temporarily unavailable from the indexing providers. You can still open PolygonScan to view activity.');
+      const routescanRows = await fetchRoutescanHistory(chain, network, wallet, asset);
+      if (routescanRows.length > 0) return routescanRows.slice(0, 50);
+    } catch {}
+    try {
+      return (await fetchPolygonBlockscout(network, wallet, asset)).slice(0, 50);
+    } catch (error: any) {
+      const message = String(error?.message || '');
+      if (message.includes('403')) {
+        throw new Error('Polygon history providers are currently refusing API access (HTTP 403). You can still view the full activity on PolygonScan.');
       }
+      throw new Error('Polygon transaction history is temporarily unavailable. Please try again or open PolygonScan.');
     }
   }
   if (network === 'testnet') {
