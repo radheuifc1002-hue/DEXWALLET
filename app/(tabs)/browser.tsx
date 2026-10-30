@@ -126,6 +126,7 @@ export default function Browser() {
   const [loading, setLoading] = useState(false);
   const [recentDApps, setRecentDApps] = useState<DAppShortcut[]>([]);
   const [recentReady, setRecentReady] = useState(false);
+  const recentWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
   const webRef = useRef<WebView>(null);
 
   useEffect(() => {
@@ -135,15 +136,27 @@ export default function Browser() {
       if (raw) {
         try {
           const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) setRecentDApps(parsed.filter((item) => item && typeof item.url === 'string').slice(0, 12));
+          if (Array.isArray(parsed)) {
+            const valid = parsed.filter((item) =>
+              item && typeof item.url === 'string' && /^https?:\\/\\//i.test(item.url)
+            ).slice(0, 12);
+            setRecentDApps(valid);
+          }
         } catch { /* Ignore malformed browser history. */ }
       }
     }).catch(() => {}).finally(() => { if (active) setRecentReady(true); });
     return () => { active = false; };
   }, []);
 
+  // Serialize writes so a slower earlier AsyncStorage write cannot overwrite
+  // a newer visit or a user's manual removal/clear action.
   useEffect(() => {
-    if (recentReady) AsyncStorage.setItem('xu_wallet_recently_visited_v1', JSON.stringify(recentDApps)).catch(() => {});
+    if (!recentReady) return;
+    const snapshot = JSON.stringify(recentDApps);
+    recentWriteQueueRef.current = recentWriteQueueRef.current
+      .catch(() => {})
+      .then(() => AsyncStorage.setItem('xu_wallet_recently_visited_v1', snapshot))
+      .catch(() => {});
   }, [recentDApps, recentReady]);
 
   useEffect(() => {
@@ -562,7 +575,7 @@ export default function Browser() {
                     <DAppLogo domain={app.domain} name={app.name} logoUrl={app.logoUrl} />
                     <View style={styles.recentTextWrap}>
                       <Text style={styles.recentName} numberOfLines={1}>{app.name}</Text>
-                      <Text style={styles.recentUrl} numberOfLines={1}>{app.url}</Text>
+                      <Text style={styles.recentUrl} numberOfLines={1} ellipsizeMode="middle">{app.url}</Text>
                     </View>
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.removeRecent} onPress={() => setRecentDApps((previous) => previous.filter((item) => item.url !== app.url))} accessibilityLabel={`Remove ${app.name} from recently visited`}>
