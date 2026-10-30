@@ -216,7 +216,13 @@ export default function AssetDetails() {
             );
         result = nativeRows.map((row: any) => {
           const mapped = normalizeEvmRow(row, walletAddress, isNative ? CHAIN_SYMBOLS[chain] : symbol, false);
-          return { ...mapped, explorerUrl: transactionExplorerUrl(chain, network, mapped.hash) };
+          return {
+            ...mapped,
+            title: isNative ? mapped.title : 'Contract interaction',
+            detail: isNative ? mapped.detail : 'Called ' + name + ' contract',
+            amount: isNative ? mapped.amount : '',
+            explorerUrl: transactionExplorerUrl(chain, network, mapped.hash),
+          };
         });
         if (!isNative) {
           const tokenUrl = base + '?module=account&action=tokentx&address=' + address +
