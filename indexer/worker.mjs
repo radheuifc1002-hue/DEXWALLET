@@ -100,7 +100,7 @@ async function upsertTransaction(chain, network, row) {
        ${nativeSymbols[chain] || 'ETH'}, ${status}, ${type}, ${gasUsed},
        ${gasPrice}, ${fee}, ${nonce},
        ${chain === 'ethereum' ? (network === 'mainnet' ? 'https://etherscan.io/tx/' : 'https://sepolia.etherscan.io/tx/') : 'https://polygonscan.com/tx/'} || ${hash},
-       'blockscout', ${confirmations}, ${confirmations >= 12}, NOW())
+       'blockscout', ${confirmations}, FALSE, NOW())
     ON CONFLICT (chain, network, tx_hash) DO UPDATE SET
       block_number = COALESCE(EXCLUDED.block_number, indexed_transactions.block_number),
       block_hash = COALESCE(EXCLUDED.block_hash, indexed_transactions.block_hash),
@@ -196,6 +196,12 @@ async function processJob(job) {
   `;
   const syncState = states[0];
   if (!syncState) throw new Error('Address sync state missing');
+  await sql`
+    UPDATE public.address_sync_state
+    SET sync_status = 'syncing', lease_owner = ${workerId},
+        lease_expires_at = NOW() + INTERVAL '5 minutes', updated_at = NOW()
+    WHERE chain = ${chain} AND network = ${network} AND address_key = ${address}
+  `;
 
   let cursor;
   try { cursor = job.cursor ? JSON.parse(job.cursor) : null; } catch { cursor = null; }
