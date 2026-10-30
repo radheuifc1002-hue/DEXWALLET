@@ -43,7 +43,7 @@ function mergeRows(rows: any[]) {
   const unique = new Map<string, any>();
   rows.forEach((tx) => {
     const hash = String(tx.hash || tx.transactionHash || tx.transaction_hash || '');
-    const index = tx.logIndex ?? tx.log_index ?? tx.traceId ?? tx.trace_id ?? 'tx';
+    const index = tx.logIndex ?? tx.log_index ?? tx.traceId ?? tx.trace_id ?? (tx.tokenInfo?.address ? `token:${tx.tokenInfo.address}:${tx.type || ''}` : tx.token?.address ? `token:${tx.token.address}:${tx.type || ''}` : tx.input && tx.input !== '0x' ? 'call' : 'tx');
     if (hash) unique.set(`${hash}:${index}`, tx);
   });
   return [...unique.values()];
@@ -187,7 +187,7 @@ async function fetchBnbBinplorer(wallet: string, asset: Token): Promise<WalletAc
     const hash = String(tx.transactionHash || tx.hash || tx.txHash || '');
     const token = tx.tokenInfo || tx.token || {};
     const isTokenTransfer = Boolean(token.address);
-    const tokenValue = isTokenTransfer ? formatAmount(tx.value, Number(token.decimals ?? asset.decimals ?? 18), token.symbol || asset.symbol) : undefined;
+    const tokenValue = isTokenTransfer ? (/^\\d+$/.test(String(tx.value ?? '')) ? formatAmount(tx.value, Number(token.decimals ?? asset.decimals ?? 18), token.symbol || asset.symbol) : (Number.isFinite(Number(tx.value)) ? `${Number(tx.value).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${token.symbol || asset.symbol}` : undefined)) : undefined;
     const nativeValue = tx.rawValue !== undefined
       ? Number(ethers.formatUnits(safeBigInt(tx.rawValue), 18))
       : Number(tx.value || 0);
