@@ -109,7 +109,11 @@ async function upsertTransaction(chain, network, row) {
       to_address = COALESCE(EXCLUDED.to_address, indexed_transactions.to_address),
       value_raw = CASE WHEN EXCLUDED.value_raw <> 0 THEN EXCLUDED.value_raw ELSE indexed_transactions.value_raw END,
       tx_status = CASE WHEN EXCLUDED.tx_status <> 'unknown' THEN EXCLUDED.tx_status ELSE indexed_transactions.tx_status END,
-      tx_type = CASE WHEN indexed_transactions.tx_type = 'other' THEN EXCLUDED.tx_type ELSE indexed_transactions.tx_type END,
+      tx_type = CASE
+        WHEN EXCLUDED.tx_type = 'contract_interaction' THEN 'contract_interaction'
+        WHEN indexed_transactions.tx_type IN ('other', 'token_transfer') THEN EXCLUDED.tx_type
+        ELSE indexed_transactions.tx_type
+      END,
       gas_used = COALESCE(EXCLUDED.gas_used, indexed_transactions.gas_used),
       gas_price_raw = COALESCE(EXCLUDED.gas_price_raw, indexed_transactions.gas_price_raw),
       fee_raw = COALESCE(EXCLUDED.fee_raw, indexed_transactions.fee_raw),
@@ -228,12 +232,14 @@ async function processJob(job) {
   for (const row of txPage.items) {
     const block = await upsertTransaction(chain, network, row);
     highestBlock = Math.max(highestBlock, block);
-    if (stopBlock && block > 0 && block <= stopBlock) txReachedStop = true;
+    // Continue through the complete boundary block. Stopping at <= would
+    // truncate other transactions sharing the last indexed block.
+    if (stopBlock && block > 0 && block < stopBlock) txReachedStop = true;
   }
   for (const row of tokenPage.items) {
     const block = await upsertTokenTransfer(chain, network, row);
     highestBlock = Math.max(highestBlock, block);
-    if (stopBlock && block > 0 && block <= stopBlock) tokenReachedStop = true;
+    if (stopBlock && block > 0 && block < stopBlock) tokenReachedStop = true;
   }
 
   cursor.transactions = {
