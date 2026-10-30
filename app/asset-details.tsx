@@ -268,7 +268,7 @@ export default function AssetDetails() {
         ) : rows.map((row) => (
           <TouchableOpacity key={row.id} style={styles.row} activeOpacity={0.78} onPress={() => Linking.openURL(row.explorerUrl)}>
             <View style={[styles.directionIcon, row.failed && styles.failedIcon]}>
-              <Ionicons name={row.failed ? 'close' : row.incoming ? 'arrow-down-left' : 'arrow-up-right'} size={19} color={row.failed ? '#B42318' : row.incoming ? '#059669' : '#6C4CF1'} />
+              <Ionicons name={row.failed ? 'close' : row.incoming ? 'arrow-down-left-box' : 'arrow-up-right'} size={19} color={row.failed ? '#B42318' : row.incoming ? '#059669' : '#6C4CF1'} />
             </View>
             <View style={styles.rowInfo}>
               <Text style={styles.rowTitle}>{row.title}</Text>
