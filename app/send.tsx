@@ -357,7 +357,7 @@ export default function Send() {
               <View style={styles.sheetHandle} />
               <Text style={styles.pinTitle}>Authorize transaction</Text>
               <Text style={styles.pinSubtitle}>Enter your 6-digit wallet PIN to sign and broadcast this transfer.</Text>
-              <TextInput value={pinInput} onChangeText={(value) => { setPinInput(value.replace(/\\D/g, '').slice(0, 6)); setError(''); }} keyboardType="number-pad" secureTextEntry maxLength={6} autoFocus style={styles.pinInput} placeholder="••••••" placeholderTextColor="#9A95A8" />
+              <TextInput value={pinInput} onChangeText={(value) => { setPinInput(value.replace(/\D/g, '').slice(0, 6)); setError(''); }} keyboardType="number-pad" secureTextEntry maxLength={6} autoFocus style={styles.pinInput} placeholder="••••••" placeholderTextColor="#9A95A8" />
               {error ? <Text style={styles.errorText}>{error}</Text> : null}
               <TouchableOpacity style={[styles.primaryButton, (busy || pinInput.length !== 6) && styles.disabledButton]} onPress={handleConfirm} disabled={busy || pinInput.length !== 6}>
                 {busy ? <ActivityIndicator color="#FFFFFF" /> : <><Ionicons name="shield-checkmark" size={18} color="#FFFFFF" /><Text style={styles.primaryText}>Sign & broadcast</Text></>}
