@@ -94,23 +94,54 @@ export default function Send() {
       const mnemonic = await getMnemonic();
       if (!mnemonic) throw new Error('Wallet secret unavailable. Restore your wallet.');
       if (activeBlockchain === 'solana') {
-        if (isTokenTransfer) throw new Error('SPL token sending is not enabled yet. Native SOL transfers are supported.');
         const recipient = bs58.decode(to.trim());
         if (recipient.length !== 32) throw new Error('Enter a valid Solana address.');
         if (to.trim() === address) throw new Error('Recipient must be different from your own address.');
-        const lamports = ethers.parseUnits(amount, 9);
         const url = getSolanaRpcEndpoint(network);
-        const [latest, b] = await Promise.all([
+        const [latest, nativeBalance] = await Promise.all([
           solRpc(url, 'getLatestBlockhash', [{ commitment: 'confirmed' }]),
           solRpc(url, 'getBalance', [address, { commitment: 'confirmed' }]),
         ]);
-        const keys = [...bs58.decode(address), ...recipient, ...bs58.decode('11111111111111111111111111111111')];
-        const data = [...u32(2), ...u64(lamports)];
-        const msg = Uint8Array.from([1, 0, 1, ...shortvec(3), ...keys, ...bs58.decode(latest.value.blockhash), ...shortvec(1), 2, ...shortvec(2), 0, 1, ...shortvec(data.length), ...data]);
+        let msg: Uint8Array;
+        if (isTokenTransfer) {
+          if (!Number.isInteger(tokenDecimals) || tokenDecimals < 0 || tokenDecimals > 255) throw new Error('Invalid token decimals.');
+          const [sourceAccounts, destinationAccounts, mintAccount] = await Promise.all([
+            solRpc(url, 'getTokenAccountsByOwner', [address, { mint: tokenContract }, { encoding: 'jsonParsed', commitment: 'confirmed' }]),
+            solRpc(url, 'getTokenAccountsByOwner', [to.trim(), { mint: tokenContract }, { encoding: 'jsonParsed', commitment: 'confirmed' }]),
+            solRpc(url, 'getAccountInfo', [tokenContract, { encoding: 'base64', commitment: 'confirmed' }]),
+          ]);
+          const source = sourceAccounts?.value?.[0]?.pubkey;
+          const destination = destinationAccounts?.value?.[0]?.pubkey;
+          const tokenProgram = mintAccount?.value?.owner;
+          const tokenPrograms = ['TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb'];
+          if (!mintAccount?.value || !tokenPrograms.includes(tokenProgram)) throw new Error('This SPL token mint is not available on the selected Solana network.');
+          if (!source) throw new Error('No token account was found for this asset in your wallet.');
+          if (!destination) throw new Error('The recipient does not have an account for this token yet. Ask them to create or receive this token first.');
+          const sourceInfo = sourceAccounts.value[0].account.data.parsed.info.tokenAmount;
+          const rawBalance = BigInt(sourceInfo.amount || '0');
+          const tokenAmount = ethers.parseUnits(amount, tokenDecimals);
+          if (tokenAmount > rawBalance) throw new Error('Insufficient token balance.');
+          const keys = [address, source, tokenContract, destination, tokenProgram].map((key) => [...bs58.decode(key)]);
+          const data = [12, ...u64(tokenAmount), tokenDecimals];
+          // SPL Token / Token-2022 TransferChecked instruction. The fee payer
+          // is the wallet signer; the recipient must already have a token ATA.
+          msg = Uint8Array.from([
+            1, 0, 2, ...shortvec(keys.length), ...keys.flat(),
+            ...bs58.decode(latest.value.blockhash),
+            ...shortvec(1), 4, ...shortvec(4), 1, 2, 3, 0,
+            ...shortvec(data.length), ...data,
+          ]);
+        } else {
+          const lamports = ethers.parseUnits(amount, 9);
+          const keys = [...bs58.decode(address), ...recipient, ...bs58.decode('11111111111111111111111111111111')];
+          const data = [...u32(2), ...u64(lamports)];
+          msg = Uint8Array.from([1, 0, 1, ...shortvec(3), ...keys, ...bs58.decode(latest.value.blockhash), ...shortvec(1), 2, ...shortvec(2), 0, 1, ...shortvec(data.length), ...data]);
+          if (lamports > BigInt(nativeBalance.value)) throw new Error('Insufficient SOL balance.');
+        }
         const feeResult = await solRpc(url, 'getFeeForMessage', [Buffer.from(msg).toString('base64'), { commitment: 'confirmed', encoding: 'base64' }]);
         if (feeResult.value === null) throw new Error('Unable to estimate network fee.');
         const fee = BigInt(feeResult.value);
-        if (lamports + fee > BigInt(b.value)) throw new Error('Insufficient SOL for amount and network fee.');
+        if (fee > BigInt(nativeBalance.value) - (isTokenTransfer ? 0n : ethers.parseUnits(amount, 9))) throw new Error('Insufficient SOL for the network fee.');
         setReview({ to: to.trim(), amount, fee: ethers.formatUnits(fee, 9), feeSymbol: 'SOL', network: testnet ? 'Solana Devnet' : 'Solana Mainnet', solMessage: msg, blockhash: latest.value.blockhash, lastValidBlockHeight: latest.value.lastValidBlockHeight });
       } else {
         if (!ethers.isAddress(to.trim())) throw new Error('Enter a valid EVM wallet address.');
