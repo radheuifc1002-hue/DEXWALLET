@@ -60,6 +60,7 @@ const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
 const AUTO_LOCK_TIMER_KEY = 'xu_wallet_auto_lock_minutes';
 const BACKGROUND_AT_KEY = 'xu_wallet_background_at';
+const CUSTOM_TOKENS_KEY = 'xu_wallet_custom_tokens';
 
 const NATIVE_TOKEN_DEFS: { blockchain: Blockchain; id: string; name: string; symbol: string }[] = [
   { blockchain: 'ethereum', id: 'eth', name: 'Ethereum', symbol: 'ETH' },
@@ -86,12 +87,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const init = async () => {
       try {
-        const [storedPin, { addresses, created, mnemonic }, bio, storedTimer, storedBackgroundAt] = await Promise.all([
+        const [storedPin, { addresses, created, mnemonic }, bio, storedTimer, storedBackgroundAt, storedCustomTokens] = await Promise.all([
           getPin(),
           loadWalletFromStorage(),
           getBiometricEnabled(),
           AsyncStorage.getItem(AUTO_LOCK_TIMER_KEY),
           AsyncStorage.getItem(BACKGROUND_AT_KEY),
+          AsyncStorage.getItem(CUSTOM_TOKENS_KEY),
         ]);
         const parsedTimer = storedTimer === null ? 5 : Number(storedTimer);
         const timer = [0, 1, 5, 15, 30].includes(parsedTimer) ? parsedTimer : 5;
@@ -104,7 +106,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           setIsWalletCreated(true);
           setWalletAddresses(addresses);
           if (mnemonic) setSeedPhrase(mnemonic.split(' '));
-          setTokens(NATIVE_TOKEN_DEFS.map((d) => ({ ...d, balance: 0, balanceUSD: 0 })));
+          const customTokens = storedCustomTokens ? JSON.parse(storedCustomTokens) as Token[] : [];
+          setTokens([...NATIVE_TOKEN_DEFS.map((d) => ({ ...d, balance: 0, balanceUSD: 0 })), ...customTokens]);
           const elapsedMs = lastBackgroundAt.current === null ? Number.POSITIVE_INFINITY : Date.now() - lastBackgroundAt.current;
           setIsLockedState(timer > 0 && lastBackgroundAt.current !== null && Number.isFinite(elapsedMs) && elapsedMs >= 0 && elapsedMs >= timer * 60 * 1000);
           lastBackgroundAt.current = null;
@@ -192,7 +195,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     await saveWalletToStorage(addresses, mnemonic);
     setSeedPhrase(mnemonic.split(' '));
     const native = NATIVE_TOKEN_DEFS.map((d) => ({ ...d, balance: 0, balanceUSD: 0 }));
-    setTokens(native);
+    const storedCustom = await AsyncStorage.getItem(CUSTOM_TOKENS_KEY);
+    const custom = storedCustom ? JSON.parse(storedCustom) as Token[] : [];
+    setTokens([...native, ...custom]);
     setIsWalletCreated(true);
     setIsLocked(false);
     lastBackgroundAt.current = null;
@@ -203,13 +208,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const addToken = useCallback((token: Token) => {
     setTokens((prev) => {
-      if (prev.find((t) => t.id === token.id)) return prev;
-      return [...prev, token];
+      const exists = prev.some((t) => t.id === token.id);
+      const next = exists ? prev.map((t) => t.id === token.id ? token : t) : [...prev, token];
+      void AsyncStorage.setItem(CUSTOM_TOKENS_KEY, JSON.stringify(next.filter((t) => Boolean(t.contractAddress))));
+      return next;
     });
   }, []);
 
   const resetWallet = useCallback(async () => {
     await clearWalletFromStorage();
+    await AsyncStorage.removeItem(CUSTOM_TOKENS_KEY);
     setPinState(null);
     setSeedPhrase([]);
     setWalletAddresses(null);
