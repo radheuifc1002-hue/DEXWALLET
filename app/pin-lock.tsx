@@ -23,7 +23,6 @@ export default function PinLock() {
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const biometricInProgress = useRef(false);
   const mounted = useRef(true);
-  const biometricInProgress = useRef(false);
 
   const PIN_LENGTH = 6;
 
