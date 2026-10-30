@@ -102,7 +102,7 @@ export default function Send() {
   }, [chain, config, fromAddress, isTestnet, rpc]);
 
   const parsedAmount = useMemo(() => {
-    if (!/^\\d+(\\.\\d*)?$/.test(amount.trim()) || !config) return null;
+    if (!/^\d+(\.\d*)?$/.test(amount.trim()) || !config) return null;
     try { return ethers.parseUnits(amount.trim(), config.decimals); } catch { return null; }
   }, [amount, config]);
 
@@ -165,7 +165,7 @@ export default function Send() {
   const handleConfirm = async () => {
     if (sendingRef.current || busy) return;
     setError('');
-    if (!/^\\d{6}$/.test(pinInput)) { setError('Enter your 6-digit wallet PIN.'); return; }
+    if (!/^\d{6}$/.test(pinInput)) { setError('Enter your 6-digit wallet PIN.'); return; }
     setBusy(true);
     sendingRef.current = true;
     try {
