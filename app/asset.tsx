@@ -84,7 +84,6 @@ export default function AssetProfile() {
       }
     } catch (e: any) {
       setDisplayBalance(null);
-      setError(e?.message || 'Unable to load live balance.');
     }
     try {
       const rows = await fetchAssetHistory(asset.blockchain, network, assetWalletAddress, asset);
@@ -132,6 +131,7 @@ export default function AssetProfile() {
             history.length === 0 ? <View style={s.state}><Ionicons name="receipt-outline" size={32} color="#B1ABBE" /><Text style={s.stateText}>No transactions found for this asset.</Text></View> :
             history.map((item) => <ActivityRow key={item.id} item={item} />)}
         </View>
+        <TouchableOpacity style={s.providerCredit} onPress={() => Linking.openURL(asset.blockchain === 'ethereum' ? 'https://routescan.io' : asset.blockchain === 'bnb' ? 'https://binplorer.com' : asset.blockchain === 'polygon' ? 'https://polygon.blockscout.com' : 'https://explorer.solana.com')}><Text style={s.providerCreditText}>Transaction data by {asset.blockchain === 'ethereum' ? 'Routescan' : asset.blockchain === 'bnb' ? 'Binplorer' : asset.blockchain === 'polygon' ? 'Blockscout' : 'Solana RPC'}</Text></TouchableOpacity>
         {!loading && history.length >= 50 ? <TouchableOpacity style={s.explorerMore} onPress={() => Linking.openURL(explorer)}><Text style={s.explorerText}>View explorer for more transactions</Text><Ionicons name="open-outline" size={16} color="#6C4CF1" /></TouchableOpacity> : null}
         <View style={{ height: 24 }} />
       </ScrollView>
@@ -165,6 +165,7 @@ const s = StyleSheet.create({
   activityIcon: { width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center' }, activityMain: { flex: 1 }, activityTitle: { color: '#211B35', fontSize: 13, fontWeight: '800' }, activitySub: { color: '#777286', fontSize: 10, marginTop: 3 }, activityTime: { color: '#A19BAB', fontSize: 9, marginTop: 4 },
   activityRight: { alignItems: 'flex-end', maxWidth: '35%' }, activityAmount: { color: '#211B35', fontSize: 11, fontWeight: '800' }, status: { fontSize: 9, fontWeight: '800', marginTop: 4 },
   state: { alignItems: 'center', justifyContent: 'center', padding: 30, gap: 10 }, stateText: { color: '#898397', fontSize: 12, textAlign: 'center' }, errorText: { color: '#B42318', fontSize: 12, textAlign: 'center' },
+  providerCredit: { alignItems: 'center', paddingTop: 10 }, providerCreditText: { color: '#A29BAF', fontSize: 9, textDecorationLine: 'underline' },
   explorerMore: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 16 }, explorerText: { color: '#6C4CF1', fontSize: 12, fontWeight: '800' },
   bottomActions: { flexDirection: 'row', gap: 10, padding: 16, paddingBottom: 20, borderTopWidth: 1, borderTopColor: '#EEEAF5', backgroundColor: '#FFFFFF' },
   sendButton: { flex: 1, minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#6C4CF1', borderRadius: 14 }, sendText: { color: '#FFFFFF', fontSize: 13, fontWeight: '900' },
