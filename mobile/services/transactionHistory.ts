@@ -49,12 +49,19 @@ function shortAddress(value: string) {
 }
 
 function amountFromRaw(value: unknown, decimals: unknown) {
-  const raw = Number(value || 0);
   const places = Math.max(0, Math.min(36, Number(decimals ?? 18)));
-  const amount = raw / Math.pow(10, places);
-  return Number.isFinite(amount)
-    ? amount.toLocaleString(undefined, { maximumFractionDigits: 6 })
-    : '';
+  try {
+    const raw = BigInt(String(value ?? '0'));
+    const divisor = 10n ** BigInt(places);
+    const whole = raw / divisor;
+    const remainder = raw % divisor;
+    if (places === 0) return whole.toString();
+    const fraction = remainder.toString().padStart(places, '0').slice(0, 6).replace(/0+$/, '');
+    return fraction ? whole.toString() + '.' + fraction : whole.toString();
+  } catch {
+    const parsed = Number(value || 0) / Math.pow(10, places);
+    return Number.isFinite(parsed) ? parsed.toLocaleString(undefined, { maximumFractionDigits: 6 }) : '';
+  }
 }
 
 function seconds(value: unknown) {
