@@ -96,6 +96,7 @@ function AppStack() {
         <Stack.Screen name="(tabs)" options={{ animation: 'none' }} />
         <Stack.Screen name="send" options={{ animation: 'slide_from_bottom' }} />
         <Stack.Screen name="import-token" options={{ animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="transaction-history" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="receive" options={{ animation: 'slide_from_bottom' }} />
         <Stack.Screen name="export-seed" />
         <Stack.Screen name="change-pin" />
