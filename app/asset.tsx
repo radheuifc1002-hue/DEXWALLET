@@ -34,9 +34,9 @@ function ActivityRow({ item }: { item: WalletActivity }) {
 export default function AssetProfile() {
   const router = useRouter();
   const params = useLocalSearchParams<{ id?: string }>();
-  const { tokens, selectedBlockchain, network, assetWalletAddresses, setSelectedBlockchain, isLocked } = useWallet();
-  const assetWalletAddress = asset ? (assetWalletAddresses?.[asset.blockchain] || '') : '';
+  const { tokens, selectedBlockchain, network, walletAddresses, setSelectedBlockchain, isLocked } = useWallet();
   const asset = useMemo(() => tokens.find((token) => token.id === params.id), [tokens, params.id]);
+  const assetWalletAddress = asset ? (walletAddresses?.[asset.blockchain] || '') : '';
   const [history, setHistory] = useState<WalletActivity[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
