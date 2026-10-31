@@ -68,7 +68,7 @@ export default async function handler(req: Request, res: Response) {
     // Keep each address-direction query bounded. trace_filter over genesis-to-tip
     // can exceed provider range/response limits and stall a wallet screen.
     const latestBlock = BigInt(String(await rpc('eth_blockNumber', [])));
-    const fromBlock = latestBlock > 20000n ? latestBlock - 20000n : 0n;
+    const fromBlock = latestBlock > 10000n ? latestBlock - 10000n : 0n;
     const range = {
       fromBlock: '0x' + fromBlock.toString(16),
       toBlock: '0x' + latestBlock.toString(16),
@@ -99,7 +99,7 @@ export default async function handler(req: Request, res: Response) {
       JSON.stringify(b.traceAddress).localeCompare(JSON.stringify(a.traceAddress))
     ).slice(0, MAX_ROWS);
 
-    const blockNumbers = [...new Set(latest.map((trace: any) => String(trace.blockNumber)))];
+    const blockNumbers = [...new Set(latest.map((trace: any) => '0x' + BigInt(String(trace.blockNumber)).toString(16)))];
     const timestampEntries = await Promise.all(blockNumbers.map(async (blockNumber) => {
       try {
         const response = await fetch(endpoint, {
@@ -114,7 +114,7 @@ export default async function handler(req: Request, res: Response) {
     }));
     const timestamps = new Map(timestampEntries);
 
-    const rows = latest.map((trace: any, index: number) => {
+    const rows = latest.map((trace: any) => {
       const from = String(trace.action.from || '');
       const to = String(trace.action.to || '');
       const incoming = to.toLowerCase() === wallet.toLowerCase();
