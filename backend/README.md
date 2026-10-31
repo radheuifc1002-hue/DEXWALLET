@@ -14,7 +14,7 @@ Routes:
 Supported indexer targets in this branch:
 - Ethereum mainnet and Sepolia
 - Polygon mainnet
-- BNB Smart Chain mainnet and testnet (Routescan Blockscout API)
+- BNB Smart Chain mainnet and testnet (Etherscan API V2, chain IDs 56 and 97)
 - Solana mainnet and devnet (Helius address-history and transfer APIs)
 
 Polygon Amoy remains device-direct and is not currently server-indexed.
@@ -37,7 +37,7 @@ Run it on an always-on container service with restart-on-failure, health monitor
 
 Required worker environment variables:
 - `DATABASE_URL` — Neon pooled connection string for `dexwallet_indexer`.
-- `ROUTESCAN_API_KEY` — Routescan key for BNB mainnet/testnet Blockscout-compatible history. The worker intentionally fails closed for BNB if it is missing.
+- `ETHERSCAN_API_KEY` — Etherscan API V2 key for BNB mainnet/testnet transaction and token-transfer history. The worker intentionally fails closed for BNB if it is missing.
 - `HELIUS_API_KEY` — Helius key for Solana mainnet/devnet historical transactions and parsed transfers. Helius historical transfer APIs have plan-specific availability and credit costs; verify the account plan before enabling production backfills.
 
 Do not put worker provider keys in the APK or Vercel function environment unless a specific API function needs them. Provider keys must remain server-side.
