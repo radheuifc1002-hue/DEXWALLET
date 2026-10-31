@@ -103,6 +103,16 @@ function mapTransfer(
   };
 }
 
+function getNativeTransferCategories(chain: Options['chain'], network: Options['network']): string[] {
+  // Alchemy Transfers API exposes internal transfers only on Ethereum mainnet
+  // and Polygon mainnet. BNB Chain and EVM testnets must use external only.
+  const categories = ['external'];
+  if ((chain === 'ethereum' || chain === 'polygon') && network === 'mainnet') {
+    categories.push('internal');
+  }
+  return categories;
+}
+
 export async function fetchEvmAssetHistory(options: Options): Promise<EvmHistoryRow[]> {
   if (!options.walletAddress) throw new Error('Wallet address is missing for this network.');
   if (!options.isNative && !/^0x[a-fA-F0-9]{40}$/.test(options.contractAddress)) {
@@ -112,19 +122,28 @@ export async function fetchEvmAssetHistory(options: Options): Promise<EvmHistory
   const endpoint = getEvmRpcConfig(options.chain, options.network).rpc;
   const limit = Math.min(50, Math.max(1, options.limit || 50));
 
+  const nativeCategories = getNativeTransferCategories(options.chain, options.network);
   const requests = options.isNative
     ? [
-        requestTransfers(endpoint, options.walletAddress, 'fromAddress', ['external', 'internal']),
-        requestTransfers(endpoint, options.walletAddress, 'toAddress', ['external', 'internal']),
+        requestTransfers(endpoint, options.walletAddress, 'fromAddress', nativeCategories),
+        requestTransfers(endpoint, options.walletAddress, 'toAddress', nativeCategories),
       ]
     : [
         requestTransfers(endpoint, options.walletAddress, 'fromAddress', ['erc20'], options.contractAddress),
         requestTransfers(endpoint, options.walletAddress, 'toAddress', ['erc20'], options.contractAddress),
-        requestTransfers(endpoint, options.walletAddress, 'fromAddress', ['external', 'internal']),
-        requestTransfers(endpoint, options.walletAddress, 'toAddress', ['external', 'internal']),
+        requestTransfers(endpoint, options.walletAddress, 'fromAddress', nativeCategories),
+        requestTransfers(endpoint, options.walletAddress, 'toAddress', nativeCategories),
       ];
 
-  const results = await Promise.all(requests);
+  // Preserve usable history if one direction/provider query fails. In
+  // particular, one unsupported category must never blank supported transfers.
+  const settled = await Promise.allSettled(requests);
+  const failures = settled.filter((result) => result.status === 'rejected') as PromiseRejectedResult[];
+  if (failures.length === settled.length) {
+    const firstError = failures[0]?.reason;
+    throw firstError instanceof Error ? firstError : new Error('Alchemy could not return wallet history.');
+  }
+  const results = settled.map((result) => result.status === 'fulfilled' ? result.value : []);
   const tokenRows = options.isNative ? [] : results.slice(0, 2).flat();
   const interactionRows = options.isNative ? [] : results.slice(2).flat().filter((row: any) =>
     String(row.to || '').toLowerCase() === options.contractAddress.toLowerCase() ||
