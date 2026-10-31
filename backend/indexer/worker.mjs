@@ -95,6 +95,7 @@ async function upsertTransaction(chain, network, row) {
   const confirmations = Math.max(0, asNumber(row.confirmations));
   const status = txStatus(row);
   const type = txType(row);
+  const sourceProvider = chain === 'bnb' || (chain === 'polygon' && network === 'testnet') ? 'etherscan_v2' : 'blockscout';
   await sql`
     INSERT INTO public.indexed_transactions
       (chain, network, tx_hash, block_number, block_hash, transaction_index,
@@ -108,7 +109,7 @@ async function upsertTransaction(chain, network, row) {
        ${nativeSymbols[chain] || 'ETH'}, ${status}, ${type}, ${gasUsed},
        ${gasPrice}, ${fee}, ${nonce},
        ${chain === 'ethereum' ? (network === 'mainnet' ? 'https://etherscan.io/tx/' : 'https://sepolia.etherscan.io/tx/') : chain === 'bnb' ? (network === 'mainnet' ? 'https://bscscan.com/tx/' : 'https://testnet.bscscan.com/tx/') : 'https://polygonscan.com/tx/'} || ${hash},
-       ${chain === 'bnb' ? 'etherscan_v2' : 'blockscout'}, ${confirmations}, FALSE, NOW())
+       ${sourceProvider}, ${confirmations}, FALSE, NOW())
     ON CONFLICT (chain, network, tx_hash) DO UPDATE SET
       block_number = COALESCE(EXCLUDED.block_number, indexed_transactions.block_number),
       block_hash = COALESCE(EXCLUDED.block_hash, indexed_transactions.block_hash),
@@ -145,12 +146,13 @@ async function upsertTokenTransfer(chain, network, row) {
   const timestamp = iso(row.timestamp);
   const amount = String(row.total?.value ?? row.value ?? '0');
   const decimals = Math.max(0, Math.min(36, asNumber(token.decimals ?? row.token_decimals, 18)));
+  const sourceProvider = chain === 'bnb' || (chain === 'polygon' && network === 'testnet') ? 'etherscan_v2' : 'blockscout';
   await sql`
     INSERT INTO public.indexed_transactions
       (chain, network, tx_hash, block_number, block_timestamp, from_address, to_address,
        value_raw, value_decimals, asset_symbol, tx_status, tx_type, source_provider)
     VALUES (${chain}, ${network}, ${hash}, ${block}, ${timestamp}, ${from}, ${to},
-       0, 18, ${nativeSymbols[chain] || 'ETH'}, 'unknown', 'token_transfer', ${chain === 'bnb' ? 'etherscan_v2' : 'blockscout'})
+       0, 18, ${nativeSymbols[chain] || 'ETH'}, 'unknown', 'token_transfer', ${sourceProvider})
     ON CONFLICT (chain, network, tx_hash) DO UPDATE SET
       block_number = COALESCE(indexed_transactions.block_number, EXCLUDED.block_number),
       block_timestamp = COALESCE(indexed_transactions.block_timestamp, EXCLUDED.block_timestamp),
@@ -165,7 +167,7 @@ async function upsertTokenTransfer(chain, network, row) {
        block_timestamp, source_provider)
     VALUES (${chain}, ${network}, ${hash}, ${eventIndex}, ${tokenAddress},
        ${token.symbol || null}, ${token.name || null}, ${decimals}, ${from}, ${to},
-       ${amount}, ${block}, ${timestamp}, ${chain === 'bnb' ? 'etherscan_v2' : 'blockscout'})
+       ${amount}, ${block}, ${timestamp}, ${sourceProvider})
     ON CONFLICT (chain, network, tx_hash, event_index) DO UPDATE SET
       token_symbol = COALESCE(EXCLUDED.token_symbol, indexed_token_transfers.token_symbol),
       token_name = COALESCE(EXCLUDED.token_name, indexed_token_transfers.token_name),
@@ -371,7 +373,7 @@ async function processJob(job) {
 
   await sql`
     INSERT INTO public.api_metric_events (service, operation, chain, network, outcome, provider_key)
-    VALUES ('indexer', ${job.job_type}, ${chain}, ${network}, 'success', ${chain === 'bnb' ? 'etherscan_v2' : 'blockscout'})
+    VALUES ('indexer', ${job.job_type}, ${chain}, ${network}, 'success', ${sourceProvider})
   `;
   await sql`
     UPDATE public.indexer_jobs
@@ -629,7 +631,7 @@ async function failJob(job, error) {
   await sql`
     INSERT INTO public.api_metric_events (service, operation, chain, network, outcome, provider_key, error_category)
     VALUES ('indexer', ${job.job_type}, ${job.chain}, ${job.network},
-      ${dead ? 'error' : 'timeout'}, ${job.chain === 'solana' ? 'helius' : job.chain === 'bnb' ? 'etherscan_v2' : 'blockscout'}, 'provider_or_worker_failure')
+      ${dead ? 'error' : 'timeout'}, ${job.chain === 'solana' ? 'helius' : job.chain === 'bnb' || (job.chain === 'polygon' && job.network === 'testnet') ? 'etherscan_v2' : 'blockscout'}, 'provider_or_worker_failure')
   `;
 }
 
