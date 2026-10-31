@@ -2,20 +2,20 @@ const rpcConfig = {
   version: 1,
   chains: {
     ethereum: {
-      mainnet: { chainId: 1, endpoints: ['https://ethereum-rpc.publicnode.com', 'https://eth.api.pocket.network', 'https://eth-mainnet.g.alchemy.com/public'] },
-      testnet: { chainId: 11155111, endpoints: ['https://ethereum-sepolia-rpc.publicnode.com', 'https://eth-sepolia-testnet.api.pocket.network'] }
+      mainnet: { chainId: 1, endpoints: ['https://dexwallet-omega.vercel.app/api/rpc?chain=ethereum&network=mainnet', 'https://dexwallet-omega.vercel.app/api/rpc?chain=ethereum&network=mainnet', 'https://dexwallet-omega.vercel.app/api/rpc?chain=ethereum&network=mainnet'] },
+      testnet: { chainId: 11155111, endpoints: ['https://dexwallet-omega.vercel.app/api/rpc?chain=ethereum&network=testnet', 'https://dexwallet-omega.vercel.app/api/rpc?chain=ethereum&network=testnet'] }
     },
     bnb: {
-      mainnet: { chainId: 56, endpoints: ['https://bsc-rpc.publicnode.com', 'https://bsc.api.pocket.network', 'https://bsc-dataseed.bnbchain.org'] },
-      testnet: { chainId: 97, endpoints: ['https://bsc-testnet-rpc.publicnode.com', 'https://bsc-testnet-dataseed.bnbchain.org'] }
+      mainnet: { chainId: 56, endpoints: ['https://dexwallet-omega.vercel.app/api/rpc?chain=bnb&network=mainnet', 'https://dexwallet-omega.vercel.app/api/rpc?chain=bnb&network=mainnet', 'https://dexwallet-omega.vercel.app/api/rpc?chain=bnb&network=mainnet'] },
+      testnet: { chainId: 97, endpoints: ['https://dexwallet-omega.vercel.app/api/rpc?chain=bnb&network=testnet', 'https://dexwallet-omega.vercel.app/api/rpc?chain=bnb&network=testnet'] }
     },
     polygon: {
-      mainnet: { chainId: 137, endpoints: ['https://polygon-bor-rpc.publicnode.com', 'https://poly.api.pocket.network'] },
-      testnet: { chainId: 80002, endpoints: ['https://polygon-amoy-bor-rpc.publicnode.com', 'https://poly-amoy-testnet.api.pocket.network'] }
+      mainnet: { chainId: 137, endpoints: ['https://dexwallet-omega.vercel.app/api/rpc?chain=polygon&network=mainnet', 'https://dexwallet-omega.vercel.app/api/rpc?chain=polygon&network=mainnet'] },
+      testnet: { chainId: 80002, endpoints: ['https://dexwallet-omega.vercel.app/api/rpc?chain=polygon&network=testnet', 'https://dexwallet-omega.vercel.app/api/rpc?chain=polygon&network=testnet'] }
     },
     solana: {
-      mainnet: { endpoints: ['https://api.mainnet-beta.solana.com', 'https://solana.api.pocket.network', 'https://api.mainnet.solana.com'] },
-      testnet: { endpoints: ['https://api.devnet.solana.com'] }
+      mainnet: { endpoints: ['https://dexwallet-omega.vercel.app/api/rpc?chain=solana&network=mainnet', 'https://dexwallet-omega.vercel.app/api/rpc?chain=solana&network=mainnet', 'https://dexwallet-omega.vercel.app/api/rpc?chain=solana&network=mainnet'] },
+      testnet: { endpoints: ['https://dexwallet-omega.vercel.app/api/rpc?chain=solana&network=testnet'] }
     }
   }
 };
