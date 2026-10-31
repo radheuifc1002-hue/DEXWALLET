@@ -40,7 +40,7 @@ test('keyset pagination distinguishes native rows and token log events at the sa
 });
 
 test('indexed-history only advertises networks with a configured worker', () => {
-  assert.match(historyApi, /'bnb:mainnet', 'bnb:testnet', 'solana:mainnet', 'solana:devnet'/);
+  assert.match(historyApi, /'polygon:testnet', 'bnb:mainnet', 'bnb:testnet', 'solana:mainnet', 'solana:devnet'/);
   assert.match(registerApi, /chain === 'bnb'.*chain === 'solana'/s);
 });
 
@@ -83,5 +83,6 @@ test('API readiness requires a live worker and all mainnet/testnet indexer targe
   assert.match(readyApi, /'polygon:testnet'/);
   assert.match(readyApi, /'bnb:testnet'/);
   assert.match(readyApi, /'solana:devnet'/);
+  assert.match(worker, /'polygon:testnet', 'bnb:mainnet', 'bnb:testnet'/);
   assert.match(readyApi, /last_seen_at/);
 });
