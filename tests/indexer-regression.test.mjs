@@ -7,6 +7,7 @@ const historyApi = readFileSync(new URL('../backend/api/indexed-history.ts', imp
 const registerApi = readFileSync(new URL('../backend/api/indexer/register-address.ts', import.meta.url), 'utf8');
 const mobileHistory = readFileSync(new URL('../mobile/services/transactionHistory.ts', import.meta.url), 'utf8');
 const historyScreen = readFileSync(new URL('../app/transaction-history.tsx', import.meta.url), 'utf8');
+const readyApi = readFileSync(new URL('../backend/api/ready.ts', import.meta.url), 'utf8');
 
 test('native transaction upsert promotes token-only placeholders and contract calls', () => {
   assert.match(worker, /WHEN EXCLUDED\.tx_type = 'contract_interaction' THEN 'contract_interaction'/);
@@ -73,4 +74,14 @@ test('mobile wallet history uses the isolated API and keeps device-direct fallba
   assert.match(mobileHistory, /Server history is an optimization, never a hard dependency/);
   assert.match(historyScreen, /fetchIndexedWalletHistoryPage/);
   assert.match(historyScreen, /indexedPage\.nextCursor/);
+});
+
+test('API readiness requires a live worker and all mainnet/testnet indexer targets', () => {
+  assert.match(worker, /indexer_worker_heartbeats/);
+  assert.match(worker, /last_seen_at = NOW\(\)/);
+  assert.match(readyApi, /REQUIRED_INDEXED_NETWORKS/);
+  assert.match(readyApi, /'polygon:testnet'/);
+  assert.match(readyApi, /'bnb:testnet'/);
+  assert.match(readyApi, /'solana:devnet'/);
+  assert.match(readyApi, /last_seen_at/);
 });
