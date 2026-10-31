@@ -32,7 +32,7 @@ const FAILURE_COOLDOWN_MS = 60_000;
 const MAX_FAILURE_COOLDOWN_MS = 15 * 60_000;
 const HEALTH_CHECK_INTERVAL_MS = 10 * 60_000;
 const HEALTH_FRESHNESS_MS = 90_000;
-// TESTING ONLY: user-provided Alchemy key. Move to EAS secrets before production.
+// TESTING ONLY: user-provided Alchemy key. Client-bundled keys are extractable; replace/restrict before production.
 const TESTING_ALCHEMY_API_KEY = 'alch_U5vIpm4Qw0xerQVuBiIIA';
 
 const EXPECTED_CHAIN_IDS: Record<EvmChain, Record<RpcNetwork, number>> = {
