@@ -17,7 +17,6 @@ Supported indexer targets in this branch:
 - BNB Smart Chain mainnet and testnet (Etherscan API V2, chain IDs 56 and 97)
 - Solana mainnet and devnet (Helius address-history and transfer APIs)
 
-Polygon Amoy remains device-direct and is not currently server-indexed.
 
 Required Vercel **Production** environment variables:
 - `DATABASE_URL` — Neon pooled connection string using the restricted `dexwallet_api` role. Server-side only.
