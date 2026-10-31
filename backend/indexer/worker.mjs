@@ -358,7 +358,7 @@ async function upsertSolanaTransaction(network, wallet, row) {
       ${wallet}, ${contractProgram}, 0, 9, 'SOL', ${status}, ${txType},
       ${meta.fee == null ? null : String(meta.fee)},
       ${'https://explorer.solana.com/tx/' + signature + (network === 'devnet' ? '?cluster=devnet' : '')},
-      'helius', ${row.confirmationStatus === 'finalized' ? 32 : 0},
+      'helius', ${row.confirmationStatus === 'finalized' ? 1 : 0},
       ${row.confirmationStatus === 'finalized'}, NOW())
     ON CONFLICT (chain, network, tx_hash) DO UPDATE SET
       block_number = COALESCE(EXCLUDED.block_number, indexed_transactions.block_number),
@@ -489,7 +489,6 @@ async function processSolanaJob(job, address, syncState) {
     UPDATE public.address_sync_state
     SET cursor = ${done ? null : nextCursor},
         last_indexed_block = GREATEST(COALESCE(last_indexed_block, 0), ${highestSlot}),
-        confirmed_through_block = GREATEST(COALESCE(confirmed_through_block, 0), ${highestSlot}),
         last_indexed_at = NOW(), sync_status = ${done ? 'idle' : 'syncing'},
         last_error_category = NULL, lease_owner = NULL, lease_expires_at = NULL,
         updated_at = NOW()
