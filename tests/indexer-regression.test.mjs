@@ -43,7 +43,8 @@ test('indexed-history only advertises networks with a configured worker', () => 
 
 test('BNB mainnet and testnet use Etherscan V2 with chain IDs 56 and 97', () => {
   assert.match(worker, /ETHERSCAN_API_KEY is required for BNB mainnet\/testnet indexing/);
-  assert.match(worker, /chainId = network === 'mainnet' \? 56 : 97/);
+  assert.match(worker, /chainId = chain === 'bnb' \? \(network === 'mainnet' \? 56 : 97\) : 80002/);
+  assert.match(worker, /chain === 'polygon' && network === 'testnet'/);
   assert.match(worker, /https:\/\/api\.etherscan\.io\/v2\/api/);
   assert.match(worker, /fetchBnbEtherscanPage\(address, network, 'txlist'/);
   assert.match(worker, /fetchBnbEtherscanPage\(address, network, 'tokentx'/);
