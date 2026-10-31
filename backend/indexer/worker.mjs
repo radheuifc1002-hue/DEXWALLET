@@ -238,7 +238,7 @@ async function fetchBnbEtherscanPage(address, network, action, page) {
           nonce: row.nonce,
           confirmations: Number(row.confirmations || 0),
           status: String(row.isError || '0') === '1' ? 'error' : 'ok',
-          method: row.functionName || row.methodId || null,
+          method: row.functionName || (row.methodId && row.methodId !== '0x' ? row.methodId : null),
         };
       });
       return { items, next_page_params: items.length === 50 ? { page: page + 1 } : null };
