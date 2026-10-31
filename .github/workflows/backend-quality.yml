@@ -1,0 +1,40 @@
+name: Backend quality gates
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "tests/indexer-regression.test.mjs"
+      - ".github/workflows/backend-quality.yml"
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "tests/indexer-regression.test.mjs"
+      - ".github/workflows/backend-quality.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-quality-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: Validate worker syntax
+        run: node --check backend/indexer/worker.mjs
+      - name: Run indexer regression tests
+        run: node --test tests/indexer-regression.test.mjs
+      - name: Build indexer container
+        run: docker build -t xu-wallet-indexer ./backend/indexer
