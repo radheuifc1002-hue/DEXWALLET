@@ -186,19 +186,22 @@ function getAlchemyEndpoint(chain: RpcChain, network: RpcNetwork): string | null
   return 'https://' + networkName + '.g.alchemy.com/v2/' + encodeURIComponent(apiKey);
 }
 
-function getEndpoints(chain: RpcChain, network: RpcNetwork): RpcEndpoint[] {
+function getAllEndpoints(chain: RpcChain, network: RpcNetwork): RpcEndpoint[] {
   const entry = activeConfig.chains[chain][network];
   const chainId = chain === 'solana' ? undefined : (entry as EvmEndpoint).chainId;
-  const now = Date.now();
   const alchemyEndpoint = getAlchemyEndpoint(chain, network);
   const endpointUrls = alchemyEndpoint
     ? [alchemyEndpoint, ...entry.endpoints.filter((url) => url !== alchemyEndpoint)]
     : entry.endpoints;
-  const endpoints = endpointUrls.map((url, index) => ({
-    url,
-    chainId,
+  return endpointUrls.map((url) => ({ url, chainId }));
+}
+
+function getEndpoints(chain: RpcChain, network: RpcNetwork): RpcEndpoint[] {
+  const now = Date.now();
+  const endpoints = getAllEndpoints(chain, network).map((endpoint, index) => ({
+    ...endpoint,
     index,
-    state: health[endpointKey(chain, network, url)],
+    state: health[endpointKey(chain, network, endpoint.url)],
   }));
   const healthy = endpoints.filter((item) => !item.state || item.state.cooldownUntil <= now);
   const allCoolingDown = healthy.length === 0;
@@ -209,8 +212,7 @@ function getEndpoints(chain: RpcChain, network: RpcNetwork): RpcEndpoint[] {
         const cooldownDifference = (a.state?.cooldownUntil ?? 0) - (b.state?.cooldownUntil ?? 0);
         if (cooldownDifference !== 0) return cooldownDifference;
       }
-      // Keep Alchemy first while healthy; public RPCs are measured in parallel
-      // and used in configured order only when the primary is unhealthy.
+      // Preserve Alchemy as primary while healthy; public RPCs remain ordered fallbacks.
       return a.index - b.index;
     })
     .map(({ url, chainId: id }) => ({ url, chainId: id }));
@@ -318,7 +320,9 @@ export function getSolanaRpcEndpoint(network: RpcNetwork): string {
  */
 export async function refreshRpcHealth(chain: RpcChain, network: RpcNetwork): Promise<void> {
   await initializeRpcManager();
-  const endpoints = getEndpoints(chain, network);
+  // Probe every endpoint, including providers in cooldown, so a recovered
+  // primary can be detected and promoted without waiting for every fallback to fail.
+  const endpoints = getAllEndpoints(chain, network);
   await Promise.all(endpoints.map(async (endpoint) => {
     try {
       await verifyEndpoint(chain, network, endpoint);
