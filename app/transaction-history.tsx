@@ -14,6 +14,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useWallet, Blockchain } from '../context/WalletContext';
 import { getEvmRpcConfig, getSolanaRpcEndpoint } from '../mobile/services/rpcManager';
+import { fetchIndexedWalletHistoryPage } from '../mobile/services/transactionHistory';
 
 type HistoryItem = {
   id: string;
@@ -134,6 +135,7 @@ export default function TransactionHistory() {
   const [beforeSignature, setBeforeSignature] = useState('');
   const [polygonTxCursor, setPolygonTxCursor] = useState<any>(null);
   const [polygonTransferCursor, setPolygonTransferCursor] = useState<any>(null);
+  const [indexedCursor, setIndexedCursor] = useState<string | null>(null);
 
   const loadHistory = useCallback(async (reset: boolean) => {
     if (!walletAddress) {
@@ -149,6 +151,7 @@ export default function TransactionHistory() {
       setBeforeSignature('');
       setPolygonTxCursor(null);
       setPolygonTransferCursor(null);
+      setIndexedCursor(null);
     } else {
       setLoadingMore(true);
     }
@@ -156,8 +159,36 @@ export default function TransactionHistory() {
     try {
       let nextItems: HistoryItem[] = [];
       let more = false;
+      const indexedPage = await fetchIndexedWalletHistoryPage({
+        chain: selectedBlockchain,
+        network,
+        walletAddress,
+        isNative: true,
+        limit: PAGE_SIZE,
+        cursor: reset ? null : indexedCursor,
+      });
 
-      if (selectedBlockchain === 'solana') {
+      if (indexedPage?.indexed) {
+        nextItems = indexedPage.rows.map((row) => ({
+          id: row.id,
+          hash: row.hash,
+          title: row.title,
+          subtitle: row.detail,
+          amount: row.amount,
+          timestamp: row.timestamp,
+          status: row.failed ? 'Failed' : 'Confirmed',
+          incoming: row.incoming,
+          explorerUrl: row.explorerUrl,
+        }));
+        setIndexedCursor(indexedPage.nextCursor);
+        more = Boolean(indexedPage.nextCursor);
+      } else {
+        setIndexedCursor(null);
+      }
+
+      if (indexedPage?.indexed) {
+        // The server index provides unified native, token and contract activity.
+      } else if (selectedBlockchain === 'solana') {
         const before = reset ? undefined : beforeSignature || undefined;
         const signatures = await fetchSolanaSignatures(walletAddress, network, before);
         nextItems = signatures.map((entry: any) => ({
@@ -346,7 +377,7 @@ export default function TransactionHistory() {
       setLoadingMore(false);
       setRefreshing(false);
     }
-  }, [walletAddress, selectedBlockchain, network, beforeSignature, page, polygonTxCursor, polygonTransferCursor]);
+  }, [walletAddress, selectedBlockchain, network, beforeSignature, page, polygonTxCursor, polygonTransferCursor, indexedCursor]);
 
   useEffect(() => {
     void loadHistory(true);
