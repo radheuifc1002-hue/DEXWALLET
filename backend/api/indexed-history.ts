@@ -103,7 +103,7 @@ function mapTransaction(row: any, wallet: string, chain: string, network: string
       ? 'Contract interaction · ' + (incoming ? 'From ' : 'To ') + (incoming ? from : to).slice(0, 10) + '…' + (incoming ? from : to).slice(-6)
       : chain === 'solana' && row.tx_type === 'other' ? 'Solana on-chain activity'
       : (incoming ? 'From ' : 'To ') + (incoming ? from : to).slice(0, 10) + '…' + (incoming ? from : to).slice(-6),
-    amount: contractInteraction ? '' : formatRaw(row.value_raw, row.value_decimals) + ' ' + symbol,
+    amount: contractInteraction || (chain === 'solana' && row.tx_type === 'other') ? '' : formatRaw(row.value_raw, row.value_decimals) + ' ' + symbol,
     timestamp: Number.isFinite(timestamp) ? timestamp : 0,
     incoming,
     failed,
