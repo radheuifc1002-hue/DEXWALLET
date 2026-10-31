@@ -71,7 +71,7 @@ async function enforceRateLimit(req: Request) {
   const realIp = req.headers?.['x-real-ip'];
   const forwarded = req.headers?.['x-forwarded-for'];
   const ip = (typeof realIp === 'string' && realIp) ||
-    (typeof forwarded === 'string' ? forwarded.split(',').pop()?.trim() : '') || 'unknown';
+    (typeof forwarded === 'string' ? forwarded.split(',')[0]?.trim() : '') || 'unknown';
   const minute = Math.floor(Date.now() / 60000);
   const bucketKey = createHmac('sha256', secret).update(ip + ':' + minute).digest('hex');
   const sql = neon(process.env.DATABASE_URL!);
