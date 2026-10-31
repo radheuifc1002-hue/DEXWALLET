@@ -330,7 +330,7 @@ jobs:
             adb shell monkey -p com.xuwallet.app 1
             sleep 15
             adb shell pidof com.xuwallet.app
-            if adb logcat -d -t 2000 | grep -E 'FATAL EXCEPTION|ReactNativeJS: Error'; then
+            if adb logcat -d -t 2000 | grep -E 'FATAL EXCEPTION|Fatal signal'; then
               echo "Fatal app error detected in emulator logcat."
               exit 1
             fi
