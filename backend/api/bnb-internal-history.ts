@@ -128,7 +128,7 @@ export default async function handler(req: Request, res: Response) {
         hash,
         title: (incoming ? 'Received ' : 'Sent ') + 'BNB',
         detail: 'Internal transfer · ' + (incoming ? 'From ' : 'To ') + (incoming ? from : to),
-        amount: (incoming ? '+' : '-') + bnb.toFixed(8).replace(/0+$/, '').replace(/\.$/, '') + ' BNB',
+        amount: (incoming ? '+' : '-') + bnb + ' BNB',
         timestamp: timestamps.get(String(trace.blockNumber)) || 0,
         incoming,
         failed: false,
