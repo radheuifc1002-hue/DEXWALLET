@@ -487,6 +487,7 @@ async function upsertSolanaTransfer(network, wallet, row) {
     ON CONFLICT (chain, network, tx_hash) DO UPDATE SET
       block_number = COALESCE(indexed_transactions.block_number, EXCLUDED.block_number),
       block_timestamp = COALESCE(indexed_transactions.block_timestamp, EXCLUDED.block_timestamp),
+      tx_type = CASE WHEN indexed_transactions.tx_type = 'other' THEN 'token_transfer' ELSE indexed_transactions.tx_type END,
       last_seen_at = NOW()
   `;
   await sql`
