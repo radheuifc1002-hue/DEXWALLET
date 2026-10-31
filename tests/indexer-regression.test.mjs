@@ -45,18 +45,20 @@ test('indexed-history only advertises networks with a configured worker', () => 
 });
 
 test('BNB mainnet and testnet use Etherscan V2 with chain IDs 56 and 97', () => {
-  assert.match(worker, /ETHERSCAN_API_KEY is required for BNB mainnet\/testnet indexing/);
+  assert.match(worker, /ETHERSCAN_API_KEY is required for BNB and Polygon Amoy indexing/);
   assert.match(worker, /chainId = chain === 'bnb' \? \(network === 'mainnet' \? 56 : 97\) : 80002/);
   assert.match(worker, /chain === 'polygon' && network === 'testnet'/);
   assert.match(worker, /https:\/\/api\.etherscan\.io\/v2\/api/);
-  assert.match(worker, /fetchBnbEtherscanPage\(address, network, 'txlist'/);
-  assert.match(worker, /fetchBnbEtherscanPage\(address, network, 'tokentx'/);
+  assert.match(worker, /fetchEtherscanV2Page\(address, chain, network, 'txlist'/);
+  assert.match(worker, /fetchEtherscanV2Page\(address, chain, network, 'tokentx'/);
 });
 
 test('Solana mainnet and devnet use Helius address history and transfer pagination', () => {
   assert.match(worker, /HELIUS_API_KEY is required for Solana indexing/);
   assert.match(worker, /getTransactionsForAddress/);
   assert.match(worker, /getTransfersByAddress/);
+  assert.match(worker, /validateProviderNetworks/);
+  assert.match(worker, /provider_smoke_failed/);
   assert.match(worker, /tokenAccounts: 'balanceChanged'/);
   assert.match(worker, /paginationToken/);
   assert.match(worker, /SOL_NATIVE_MINT = 'native:SOL'/);
