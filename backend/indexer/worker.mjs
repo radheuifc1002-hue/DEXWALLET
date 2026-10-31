@@ -633,11 +633,43 @@ async function failJob(job, error) {
   `;
 }
 
+
+const indexedNetworks = [
+  'ethereum:mainnet', 'ethereum:testnet', 'polygon:mainnet',
+  ...(process.env.ETHERSCAN_API_KEY ? ['polygon:testnet', 'bnb:mainnet', 'bnb:testnet'] : []),
+  ...(process.env.HELIUS_API_KEY ? ['solana:mainnet', 'solana:devnet'] : []),
+];
+let lastJobFailureAt = 0;
+
+async function writeWorkerHeartbeat(jobCompleted = false) {
+  const degraded = Date.now() - lastJobFailureAt < 60000;
+  await sql`
+    INSERT INTO public.indexer_worker_heartbeats
+      (worker_id, status, version, chains, started_at, last_seen_at, last_job_at, last_error_category, updated_at)
+    VALUES (${workerId}, ${degraded ? 'degraded' : 'running'}, '1.1.0',
+      ${JSON.stringify(indexedNetworks)}::jsonb, NOW(), NOW(),
+      ${jobCompleted ? new Date().toISOString() : null}, ${degraded ? 'recent_job_failure' : null}, NOW())
+    ON CONFLICT (worker_id) DO UPDATE SET
+      status = EXCLUDED.status,
+      version = EXCLUDED.version,
+      chains = EXCLUDED.chains,
+      last_seen_at = NOW(),
+      last_job_at = CASE WHEN ${jobCompleted} THEN NOW() ELSE indexer_worker_heartbeats.last_job_at END,
+      last_error_category = EXCLUDED.last_error_category,
+      updated_at = NOW()
+  `;
+}
+
 async function main() {
   console.log(JSON.stringify({ service: 'dexwallet-indexer', event: 'started', workerId, pollMs }));
   let lastCleanup = 0;
+  let lastHeartbeat = 0;
   while (true) {
     try {
+      if (Date.now() - lastHeartbeat >= 15000) {
+        await writeWorkerHeartbeat(false);
+        lastHeartbeat = Date.now();
+      }
       const job = await claimJob();
       if (!job) {
         if (Date.now() - lastCleanup > 5 * 60 * 1000) {
@@ -649,12 +681,21 @@ async function main() {
       }
       try {
         await processJob(job);
+        lastJobFailureAt = 0;
+        await writeWorkerHeartbeat(true);
+        lastHeartbeat = Date.now();
         console.log(JSON.stringify({ service: 'dexwallet-indexer', event: 'job_succeeded', jobId: job.id, chain: job.chain, network: job.network }));
       } catch (error) {
         await failJob(job, error);
+        lastJobFailureAt = Date.now();
+        await writeWorkerHeartbeat(false).catch(() => {});
+        lastHeartbeat = Date.now();
         console.error(JSON.stringify({ service: 'dexwallet-indexer', event: 'job_failed', jobId: job.id, chain: job.chain, network: job.network, category: String(error?.message || 'unknown').slice(0, 80) }));
       }
     } catch (error) {
+      lastJobFailureAt = Date.now();
+      await writeWorkerHeartbeat(false).catch(() => {});
+      lastHeartbeat = Date.now();
       console.error(JSON.stringify({ service: 'dexwallet-indexer', event: 'poll_failed', category: String(error?.message || 'unknown').slice(0, 80) }));
       await sleep(Math.min(30000, pollMs * 4));
     }
