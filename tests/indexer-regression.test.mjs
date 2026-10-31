@@ -41,11 +41,12 @@ test('indexed-history only advertises networks with a configured worker', () => 
   assert.match(registerApi, /chain === 'bnb'.*chain === 'solana'/s);
 });
 
-test('BNB mainnet and testnet use the Routescan Blockscout adapter with server-side API key', () => {
-  assert.match(worker, /'bnb:mainnet': 'https:\/\/blockscout\.routescan\.io\/56\/api\/v2'/);
-  assert.match(worker, /'bnb:testnet': 'https:\/\/blockscout\.routescan\.io\/97\/api\/v2'/);
-  assert.match(worker, /ROUTESCAN_API_KEY is required for BNB indexing/);
-  assert.match(worker, /'x-api-key': process\.env\.ROUTESCAN_API_KEY/);
+test('BNB mainnet and testnet use Etherscan V2 with chain IDs 56 and 97', () => {
+  assert.match(worker, /ETHERSCAN_API_KEY is required for BNB mainnet\/testnet indexing/);
+  assert.match(worker, /chainId = network === 'mainnet' \? 56 : 97/);
+  assert.match(worker, /https:\/\/api\.etherscan\.io\/v2\/api/);
+  assert.match(worker, /fetchBnbEtherscanPage\(address, network, 'txlist'/);
+  assert.match(worker, /fetchBnbEtherscanPage\(address, network, 'tokentx'/);
 });
 
 test('Solana mainnet and devnet use Helius address history and transfer pagination', () => {
