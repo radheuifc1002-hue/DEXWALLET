@@ -309,59 +309,84 @@ async function fetchBlockscout(options: Options): Promise<EvmHistoryRow[]> {
 }
 
 
-const INDEXED_HISTORY_API = 'https://dexwallet-omega.vercel.app/api/indexed-history';
+const INDEXED_HISTORY_API_BASE = 'https://dexwallet-api-radheuifc1002-2100s-projects.vercel.app';
 
-async function fetchIndexedHistory(options: Options): Promise<EvmHistoryRow[] | null> {
+export type IndexedHistoryPageOptions = {
+  chain: Blockchain;
+  network: 'mainnet' | 'testnet';
+  walletAddress: string;
+  contractAddress?: string;
+  isNative?: boolean;
+  limit?: number;
+  cursor?: string | null;
+};
+
+export async function fetchIndexedWalletHistoryPage(
+  options: IndexedHistoryPageOptions
+): Promise<{ indexed: boolean; rows: EvmHistoryRow[]; nextCursor: string | null } | null> {
   if (!(await isIndexedHistoryEnabled())) return null;
+  const network = options.chain === 'solana' && options.network === 'testnet' ? 'devnet' : options.network;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 4500);
   try {
-    const response = await fetch(INDEXED_HISTORY_API, {
+    const response = await fetch(INDEXED_HISTORY_API_BASE + '/api/indexed-history', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({
         chain: options.chain,
-        network: options.network,
+        network,
         walletAddress: options.walletAddress,
-        contractAddress: options.contractAddress,
-        isNative: options.isNative,
+        contractAddress: options.contractAddress || '',
+        isNative: options.isNative !== false,
         limit: Math.min(options.limit || DEFAULT_LIMIT, DEFAULT_LIMIT),
+        ...(options.cursor ? { cursor: options.cursor } : {}),
       }),
       signal: controller.signal,
     });
     if (!response.ok) return null;
     const payload = await response.json();
-    // A cache miss means the background indexer has not completed the initial
-    // sync yet. Enqueue an opt-in sync, then preserve device-direct fallback.
     if (payload?.indexed !== true) {
       const registerController = new AbortController();
       const registerTimer = setTimeout(() => registerController.abort(), 2500);
       try {
-        await fetch('https://dexwallet-omega.vercel.app/api/indexer/register-address', {
+        await fetch(INDEXED_HISTORY_API_BASE + '/api/indexer/register-address', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify({ chain: options.chain, network: options.network, walletAddress: options.walletAddress }),
+          body: JSON.stringify({
+            chain: options.chain,
+            network,
+            walletAddress: options.walletAddress,
+          }),
           signal: registerController.signal,
         });
       } catch {
-        // Indexer enrollment is best-effort; direct provider history remains available.
+        // Enrollment is best-effort; the wallet keeps its device-direct fallback.
       } finally {
         clearTimeout(registerTimer);
       }
-      return null;
+      return { indexed: false, rows: [], nextCursor: null };
     }
     if (!Array.isArray(payload.rows)) return null;
-    return payload.rows.slice(0, options.limit || DEFAULT_LIMIT).filter((row: any) =>
+    const rows = payload.rows.filter((row: any) =>
       row && typeof row.hash === 'string' && typeof row.id === 'string' &&
       typeof row.timestamp === 'number' && typeof row.incoming === 'boolean'
     ) as EvmHistoryRow[];
+    return {
+      indexed: true,
+      rows,
+      nextCursor: typeof payload.nextCursor === 'string' ? payload.nextCursor : null,
+    };
   } catch {
-    // The server-side index is an optimization, never a hard dependency for
-    // wallet history. Fall back to the existing provider adapters.
+    // Server history is an optimization, never a hard dependency for wallet access.
     return null;
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function fetchIndexedHistory(options: Options): Promise<EvmHistoryRow[] | null> {
+  const page = await fetchIndexedWalletHistoryPage({ ...options, isNative: options.isNative, limit: options.limit });
+  return page?.indexed ? page.rows : null;
 }
 
 export async function fetchEvmAssetHistory(options: Options): Promise<EvmHistoryRow[]> {
