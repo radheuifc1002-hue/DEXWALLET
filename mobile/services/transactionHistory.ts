@@ -104,7 +104,7 @@ function mapTransfer(
 }
 
 async function requestBnbInternalTransfers(walletAddress: string): Promise<EvmHistoryRow[]> {
-  const response = await fetch('https://dexwallet-radheuifc1002-2100s-projects.vercel.app/api/bnb-internal-history', {
+  const response = await fetch('https://dexwallet-api.vercel.app/api/bnb-internal-history', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({ walletAddress }),
