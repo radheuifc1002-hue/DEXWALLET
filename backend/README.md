@@ -6,7 +6,7 @@ This directory is the independent Vercel project root. Configure the Vercel proj
 
 Routes:
 - `GET /api/health` — process liveness only.
-- `GET /api/ready` — database/schema readiness (does not prove worker activity).
+- `GET /api/ready` — database/schema readiness plus a fresh worker heartbeat and all eight configured networks.
 - `GET /api/rpc-config` — public RPC endpoint registry.
 - `POST /api/indexed-history` — indexed history, maximum 50 rows per page.
 - `POST /api/indexer/register-address` — explicit opt-in address enrollment.
@@ -39,6 +39,8 @@ Required worker environment variables:
 - `DATABASE_URL` — Neon pooled connection string for `dexwallet_indexer`.
 - `ETHERSCAN_API_KEY` — Etherscan API V2 key for BNB mainnet/testnet and Polygon Amoy transaction and token-transfer history. The worker intentionally fails closed for these networks if it is missing.
 - `HELIUS_API_KEY` — Helius key for Solana mainnet/devnet historical transactions and parsed transfers. Helius historical transfer APIs have plan-specific availability and credit costs; verify the account plan before enabling production backfills.
+
+Migration `002_worker_heartbeat.sql` adds the liveness record used by `/api/ready`. The readiness endpoint returns 503 until the worker reports all eight targets: Ethereum mainnet/Sepolia, Polygon mainnet/Amoy, BNB mainnet/testnet and Solana mainnet/devnet.
 
 Do not put worker provider keys in the APK or Vercel function environment unless a specific API function needs them. Provider keys must remain server-side.
 
