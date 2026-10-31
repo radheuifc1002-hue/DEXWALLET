@@ -11,8 +11,6 @@ const hosts = {
   'ethereum:mainnet': 'https://eth.blockscout.com/api/v2',
   'ethereum:testnet': 'https://eth-sepolia.blockscout.com/api/v2',
   'polygon:mainnet': 'https://polygon.blockscout.com/api/v2',
-  'bnb:mainnet': 'https://blockscout.routescan.io/56/api/v2',
-  'bnb:testnet': 'https://blockscout.routescan.io/97/api/v2',
 };
 const nativeSymbols = { ethereum: 'ETH', polygon: 'POL', bnb: 'BNB' };
 const SOL_NATIVE_MINT = 'native:SOL';
@@ -110,7 +108,7 @@ async function upsertTransaction(chain, network, row) {
        ${nativeSymbols[chain] || 'ETH'}, ${status}, ${type}, ${gasUsed},
        ${gasPrice}, ${fee}, ${nonce},
        ${chain === 'ethereum' ? (network === 'mainnet' ? 'https://etherscan.io/tx/' : 'https://sepolia.etherscan.io/tx/') : chain === 'bnb' ? (network === 'mainnet' ? 'https://bscscan.com/tx/' : 'https://testnet.bscscan.com/tx/') : 'https://polygonscan.com/tx/'} || ${hash},
-       ${chain === 'bnb' ? 'routescan' : 'blockscout'}, ${confirmations}, FALSE, NOW())
+       ${chain === 'bnb' ? 'etherscan_v2' : 'blockscout'}, ${confirmations}, FALSE, NOW())
     ON CONFLICT (chain, network, tx_hash) DO UPDATE SET
       block_number = COALESCE(EXCLUDED.block_number, indexed_transactions.block_number),
       block_hash = COALESCE(EXCLUDED.block_hash, indexed_transactions.block_hash),
@@ -152,7 +150,7 @@ async function upsertTokenTransfer(chain, network, row) {
       (chain, network, tx_hash, block_number, block_timestamp, from_address, to_address,
        value_raw, value_decimals, asset_symbol, tx_status, tx_type, source_provider)
     VALUES (${chain}, ${network}, ${hash}, ${block}, ${timestamp}, ${from}, ${to},
-       0, 18, ${nativeSymbols[chain] || 'ETH'}, 'unknown', 'token_transfer', ${chain === 'bnb' ? 'routescan' : 'blockscout'})
+       0, 18, ${nativeSymbols[chain] || 'ETH'}, 'unknown', 'token_transfer', ${chain === 'bnb' ? 'etherscan_v2' : 'blockscout'})
     ON CONFLICT (chain, network, tx_hash) DO UPDATE SET
       block_number = COALESCE(indexed_transactions.block_number, EXCLUDED.block_number),
       block_timestamp = COALESCE(indexed_transactions.block_timestamp, EXCLUDED.block_timestamp),
@@ -167,7 +165,7 @@ async function upsertTokenTransfer(chain, network, row) {
        block_timestamp, source_provider)
     VALUES (${chain}, ${network}, ${hash}, ${eventIndex}, ${tokenAddress},
        ${token.symbol || null}, ${token.name || null}, ${decimals}, ${from}, ${to},
-       ${amount}, ${block}, ${timestamp}, ${chain === 'bnb' ? 'routescan' : 'blockscout'})
+       ${amount}, ${block}, ${timestamp}, ${chain === 'bnb' ? 'etherscan_v2' : 'blockscout'})
     ON CONFLICT (chain, network, tx_hash, event_index) DO UPDATE SET
       token_symbol = COALESCE(EXCLUDED.token_symbol, indexed_token_transfers.token_symbol),
       token_name = COALESCE(EXCLUDED.token_name, indexed_token_transfers.token_name),
@@ -176,6 +174,83 @@ async function upsertTokenTransfer(chain, network, row) {
       indexed_at = NOW()
   `;
   return block || 0;
+}
+
+
+async function fetchBnbEtherscanPage(address, network, action, page) {
+  const apiKey = process.env.ETHERSCAN_API_KEY;
+  if (!apiKey) throw new Error('ETHERSCAN_API_KEY is required for BNB mainnet/testnet indexing');
+  const chainId = network === 'mainnet' ? 56 : 97;
+  const url = new URL('https://api.etherscan.io/v2/api');
+  for (const [key, value] of Object.entries({
+    chainid: chainId, module: 'account', action, address,
+    startblock: 0, endblock: 99999999, page, offset: 50, sort: 'desc', apikey: apiKey,
+  })) url.searchParams.set(key, String(value));
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), pageTimeoutMs);
+  try {
+    const response = await fetch(url.toString(), {
+      headers: { Accept: 'application/json', 'User-Agent': 'DEXWALLET-Indexer/1.0' },
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const retryHeader = response.headers.get('retry-after');
+      const retrySeconds = retryHeader ? Number(retryHeader) : 0;
+      const error = new Error('Etherscan V2 HTTP ' + response.status);
+      error.retryAfterMs = Number.isFinite(retrySeconds) && retrySeconds > 0 ? retrySeconds * 1000 : undefined;
+      throw error;
+    }
+    const payload = await response.json();
+    if (Array.isArray(payload?.result)) {
+      const items = payload.result.map((row) => {
+        if (action === 'tokentx') {
+          return {
+            transaction_hash: row.hash,
+            block_number: Number(row.blockNumber || 0),
+            timestamp: row.timeStamp ? new Date(Number(row.timeStamp) * 1000).toISOString() : null,
+            from: { hash: row.from },
+            to: { hash: row.to },
+            token: {
+              address: row.contractAddress,
+              symbol: row.tokenSymbol,
+              name: row.tokenName,
+              decimals: Number(row.tokenDecimal || 18),
+            },
+            log_index: Number(row.logIndex || 0),
+            value: row.value,
+          };
+        }
+        let fee = null;
+        try { fee = (BigInt(String(row.gasUsed || 0)) * BigInt(String(row.gasPrice || 0))).toString(); } catch {}
+        return {
+          hash: row.hash,
+          block_number: Number(row.blockNumber || 0),
+          block_hash: row.blockHash || null,
+          transaction_index: Number(row.transactionIndex || 0),
+          timestamp: row.timeStamp ? new Date(Number(row.timeStamp) * 1000).toISOString() : null,
+          from: { hash: row.from },
+          to: row.to ? { hash: row.to } : null,
+          value: row.value,
+          gas_used: row.gasUsed,
+          gas_price: row.gasPrice,
+          fee: fee === null ? null : { value: fee },
+          nonce: row.nonce,
+          confirmations: Number(row.confirmations || 0),
+          status: String(row.isError || '0') === '1' ? 'error' : 'ok',
+          method: row.functionName || row.methodId || null,
+        };
+      });
+      return { items, next_page_params: items.length === 50 ? { page: page + 1 } : null };
+    }
+    const message = String(payload?.result || payload?.message || '');
+    if (payload?.status === '0' && /no transactions found|no records found|no data found/i.test(message)) {
+      return { items: [], next_page_params: null };
+    }
+    throw new Error('Etherscan V2 rejected ' + action + ': ' + (message || 'unexpected response'));
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function claimJob() {
@@ -202,7 +277,7 @@ async function processJob(job) {
   const address = String(job.address_key);
   const base = hosts[chain + ':' + network];
   if (chain !== 'solana' && !base) throw new Error('No approved indexed-history adapter for this network');
-  if (chain === 'bnb' && !process.env.ROUTESCAN_API_KEY) throw new Error('ROUTESCAN_API_KEY is required for BNB indexing');
+  if (chain === 'bnb' && !process.env.ETHERSCAN_API_KEY) throw new Error('ETHERSCAN_API_KEY is required for BNB indexing');
 
   const states = await sql`
     SELECT last_indexed_block, cursor FROM public.address_sync_state
@@ -231,13 +306,16 @@ async function processJob(job) {
     tokenTransfers: { done: false, params: null },
   };
 
-  const providerHeaders = chain === 'bnb' ? { 'x-api-key': process.env.ROUTESCAN_API_KEY } : {};
   const txPage = cursor.transactions.done
     ? { items: [], next_page_params: null }
-    : await fetchJson(pageUrl(base, address, 'transactions', cursor.transactions.params), providerHeaders);
+    : chain === 'bnb'
+      ? await fetchBnbEtherscanPage(address, network, 'txlist', Number(cursor.transactions.params?.page || 1))
+      : await fetchJson(pageUrl(base, address, 'transactions', cursor.transactions.params));
   const tokenPage = cursor.tokenTransfers.done
     ? { items: [], next_page_params: null }
-    : await fetchJson(pageUrl(base, address, 'token-transfers', cursor.tokenTransfers.params), providerHeaders);
+    : chain === 'bnb'
+      ? await fetchBnbEtherscanPage(address, network, 'tokentx', Number(cursor.tokenTransfers.params?.page || 1))
+      : await fetchJson(pageUrl(base, address, 'token-transfers', cursor.tokenTransfers.params));
 
   let highestBlock = asNumber(syncState.last_indexed_block, 0);
   let txReachedStop = false;
@@ -292,7 +370,7 @@ async function processJob(job) {
 
   await sql`
     INSERT INTO public.api_metric_events (service, operation, chain, network, outcome, provider_key)
-    VALUES ('indexer', ${job.job_type}, ${chain}, ${network}, 'success', ${chain === 'bnb' ? 'routescan' : 'blockscout'})
+    VALUES ('indexer', ${job.job_type}, ${chain}, ${network}, 'success', ${chain === 'bnb' ? 'etherscan_v2' : 'blockscout'})
   `;
   await sql`
     UPDATE public.indexer_jobs
@@ -550,7 +628,7 @@ async function failJob(job, error) {
   await sql`
     INSERT INTO public.api_metric_events (service, operation, chain, network, outcome, provider_key, error_category)
     VALUES ('indexer', ${job.job_type}, ${job.chain}, ${job.network},
-      ${dead ? 'error' : 'timeout'}, ${job.chain === 'solana' ? 'helius' : job.chain === 'bnb' ? 'routescan' : 'blockscout'}, 'provider_or_worker_failure')
+      ${dead ? 'error' : 'timeout'}, ${job.chain === 'solana' ? 'helius' : job.chain === 'bnb' ? 'etherscan_v2' : 'blockscout'}, 'provider_or_worker_failure')
   `;
 }
 
