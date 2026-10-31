@@ -5,6 +5,8 @@ import { readFileSync } from 'node:fs';
 const worker = readFileSync(new URL('../backend/indexer/worker.mjs', import.meta.url), 'utf8');
 const historyApi = readFileSync(new URL('../backend/api/indexed-history.ts', import.meta.url), 'utf8');
 const registerApi = readFileSync(new URL('../backend/api/indexer/register-address.ts', import.meta.url), 'utf8');
+const mobileHistory = readFileSync(new URL('../mobile/services/transactionHistory.ts', import.meta.url), 'utf8');
+const historyScreen = readFileSync(new URL('../app/transaction-history.tsx', import.meta.url), 'utf8');
 
 test('native transaction upsert promotes token-only placeholders and contract calls', () => {
   assert.match(worker, /WHEN EXCLUDED\.tx_type = 'contract_interaction' THEN 'contract_interaction'/);
@@ -63,4 +65,12 @@ test('Solana wallet addresses and transaction signatures preserve base58 case', 
   assert.match(registerApi, /\[1-9A-HJ-NP-Za-km-z\]\{32,44\}/);
   assert.match(historyApi, /\[1-9A-HJ-NP-Za-km-z\]\{32,100\}/);
   assert.match(historyApi, /const addressKey = isSolana \? wallet : wallet\.toLowerCase\(\)/);
+});
+
+test('mobile wallet history uses the isolated API and keeps device-direct fallback', () => {
+  assert.match(mobileHistory, /dexwallet-api-radheuifc1002-2100s-projects\.vercel\.app/);
+  assert.match(mobileHistory, /isIndexedHistoryEnabled/);
+  assert.match(mobileHistory, /Server history is an optimization, never a hard dependency/);
+  assert.match(historyScreen, /fetchIndexedWalletHistoryPage/);
+  assert.match(historyScreen, /indexedPage\.nextCursor/);
 });
