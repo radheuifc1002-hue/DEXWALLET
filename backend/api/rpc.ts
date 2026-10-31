@@ -31,7 +31,8 @@ export default async function handler(req: any, res: any) {
   const chain = String(req.query?.chain || '').toLowerCase();
   const network = String(req.query?.network || '').toLowerCase();
   const alchemyNetwork = ALCHEMY_NETWORKS[chain + ':' + network];
-  const apiKey = process.env.ALCHEMY_API_KEY;
+  const scopedKey = 'ALCHEMY_' + chain.toUpperCase() + '_' + network.toUpperCase() + '_API_KEY';
+  const apiKey = process.env[scopedKey] || process.env.ALCHEMY_API_KEY;
   if (!alchemyNetwork || !apiKey) {
     return res.status(!alchemyNetwork ? 400 : 503).json({
       error: { code: !alchemyNetwork ? 'unsupported_network' : 'rpc_not_configured', requestId },
