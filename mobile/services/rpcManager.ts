@@ -169,11 +169,30 @@ function markFailure(chain: RpcChain, network: RpcNetwork, url: string, error: u
   persistHealth();
 }
 
+const ALCHEMY_NETWORKS: Record<RpcChain, Record<RpcNetwork, string>> = {
+  ethereum: { mainnet: 'eth-mainnet', testnet: 'eth-sepolia' },
+  bnb: { mainnet: 'bnb-mainnet', testnet: 'bnb-testnet' },
+  polygon: { mainnet: 'polygon-mainnet', testnet: 'polygon-amoy' },
+  solana: { mainnet: 'solana-mainnet', testnet: 'solana-devnet' },
+};
+
+function getAlchemyEndpoint(chain: RpcChain, network: RpcNetwork): string | null {
+  // Expo inlines EXPO_PUBLIC_* variables at build time. Never commit the key itself.
+  const apiKey = process.env.EXPO_PUBLIC_ALCHEMY_API_KEY?.trim();
+  if (!apiKey) return null;
+  const networkName = ALCHEMY_NETWORKS[chain][network];
+  return 'https://' + networkName + '.g.alchemy.com/v2/' + encodeURIComponent(apiKey);
+}
+
 function getEndpoints(chain: RpcChain, network: RpcNetwork): RpcEndpoint[] {
   const entry = activeConfig.chains[chain][network];
   const chainId = chain === 'solana' ? undefined : (entry as EvmEndpoint).chainId;
   const now = Date.now();
-  const endpoints = entry.endpoints.map((url, index) => ({
+  const alchemyEndpoint = getAlchemyEndpoint(chain, network);
+  const endpointUrls = alchemyEndpoint
+    ? [alchemyEndpoint, ...entry.endpoints.filter((url) => url !== alchemyEndpoint)]
+    : entry.endpoints;
+  const endpoints = endpointUrls.map((url, index) => ({
     url,
     chainId,
     index,
