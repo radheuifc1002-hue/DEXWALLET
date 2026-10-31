@@ -103,6 +103,17 @@ function mapTransfer(
   };
 }
 
+async function requestBnbInternalTransfers(walletAddress: string): Promise<EvmHistoryRow[]> {
+  const response = await fetch('https://dexwallet-radheuifc1002-2100s-projects.vercel.app/api/bnb-internal-history', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ walletAddress }),
+  });
+  if (!response.ok) return [];
+  const json = await response.json();
+  return Array.isArray(json?.rows) ? json.rows as EvmHistoryRow[] : [];
+}
+
 function getNativeTransferCategories(chain: Options['chain'], network: Options['network']): string[] {
   // Alchemy Transfers API exposes internal transfers only on Ethereum mainnet
   // and Polygon mainnet. BNB Chain and EVM testnets must use external only.
@@ -137,11 +148,17 @@ export async function fetchEvmAssetHistory(options: Options): Promise<EvmHistory
 
   // Preserve usable history if one direction/provider query fails. In
   // particular, one unsupported category must never blank supported transfers.
-  const settled = await Promise.allSettled(requests);
+  const traceRequest = options.isNative && options.chain === 'bnb' && options.network === 'mainnet'
+    ? requestBnbInternalTransfers(options.walletAddress)
+    : Promise.resolve([] as EvmHistoryRow[]);
+  const [settled, traceResult] = await Promise.all([
+    Promise.allSettled(requests),
+    traceRequest.then((rows) => ({ rows })).catch(() => ({ rows: [] as EvmHistoryRow[] })),
+  ]);
   const failures = settled.filter((result) => result.status === 'rejected') as PromiseRejectedResult[];
-  if (failures.length === settled.length) {
+  if (failures.length === settled.length && traceResult.rows.length === 0) {
     const firstError = failures[0]?.reason;
-    throw firstError instanceof Error ? firstError : new Error('Alchemy could not return wallet history.');
+    throw firstError instanceof Error ? firstError : new Error('History providers could not return wallet history.');
   }
   const results = settled.map((result) => result.status === 'fulfilled' ? result.value : []);
   const tokenRows = options.isNative ? [] : results.slice(0, 2).flat();
@@ -158,5 +175,9 @@ export async function fetchEvmAssetHistory(options: Options): Promise<EvmHistory
     return true;
   }).map((row: any) => mapTransfer(row, options, !options.isNative && !tokenRows.includes(row)));
 
-  return rows.sort((a, b) => b.timestamp - a.timestamp).slice(0, limit);
+  const mergedRows = options.isNative ? rows.concat(traceResult.rows) : rows;
+  const uniqueRows = mergedRows.filter((row, index, all) =>
+    all.findIndex((candidate) => candidate.id === row.id) === index
+  );
+  return uniqueRows.sort((a, b) => b.timestamp - a.timestamp).slice(0, limit);
 }
