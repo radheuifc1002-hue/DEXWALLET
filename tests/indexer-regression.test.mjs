@@ -85,6 +85,6 @@ test('API readiness requires a live worker and all mainnet/testnet indexer targe
   assert.match(readyApi, /'polygon:testnet'/);
   assert.match(readyApi, /'bnb:testnet'/);
   assert.match(readyApi, /'solana:devnet'/);
-  assert.match(worker, /'polygon:testnet', 'bnb:mainnet', 'bnb:testnet'/);
+  assert.match(worker, /\['bnb', 'mainnet'\], \['bnb', 'testnet'\], \['polygon', 'testnet'\]/);
   assert.match(readyApi, /last_seen_at/);
 });
