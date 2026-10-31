@@ -9,7 +9,7 @@ type Response = {
   end(): void;
 };
 
-const SUPPORTED_INDEXED_NETWORKS = new Set(['ethereum:mainnet', 'ethereum:testnet', 'polygon:mainnet', 'bnb:mainnet', 'bnb:testnet', 'solana:mainnet', 'solana:devnet']);
+const SUPPORTED_INDEXED_NETWORKS = new Set(['ethereum:mainnet', 'ethereum:testnet', 'polygon:mainnet', 'polygon:testnet', 'bnb:mainnet', 'bnb:testnet', 'solana:mainnet', 'solana:devnet']);
 const MAX_LIMIT = 50;
 const RATE_LIMIT_PER_MINUTE = 60;
 
