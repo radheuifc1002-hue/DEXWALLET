@@ -374,7 +374,7 @@ async function processJob(job) {
 
   await sql`
     INSERT INTO public.api_metric_events (service, operation, chain, network, outcome, provider_key)
-    VALUES ('indexer', ${job.job_type}, ${chain}, ${network}, 'success', ${sourceProvider})
+    VALUES ('indexer', ${job.job_type}, ${chain}, ${network}, 'success', ${chain === 'bnb' || (chain === 'polygon' && network === 'testnet') ? 'etherscan_v2' : 'blockscout'})
   `;
   await sql`
     UPDATE public.indexer_jobs
