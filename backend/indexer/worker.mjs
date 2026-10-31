@@ -108,7 +108,7 @@ async function upsertTransaction(chain, network, row) {
        ${timestamp}, ${from || null}, ${to || null}, ${value}, 18,
        ${nativeSymbols[chain] || 'ETH'}, ${status}, ${type}, ${gasUsed},
        ${gasPrice}, ${fee}, ${nonce},
-       ${chain === 'ethereum' ? (network === 'mainnet' ? 'https://etherscan.io/tx/' : 'https://sepolia.etherscan.io/tx/') : chain === 'bnb' ? (network === 'mainnet' ? 'https://bscscan.com/tx/' : 'https://testnet.bscscan.com/tx/') : 'https://polygonscan.com/tx/'} || ${hash},
+       ${chain === 'ethereum' ? (network === 'mainnet' ? 'https://etherscan.io/tx/' : 'https://sepolia.etherscan.io/tx/') : chain === 'bnb' ? (network === 'mainnet' ? 'https://bscscan.com/tx/' : 'https://testnet.bscscan.com/tx/') : (network === 'mainnet' ? 'https://polygonscan.com/tx/' : 'https://amoy.polygonscan.com/tx/')} || ${hash},
        ${sourceProvider}, ${confirmations}, FALSE, NOW())
     ON CONFLICT (chain, network, tx_hash) DO UPDATE SET
       block_number = COALESCE(EXCLUDED.block_number, indexed_transactions.block_number),
@@ -181,7 +181,7 @@ async function upsertTokenTransfer(chain, network, row) {
 
 async function fetchEtherscanV2Page(address, chain, network, action, page) {
   const apiKey = process.env.ETHERSCAN_API_KEY;
-  if (!apiKey) throw new Error('ETHERSCAN_API_KEY is required for BNB mainnet/testnet indexing');
+  if (!apiKey) throw new Error('ETHERSCAN_API_KEY is required for BNB and Polygon Amoy indexing');
   const chainId = chain === 'bnb' ? (network === 'mainnet' ? 56 : 97) : 80002;
   const url = new URL('https://api.etherscan.io/v2/api');
   for (const [key, value] of Object.entries({
