@@ -176,7 +176,7 @@ export default function TransactionHistory() {
           subtitle: row.detail,
           amount: row.amount,
           timestamp: row.timestamp,
-          status: row.failed ? 'Failed' : 'Confirmed',
+          status: row.failed ? 'Failed' as const : 'Confirmed' as const,
           incoming: row.incoming,
           explorerUrl: row.explorerUrl,
         }));
