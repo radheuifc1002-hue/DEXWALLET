@@ -121,6 +121,76 @@ async function fetchSolanaSignatures(address: string, network: 'mainnet' | 'test
   return Array.isArray(json.result) ? json.result : [];
 }
 
+
+async function fetchAlchemyTransfers(endpoint: string, address: string): Promise<any[]> {
+  const request = async (direction: 'fromAddress' | 'toAddress') => {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: direction,
+        method: 'alchemy_getAssetTransfers',
+        params: [{
+          [direction]: address,
+          fromBlock: '0x0',
+          toBlock: 'latest',
+          category: ['external', 'internal', 'erc20'],
+          withMetadata: true,
+          excludeZeroValue: false,
+          maxCount: '0x32',
+          order: 'desc',
+        }],
+      }),
+    });
+    if (!response.ok) throw new Error('Alchemy history request returned HTTP ' + response.status + '.');
+    const json = await response.json();
+    if (json.error) throw new Error(String(json.error.message || 'Alchemy could not return transaction history.'));
+    return Array.isArray(json.result?.transfers) ? json.result.transfers : [];
+  };
+
+  const [sent, received] = await Promise.all([request('fromAddress'), request('toAddress')]);
+  const seen = new Set<string>();
+  return sent.concat(received).filter((transfer: any) => {
+    const id = String(transfer.uniqueId || [
+      transfer.hash, transfer.category, transfer.rawContract?.address,
+      transfer.from, transfer.to,
+    ].join(':'));
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  }).sort((a: any, b: any) => {
+    const ta = Date.parse(a.metadata?.blockTimestamp || '') || 0;
+    const tb = Date.parse(b.metadata?.blockTimestamp || '') || 0;
+    return tb - ta;
+  }).slice(0, PAGE_SIZE);
+}
+
+function mapAlchemyTransfer(transfer: any, walletAddress: string, chain: Blockchain, network: 'mainnet' | 'testnet'): HistoryItem {
+  const from = String(transfer.from || '');
+  const to = String(transfer.to || '');
+  const incoming = to.toLowerCase() === walletAddress.toLowerCase();
+  const hash = String(transfer.hash || '');
+  const token = String(transfer.category || '').toLowerCase() === 'erc20';
+  const symbol = String(transfer.asset || (chain === 'ethereum' ? 'ETH' : chain === 'bnb' ? 'BNB' : 'POL'));
+  const value = transfer.value == null ? '' : String(transfer.value);
+  const timestamp = Math.floor((Date.parse(transfer.metadata?.blockTimestamp || '') || 0) / 1000);
+  const contract = String(transfer.rawContract?.address || '');
+  return {
+    id: String(transfer.uniqueId || (hash + ':' + (token ? contract : transfer.category || 'native') + ':' + from + ':' + to)),
+    hash,
+    title: token ? ((incoming ? 'Received ' : 'Sent ') + symbol) : ((incoming ? 'Received ' : 'Sent ') + symbol),
+    subtitle: token
+      ? (contract ? shorten(contract) + ' · ' : '') + (incoming ? 'From ' + shorten(from) : 'To ' + shorten(to))
+      : (incoming ? 'From ' + shorten(from) : 'To ' + shorten(to)),
+    amount: value ? value + ' ' + symbol : '',
+    timestamp,
+    status: 'Confirmed',
+    incoming,
+    explorerUrl: EXPLORERS[chain][network] + hash,
+  };
+}
+
 export default function TransactionHistory() {
   const router = useRouter();
   const { selectedBlockchain, network, walletAddress } = useWallet();
@@ -173,162 +243,13 @@ export default function TransactionHistory() {
         }));
         more = signatures.length === PAGE_SIZE;
         if (signatures.length) setBeforeSignature(String(signatures[signatures.length - 1].signature));
-      } else if (selectedBlockchain === 'bnb') {
-        if (network !== 'mainnet') {
-          throw new Error('A public keyless transaction indexer is not currently available for BNB testnet. You can still open the BNB testnet explorer from a transaction hash.');
-        }
-        const base = 'https://api.binplorer.com/';
-        const addressPath = encodeURIComponent(walletAddress);
-        const results = await Promise.all([
-          fetchBinplorer(base + 'getAddressTransactions/' + addressPath + '?apiKey=freekey&limit=100'),
-          fetchBinplorer(base + 'getAddressHistory/' + addressPath + '?apiKey=freekey&limit=100'),
-        ]);
-        const nativeRows = Array.isArray(results[0]) ? results[0] : [];
-        const tokenRows = Array.isArray(results[1]?.operations) ? results[1].operations : [];
-        const explorerBase = EXPLORERS.bnb.mainnet;
-        const nativeItems: HistoryItem[] = nativeRows.map((row: any) => {
-          const from = String(row.from || '');
-          const to = String(row.to || '');
-          const incoming = from.toLowerCase() !== walletAddress.toLowerCase();
-          const hash = String(row.hash || '');
-          const amount = row.value === undefined ? '' : Number(row.value).toLocaleString(undefined, { maximumFractionDigits: 6 }) + ' BNB';
-          return {
-            id: hash + ':native',
-            hash,
-            title: (incoming ? 'Received ' : 'Sent ') + 'BNB',
-            subtitle: incoming ? 'From ' + shorten(from) : 'To ' + shorten(to),
-            amount,
-            timestamp: Number(row.timestamp || 0),
-            status: row.success === false ? 'Failed' : 'Confirmed',
-            incoming,
-            explorerUrl: explorerBase + hash,
-          };
-        });
-        const tokenItems: HistoryItem[] = tokenRows.map((row: any, index: number) => {
-          const from = String(row.from || '');
-          const to = String(row.to || '');
-          const incoming = from.toLowerCase() !== walletAddress.toLowerCase();
-          const hash = String(row.transactionHash || '');
-          const symbol = String(row.tokenInfo?.symbol || 'TOKEN');
-          const amount = row.value === undefined ? '' : Number(row.value).toLocaleString(undefined, { maximumFractionDigits: 6 }) + ' ' + symbol;
-          return {
-            id: hash + ':token:' + String(row.timestamp || index),
-            hash,
-            title: (incoming ? 'Received ' : 'Sent ') + symbol,
-            subtitle: String(row.tokenInfo?.name || symbol) + ' · ' + (incoming ? 'From ' + shorten(from) : 'To ' + shorten(to)),
-            amount,
-            timestamp: Number(row.timestamp || 0),
-            status: 'Confirmed',
-            incoming,
-            explorerUrl: explorerBase + hash,
-          };
-        });
-        nextItems = nativeItems.concat(tokenItems).sort((a, b) => b.timestamp - a.timestamp);
-        more = false;
-      } else if (selectedBlockchain === 'polygon') {
-        if (network !== 'mainnet') {
-          throw new Error('Polygon Amoy history is not available from the current public keyless indexer. Mainnet history is supported.');
-        }
-        const base = 'https://polygon.blockscout.com/api/v2/addresses/' + encodeURIComponent(walletAddress);
-        const txCursor = reset ? null : polygonTxCursor;
-        const transferCursor = reset ? null : polygonTransferCursor;
-        const txResult = txCursor ? await fetchBlockscoutList(base + '/transactions' + cursorQuery(txCursor)) : (reset ? await fetchBlockscoutList(base + '/transactions') : { items: [], next_page_params: null });
-        const transferResult = transferCursor ? await fetchBlockscoutList(base + '/token-transfers' + cursorQuery(transferCursor)) : (reset ? await fetchBlockscoutList(base + '/token-transfers') : { items: [], next_page_params: null });
-        const txRows = Array.isArray(txResult.items) ? txResult.items : [];
-        const transferRows = Array.isArray(transferResult.items) ? transferResult.items : [];
-        const nativeItems: HistoryItem[] = txRows.map((row: any) => {
-          const from = String(row.from?.hash || '');
-          const to = String(row.to?.hash || '');
-          const incoming = from.toLowerCase() !== walletAddress.toLowerCase();
-          const hash = String(row.hash || '');
-          const timestamp = Math.floor(new Date(row.timestamp || 0).getTime() / 1000);
-          const amount = formatAmount(String(row.value || '0'), 18);
-          const failed = String(row.status || '').toLowerCase() === 'error' || String(row.result || '').toLowerCase().includes('fail');
-          return {
-            id: hash + ':native',
-            hash,
-            title: (incoming ? 'Received ' : 'Sent ') + 'POL',
-            subtitle: incoming ? 'From ' + shorten(from) : 'To ' + shorten(to),
-            amount: amount ? amount + ' POL' : '',
-            timestamp,
-            status: failed ? 'Failed' : 'Confirmed',
-            incoming,
-            explorerUrl: EXPLORERS.polygon.mainnet + hash,
-          };
-        });
-        const tokenItems: HistoryItem[] = transferRows.map((row: any, index: number) => {
-          const from = String(row.from?.hash || '');
-          const to = String(row.to?.hash || '');
-          const incoming = from.toLowerCase() !== walletAddress.toLowerCase();
-          const hash = String(row.transaction_hash || row.tx_hash || '');
-          const symbol = String(row.token?.symbol || 'TOKEN');
-          const decimals = Number(row.token?.decimals || 18);
-          const raw = String(row.total?.value || row.total_value || '0');
-          const amount = formatAmount(raw, Number.isFinite(decimals) ? decimals : 18);
-          const timestamp = Math.floor(new Date(row.timestamp || 0).getTime() / 1000);
-          return {
-            id: hash + ':token:' + String(row.log_index || index),
-            hash,
-            title: (incoming ? 'Received ' : 'Sent ') + symbol,
-            subtitle: String(row.token?.name || symbol) + ' · ' + (incoming ? 'From ' + shorten(from) : 'To ' + shorten(to)),
-            amount: amount ? amount + ' ' + symbol : '',
-            timestamp,
-            status: 'Confirmed',
-            incoming,
-            explorerUrl: EXPLORERS.polygon.mainnet + hash,
-          };
-        });
-        nextItems = nativeItems.concat(tokenItems).sort((a, b) => b.timestamp - a.timestamp);
-        setPolygonTxCursor(txResult.next_page_params || null);
-        setPolygonTransferCursor(transferResult.next_page_params || null);
-        more = Boolean(txResult.next_page_params || transferResult.next_page_params);
       } else {
         const rpcConfig = getEvmRpcConfig(selectedBlockchain, network);
-        const networkName = network === 'mainnet' ? 'mainnet' : 'testnet';
-        const base = 'https://api.routescan.io/v2/network/' + networkName + '/evm/' + rpcConfig.chainId + '/etherscan/api';
-        const address = encodeURIComponent(walletAddress);
-        const pageNumber = reset ? 1 : page + 1;
-        const common = '&address=' + address + '&startblock=0&endblock=99999999&page=' + pageNumber + '&offset=' + PAGE_SIZE + '&sort=desc';
-        const results = await Promise.all([
-          fetchExplorerRows(base + '?module=account&action=txlist' + common),
-          fetchExplorerRows(base + '?module=account&action=tokentx' + common),
-        ]);
-        const normalRows = results[0];
-        const tokenRows = results[1];
-        const nativeSymbol = NATIVE_SYMBOLS[selectedBlockchain];
-        const explorerBase = EXPLORERS[selectedBlockchain][network];
-
-        const mapRow = (row: any, tokenTransfer: boolean): HistoryItem => {
-          const from = String(row.from || '');
-          const to = String(row.to || '');
-          const incoming = from.toLowerCase() !== walletAddress.toLowerCase();
-          const symbol = tokenTransfer ? String(row.tokenSymbol || 'TOKEN') : nativeSymbol;
-          const rawValue = String(row.value || '0');
-          const decimals = tokenTransfer ? Number(row.tokenDecimal || 18) : 18;
-          const amount = formatAmount(rawValue, Number.isFinite(decimals) ? decimals : 18);
-          const hash = String(row.hash || row.transactionHash || '');
-          const suffix = tokenTransfer ? String(row.logIndex || row.transactionIndex || 'token') : 'native';
-          const failed = String(row.isError || '0') === '1' || String(row.txreceipt_status || '1') === '0';
-          return {
-            id: hash + ':' + suffix,
-            hash,
-            title: (incoming ? 'Received ' : 'Sent ') + symbol,
-            subtitle: tokenTransfer
-              ? String(row.tokenName || symbol) + ' · ' + (incoming ? 'From ' + shorten(from) : 'To ' + shorten(to))
-              : (incoming ? 'From ' + shorten(from) : 'To ' + shorten(to)),
-            amount: amount ? amount + ' ' + symbol : '',
-            timestamp: Number(row.timeStamp || 0),
-            status: failed ? 'Failed' : 'Confirmed',
-            incoming,
-            explorerUrl: explorerBase + hash,
-          };
-        };
-
-        nextItems = normalRows.map((row: any) => mapRow(row, false))
-          .concat(tokenRows.map((row: any) => mapRow(row, true)))
-          .sort((a, b) => b.timestamp - a.timestamp);
-        more = normalRows.length === PAGE_SIZE || tokenRows.length === PAGE_SIZE;
-        setPage(pageNumber);
+        const transfers = await fetchAlchemyTransfers(rpcConfig.rpc, walletAddress);
+        nextItems = transfers.map((transfer: any) =>
+          mapAlchemyTransfer(transfer, walletAddress, selectedBlockchain, network)
+        );
+        more = false;
       }
 
       setItems((current) => {
@@ -407,7 +328,7 @@ export default function TransactionHistory() {
           <View style={styles.stateCard}>
             <ActivityIndicator size="large" color="#6C4CF1" />
             <Text style={styles.stateTitle}>Loading transactions</Text>
-            <Text style={styles.stateMessage}>Fetching activity directly from the selected network's public explorer.</Text>
+            <Text style={styles.stateMessage}>Fetching wallet activity through the server-managed Alchemy RPC gateway.</Text>
           </View>
         ) : error ? (
           <View style={styles.stateCard}>
@@ -451,7 +372,7 @@ export default function TransactionHistory() {
             <Text style={styles.loadMoreText}>{loadingMore ? 'Loading…' : 'Load older transactions'}</Text>
           </TouchableOpacity>
         ) : null}
-        {!loading && !error && items.length > 0 ? <Text style={styles.footerNote}>{selectedBlockchain === 'bnb' ? 'BNB history uses Binplorer’s free public index and is limited to the latest 30 days / 100 records.' : 'Tap any transaction to open its block explorer record.'}</Text> : null}
+        {!loading && !error && items.length > 0 ? <Text style={styles.footerNote}>Tap any transaction to open its block explorer record. The list shows the latest 50 transfers returned by Alchemy.</Text> : null}
       </ScrollView>
     </SafeAreaView>
   );
