@@ -251,7 +251,7 @@ jobs:
           set -euo pipefail
           mkdir -p "$EXPO_METRO_CACHE_OUTPUT_DIR"
           chmod +x gradlew
-          ./gradlew --max-workers=4 --parallel --stacktrace --info --profile --build-cache -PreactNativeArchitectures=arm64-v8a assembleRelease -x lintVitalAnalyzeRelease -x lintVitalRelease
+          ./gradlew --max-workers=4 --parallel --stacktrace --info --profile --build-cache -PreactNativeArchitectures=arm64-v8a,x86_64 assembleRelease -x lintVitalAnalyzeRelease -x lintVitalRelease
           METRO_CACHE_FILES=$(find "$EXPO_METRO_CACHE_OUTPUT_DIR" -type f | wc -l)
           echo "Metro transform cache files: $METRO_CACHE_FILES"
 
@@ -315,6 +315,25 @@ jobs:
           test "$BUNDLE_SIZE" -gt 1000000
           echo "Embedded JS bundle size: $BUNDLE_SIZE bytes"
           echo "Essential APK checks passed."
+
+      - name: Install and launch release APK on Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: |
+            set -euo pipefail
+            adb install -r android/app/build/outputs/apk/release/app-release.apk
+            adb shell monkey -p com.xuwallet.app 1
+            sleep 15
+            adb shell pidof com.xuwallet.app
+            if adb logcat -d -t 2000 | grep -E 'FATAL EXCEPTION|ReactNativeJS: Error'; then
+              echo "Fatal app error detected in emulator logcat."
+              exit 1
+            fi
 
       - name: Upload standalone APK artifact
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.2
