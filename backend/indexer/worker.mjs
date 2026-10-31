@@ -474,7 +474,7 @@ async function upsertSolanaTransfer(network, wallet, row) {
   const amount = String(row.amount ?? row.amountRaw ?? '0');
   const decimals = Math.max(0, Math.min(36, asNumber(row.decimals, native ? 9 : 0)));
   const eventType = String(row.type || 'transfer');
-  if (!['transfer', 'transferFee'].includes(eventType)) return 0;
+  if (eventType !== 'transfer') return 0;
 
   await sql`
     INSERT INTO public.indexed_transactions
