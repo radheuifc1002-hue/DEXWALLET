@@ -666,6 +666,7 @@ async function validateProviderNetworks() {
   for (const [networkKey, base] of Object.entries(hosts)) {
     try {
       await fetchJson(pageUrl(base, zeroAddress, 'transactions', null));
+      await fetchJson(pageUrl(base, zeroAddress, 'token-transfers', null));
       available.push(networkKey);
     } catch (error) {
       console.error(JSON.stringify({ service: 'dexwallet-indexer', event: 'provider_smoke_failed', network: networkKey, provider: 'blockscout', category: String(error?.message || 'unknown').slice(0, 80) }));
@@ -676,6 +677,7 @@ async function validateProviderNetworks() {
     for (const [chain, network] of [['bnb', 'mainnet'], ['bnb', 'testnet'], ['polygon', 'testnet']]) {
       try {
         await fetchEtherscanV2Page(zeroAddress, chain, network, 'txlist', 1);
+        await fetchEtherscanV2Page(zeroAddress, chain, network, 'tokentx', 1);
         available.push(chain + ':' + network);
       } catch (error) {
         console.error(JSON.stringify({ service: 'dexwallet-indexer', event: 'provider_smoke_failed', network: chain + ':' + network, provider: 'etherscan_v2', category: String(error?.message || 'unknown').slice(0, 80) }));
