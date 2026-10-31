@@ -244,7 +244,7 @@ export default async function handler(req: Request, res: Response) {
                  COALESCE(block_timestamp, first_seen_at) AS activity_time
           FROM public.indexed_transactions
           WHERE chain = ${chain} AND network = ${network}
-            AND (($chain = 'solana' AND (from_address = ${addressKey} OR to_address = ${addressKey})) OR ($chain <> 'solana' AND (lower(from_address) = ${addressKey} OR lower(to_address) = ${addressKey})))
+            AND ((${chain} = 'solana' AND (from_address = ${addressKey} OR to_address = ${addressKey})) OR (${chain} <> 'solana' AND (lower(from_address) = ${addressKey} OR lower(to_address) = ${addressKey})))
             AND (
               ${cursor?.timestamp || null}::timestamptz IS NULL
               OR COALESCE(block_timestamp, first_seen_at) < ${cursor?.timestamp || null}::timestamptz
@@ -261,8 +261,8 @@ export default async function handler(req: Request, res: Response) {
                  COALESCE(block_timestamp, first_seen_at) AS activity_time
           FROM public.indexed_transactions
           WHERE chain = ${chain} AND network = ${network}
-            AND (($chain = 'solana' AND (from_address = ${addressKey} OR to_address = ${addressKey})) OR ($chain <> 'solana' AND (lower(from_address) = ${addressKey} OR lower(to_address) = ${addressKey})))
-            AND (($chain = 'solana' AND (from_address = ${contract} OR to_address = ${contract})) OR ($chain <> 'solana' AND (lower(from_address) = ${contract.toLowerCase()} OR lower(to_address) = ${contract.toLowerCase()})))
+            AND ((${chain} = 'solana' AND (from_address = ${addressKey} OR to_address = ${addressKey})) OR (${chain} <> 'solana' AND (lower(from_address) = ${addressKey} OR lower(to_address) = ${addressKey})))
+            AND ((${chain} = 'solana' AND (from_address = ${contract} OR to_address = ${contract})) OR (${chain} <> 'solana' AND (lower(from_address) = ${contract.toLowerCase()} OR lower(to_address) = ${contract.toLowerCase()})))
             AND tx_type = 'contract_interaction'
             AND (
               ${cursor?.timestamp || null}::timestamptz IS NULL
@@ -283,8 +283,8 @@ export default async function handler(req: Request, res: Response) {
       JOIN public.indexed_transactions tx
         ON tx.chain = tr.chain AND tx.network = tr.network AND tx.tx_hash = tr.tx_hash
       WHERE tr.chain = ${chain} AND tr.network = ${network}
-        AND (($chain = 'solana' AND tr.token_address = ${isNative ? 'native:SOL' : contract}) OR ($chain <> 'solana' AND lower(tr.token_address) = ${contract.toLowerCase()}))
-        AND (($chain = 'solana' AND (tr.from_address = ${addressKey} OR tr.to_address = ${addressKey})) OR ($chain <> 'solana' AND (lower(tr.from_address) = ${addressKey} OR lower(tr.to_address) = ${addressKey})))
+        AND ((${chain} = 'solana' AND tr.token_address = ${isNative ? 'native:SOL' : contract}) OR (${chain} <> 'solana' AND lower(tr.token_address) = ${contract.toLowerCase()}))
+        AND ((${chain} = 'solana' AND (tr.from_address = ${addressKey} OR tr.to_address = ${addressKey})) OR (${chain} <> 'solana' AND (lower(tr.from_address) = ${addressKey} OR lower(tr.to_address) = ${addressKey})))
         AND (
           ${cursor?.timestamp || null}::timestamptz IS NULL
           OR COALESCE(tr.block_timestamp, tx.block_timestamp, tx.first_seen_at) < ${cursor?.timestamp || null}::timestamptz
