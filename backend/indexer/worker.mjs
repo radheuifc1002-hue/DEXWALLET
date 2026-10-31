@@ -637,11 +637,7 @@ async function failJob(job, error) {
 }
 
 
-const indexedNetworks = [
-  'ethereum:mainnet', 'ethereum:testnet', 'polygon:mainnet',
-  ...(process.env.ETHERSCAN_API_KEY ? ['polygon:testnet', 'bnb:mainnet', 'bnb:testnet'] : []),
-  ...(process.env.HELIUS_API_KEY ? ['solana:mainnet', 'solana:devnet'] : []),
-];
+let indexedNetworks = [];
 let lastJobFailureAt = 0;
 
 async function writeWorkerHeartbeat(jobCompleted = false) {
@@ -663,8 +659,53 @@ async function writeWorkerHeartbeat(jobCompleted = false) {
   `;
 }
 
+
+async function validateProviderNetworks() {
+  const available = [];
+  const zeroAddress = '0x0000000000000000000000000000000000000000';
+  for (const [networkKey, base] of Object.entries(hosts)) {
+    try {
+      await fetchJson(pageUrl(base, zeroAddress, 'transactions', null));
+      available.push(networkKey);
+    } catch (error) {
+      console.error(JSON.stringify({ service: 'dexwallet-indexer', event: 'provider_smoke_failed', network: networkKey, provider: 'blockscout', category: String(error?.message || 'unknown').slice(0, 80) }));
+    }
+  }
+
+  if (process.env.ETHERSCAN_API_KEY) {
+    for (const [chain, network] of [['bnb', 'mainnet'], ['bnb', 'testnet'], ['polygon', 'testnet']]) {
+      try {
+        await fetchEtherscanV2Page(zeroAddress, chain, network, 'txlist', 1);
+        available.push(chain + ':' + network);
+      } catch (error) {
+        console.error(JSON.stringify({ service: 'dexwallet-indexer', event: 'provider_smoke_failed', network: chain + ':' + network, provider: 'etherscan_v2', category: String(error?.message || 'unknown').slice(0, 80) }));
+      }
+    }
+  }
+
+  if (process.env.HELIUS_API_KEY) {
+    const systemAddress = '11111111111111111111111111111111';
+    for (const network of ['mainnet', 'devnet']) {
+      try {
+        await heliusRpc(network, 'getTransactionsForAddress', systemAddress, {
+          transactionDetails: 'full', sortOrder: 'desc', limit: 1,
+        });
+        await heliusRpc(network, 'getTransfersByAddress', systemAddress, {
+          limit: 1, sortOrder: 'desc', solMode: 'merged',
+        });
+        available.push('solana:' + network);
+      } catch (error) {
+        console.error(JSON.stringify({ service: 'dexwallet-indexer', event: 'provider_smoke_failed', network: 'solana:' + network, provider: 'helius', category: String(error?.message || 'unknown').slice(0, 80) }));
+      }
+    }
+  }
+
+  indexedNetworks = available.sort();
+}
+
 async function main() {
-  console.log(JSON.stringify({ service: 'dexwallet-indexer', event: 'started', workerId, pollMs }));
+  await validateProviderNetworks();
+  console.log(JSON.stringify({ service: 'dexwallet-indexer', event: 'started', workerId, pollMs, indexedNetworks }));
   let lastCleanup = 0;
   let lastHeartbeat = 0;
   while (true) {
