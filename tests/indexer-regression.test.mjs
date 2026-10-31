@@ -8,6 +8,7 @@ const registerApi = readFileSync(new URL('../backend/api/indexer/register-addres
 const mobileHistory = readFileSync(new URL('../mobile/services/transactionHistory.ts', import.meta.url), 'utf8');
 const historyScreen = readFileSync(new URL('../app/transaction-history.tsx', import.meta.url), 'utf8');
 const readyApi = readFileSync(new URL('../backend/api/ready.ts', import.meta.url), 'utf8');
+const apkWorkflow = readFileSync(new URL('../.github/workflows/android-apk.yml', import.meta.url), 'utf8');
 
 test('native transaction upsert promotes token-only placeholders and contract calls', () => {
   assert.match(worker, /WHEN EXCLUDED\.tx_type = 'contract_interaction' THEN 'contract_interaction'/);
@@ -87,4 +88,10 @@ test('API readiness requires a live worker and all mainnet/testnet indexer targe
   assert.match(readyApi, /'solana:devnet'/);
   assert.match(worker, /\['bnb', 'mainnet'\], \['bnb', 'testnet'\], \['polygon', 'testnet'\]/);
   assert.match(readyApi, /last_seen_at/);
+});
+
+test('standalone APK pipeline installs and launches the release build on Android emulator', () => {
+  assert.match(apkWorkflow, /reactivecircus\/android-emulator-runner@v2/);
+  assert.match(apkWorkflow, /adb install -r android\/app\/build\/outputs\/apk\/release\/app-release\.apk/);
+  assert.match(apkWorkflow, /adb shell pidof com\.xuwallet\.app/);
 });
