@@ -52,39 +52,38 @@ export default async function handler(req: Request, res: Response) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), RPC_TIMEOUT_MS);
   try {
-    const upstream = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'trace_filter',
-        params: [{
-          fromBlock: '0x0',
-          toBlock: 'latest',
-          fromAddress: [wallet],
-          toAddress: [wallet],
-        }],
-      }),
-      signal: controller.signal,
-    });
-    if (!upstream.ok) {
-      error(res, 502, 'bnb_trace_provider_http_error', requestId);
-      return;
-    }
-    const payload = await upstream.json() as any;
-    if (payload?.error) {
-      error(res, 502, 'bnb_trace_method_unavailable', requestId);
-      return;
-    }
-    if (!Array.isArray(payload?.result)) {
+    const rpc = async (method: string, params: unknown[]) => {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: method, method, params }),
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error('trace provider HTTP error');
+      const data = await response.json() as any;
+      if (data?.error) throw new Error('trace provider RPC error');
+      return data?.result;
+    };
+
+    // Keep each address-direction query bounded. trace_filter over genesis-to-tip
+    // can exceed provider range/response limits and stall a wallet screen.
+    const latestBlock = BigInt(String(await rpc('eth_blockNumber', [])));
+    const fromBlock = latestBlock > 20000n ? latestBlock - 20000n : 0n;
+    const range = {
+      fromBlock: '0x' + fromBlock.toString(16),
+      toBlock: '0x' + latestBlock.toString(16),
+      count: '0x64',
+    };
+    const [outgoing, incoming] = await Promise.all([
+      rpc('trace_filter', [{ ...range, fromAddress: [wallet] }]),
+      rpc('trace_filter', [{ ...range, toAddress: [wallet] }]),
+    ]);
+    if (!Array.isArray(outgoing) || !Array.isArray(incoming)) {
       error(res, 502, 'bnb_trace_invalid_response', requestId);
       return;
     }
-
-    // Only nested CALL traces carrying native BNB are internal transfers.
-    // The root trace is the external transaction and is already indexed by Alchemy.
-    const traces = payload.result.filter((trace: any) =>
+    const traceResults = [...outgoing, ...incoming];
+    const traces = traceResults.filter((trace: any) =>
       trace?.type === 'call' &&
       Array.isArray(trace.traceAddress) &&
       trace.traceAddress.length > 0 &&
@@ -121,7 +120,9 @@ export default async function handler(req: Request, res: Response) {
       const incoming = to.toLowerCase() === wallet.toLowerCase();
       const hash = String(trace.transactionHash);
       const value = BigInt(String(trace.action.value));
-      const bnb = Number(value) / 1e18;
+      const whole = value / 10n ** 18n;
+      const fraction = (value % (10n ** 18n)).toString().padStart(18, '0').slice(0, 8).replace(/0+$/, '');
+      const bnb = whole.toString() + (fraction ? '.' + fraction : '');
       return {
         id: hash + ':internal:' + trace.traceAddress.join('-'),
         hash,
