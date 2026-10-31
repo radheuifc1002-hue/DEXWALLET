@@ -29,7 +29,7 @@ export default async function handler(req: any, res: any) {
   const network = String(body.network || '').toLowerCase();
   const address = String(body.walletAddress || '');
   const supported = (chain === 'ethereum' && ['mainnet', 'testnet'].includes(network)) ||
-    (chain === 'polygon' && network === 'mainnet') ||
+    (chain === 'polygon' && ['mainnet', 'testnet'].includes(network)) ||
     (chain === 'bnb' && ['mainnet', 'testnet'].includes(network)) ||
     (chain === 'solana' && ['mainnet', 'devnet'].includes(network));
   if (!supported) {
