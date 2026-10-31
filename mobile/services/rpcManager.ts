@@ -32,6 +32,8 @@ const FAILURE_COOLDOWN_MS = 60_000;
 const MAX_FAILURE_COOLDOWN_MS = 15 * 60_000;
 const HEALTH_CHECK_INTERVAL_MS = 10 * 60_000;
 const HEALTH_FRESHNESS_MS = 90_000;
+// TESTING ONLY: user-provided Alchemy key. Move to EAS secrets before production.
+const TESTING_ALCHEMY_API_KEY = 'alch_U5vIpm4Qw0xerQVuBiIIA';
 
 const EXPECTED_CHAIN_IDS: Record<EvmChain, Record<RpcNetwork, number>> = {
   ethereum: { mainnet: 1, testnet: 11155111 },
@@ -178,7 +180,7 @@ const ALCHEMY_NETWORKS: Record<RpcChain, Record<RpcNetwork, string>> = {
 
 function getAlchemyEndpoint(chain: RpcChain, network: RpcNetwork): string | null {
   // Expo inlines EXPO_PUBLIC_* variables at build time. Never commit the key itself.
-  const apiKey = process.env.EXPO_PUBLIC_ALCHEMY_API_KEY?.trim();
+  const apiKey = (process.env.EXPO_PUBLIC_ALCHEMY_API_KEY || TESTING_ALCHEMY_API_KEY).trim();
   if (!apiKey) return null;
   const networkName = ALCHEMY_NETWORKS[chain][network];
   return 'https://' + networkName + '.g.alchemy.com/v2/' + encodeURIComponent(apiKey);
@@ -207,9 +209,9 @@ function getEndpoints(chain: RpcChain, network: RpcNetwork): RpcEndpoint[] {
         const cooldownDifference = (a.state?.cooldownUntil ?? 0) - (b.state?.cooldownUntil ?? 0);
         if (cooldownDifference !== 0) return cooldownDifference;
       }
-      const aLatency = a.state?.latencyMs ?? Number.MAX_SAFE_INTEGER;
-      const bLatency = b.state?.latencyMs ?? Number.MAX_SAFE_INTEGER;
-      return aLatency - bLatency || a.index - b.index;
+      // Keep Alchemy first while healthy; public RPCs are measured in parallel
+      // and used in configured order only when the primary is unhealthy.
+      return a.index - b.index;
     })
     .map(({ url, chainId: id }) => ({ url, chainId: id }));
 }
