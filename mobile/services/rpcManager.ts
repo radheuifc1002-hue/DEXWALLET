@@ -43,8 +43,8 @@ const DEFAULT_CONFIG: RpcConfig = {
   version: 1,
   chains: {
     ethereum: {
-      mainnet: { chainId: 1, endpoints: ['https://dexwallet-omega.vercel.app/api/rpc?chain=ethereum&network=mainnet', 'https://dexwallet-omega.vercel.app/api/rpc?chain=ethereum&network=mainnet', 'https://dexwallet-omega.vercel.app/api/rpc?chain=ethereum&network=mainnet'] },
-      testnet: { chainId: 11155111, endpoints: ['https://dexwallet-omega.vercel.app/api/rpc?chain=ethereum&network=testnet', 'https://dexwallet-omega.vercel.app/api/rpc?chain=ethereum&network=testnet'] },
+      mainnet: { chainId: 1, endpoints: ['https://dexwallet-radheuifc1002-2100s-projects.vercel.app/api/rpc?chain=ethereum&network=mainnet'] },
+      testnet: { chainId: 11155111, endpoints: ['https://dexwallet-radheuifc1002-2100s-projects.vercel.app/api/rpc?chain=ethereum&network=testnet'] },
     },
     bnb: {
       mainnet: { chainId: 56, endpoints: ['https://dexwallet-radheuifc1002-2100s-projects.vercel.app/api/rpc?chain=bnb&network=mainnet'] },
