@@ -153,7 +153,7 @@ function shouldFailover(error: unknown): boolean {
 
   return value?.name === 'AbortError' ||
     ['NETWORK_ERROR', 'SERVER_ERROR', 'TIMEOUT', 'BAD_DATA', 'ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'ECONNABORTED'].includes(code) ||
-    /network request failed|fetch failed|timed out|timeout|http (408|425|429|5\d\d)|rate.?limit|too many requests|gateway|socket|connection reset|wrong chain id|malformed json|invalid json-rpc response/.test(message);
+    /network request failed|fetch failed|timed out|timeout|http (401|403|408|425|429|5\d\d)|rate.?limit|too many requests|gateway|socket|connection reset|wrong chain id|malformed json|invalid json-rpc response/.test(message);
 }
 
 function markFailure(chain: RpcChain, network: RpcNetwork, url: string, error: unknown) {
