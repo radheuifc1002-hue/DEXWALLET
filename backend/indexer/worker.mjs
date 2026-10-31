@@ -20,6 +20,7 @@ const SOL_PROGRAMS = new Set([
   'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
   'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb',
   'ComputeBudget111111111111111111111111111111',
+  'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL',
 ]);
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
