@@ -276,7 +276,7 @@ async function processJob(job) {
   const network = String(job.network);
   const address = String(job.address_key);
   const base = hosts[chain + ':' + network];
-  if (chain !== 'solana' && !base) throw new Error('No approved indexed-history adapter for this network');
+  if (chain !== 'solana' && chain !== 'bnb' && !base) throw new Error('No approved indexed-history adapter for this network');
   if (chain === 'bnb' && !process.env.ETHERSCAN_API_KEY) throw new Error('ETHERSCAN_API_KEY is required for BNB indexing');
 
   const states = await sql`
