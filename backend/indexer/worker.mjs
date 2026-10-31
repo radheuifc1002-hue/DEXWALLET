@@ -177,10 +177,10 @@ async function upsertTokenTransfer(chain, network, row) {
 }
 
 
-async function fetchBnbEtherscanPage(address, network, action, page) {
+async function fetchEtherscanV2Page(address, chain, network, action, page) {
   const apiKey = process.env.ETHERSCAN_API_KEY;
   if (!apiKey) throw new Error('ETHERSCAN_API_KEY is required for BNB mainnet/testnet indexing');
-  const chainId = network === 'mainnet' ? 56 : 97;
+  const chainId = chain === 'bnb' ? (network === 'mainnet' ? 56 : 97) : 80002;
   const url = new URL('https://api.etherscan.io/v2/api');
   for (const [key, value] of Object.entries({
     chainid: chainId, module: 'account', action, address,
@@ -237,7 +237,7 @@ async function fetchBnbEtherscanPage(address, network, action, page) {
           fee: fee === null ? null : { value: fee },
           nonce: row.nonce,
           confirmations: Number(row.confirmations || 0),
-          status: String(row.isError || '0') === '1' ? 'error' : 'ok',
+          status: String(row.isError || '0') === '1' || String(row.txreceipt_status || '1') === '0' ? 'error' : 'ok',
           method: row.functionName || (row.methodId && row.methodId !== '0x' ? row.methodId : null),
         };
       });
@@ -276,8 +276,9 @@ async function processJob(job) {
   const network = String(job.network);
   const address = String(job.address_key);
   const base = hosts[chain + ':' + network];
-  if (chain !== 'solana' && chain !== 'bnb' && !base) throw new Error('No approved indexed-history adapter for this network');
-  if (chain === 'bnb' && !process.env.ETHERSCAN_API_KEY) throw new Error('ETHERSCAN_API_KEY is required for BNB indexing');
+  const usesEtherscanV2 = chain === 'bnb' || (chain === 'polygon' && network === 'testnet');
+  if (chain !== 'solana' && !usesEtherscanV2 && !base) throw new Error('No approved indexed-history adapter for this network');
+  if (usesEtherscanV2 && !process.env.ETHERSCAN_API_KEY) throw new Error('ETHERSCAN_API_KEY is required for BNB and Polygon Amoy indexing');
 
   const states = await sql`
     SELECT last_indexed_block, cursor FROM public.address_sync_state
@@ -308,13 +309,13 @@ async function processJob(job) {
 
   const txPage = cursor.transactions.done
     ? { items: [], next_page_params: null }
-    : chain === 'bnb'
-      ? await fetchBnbEtherscanPage(address, network, 'txlist', Number(cursor.transactions.params?.page || 1))
+    : usesEtherscanV2
+      ? await fetchEtherscanV2Page(address, chain, network, 'txlist', Number(cursor.transactions.params?.page || 1))
       : await fetchJson(pageUrl(base, address, 'transactions', cursor.transactions.params));
   const tokenPage = cursor.tokenTransfers.done
     ? { items: [], next_page_params: null }
-    : chain === 'bnb'
-      ? await fetchBnbEtherscanPage(address, network, 'tokentx', Number(cursor.tokenTransfers.params?.page || 1))
+    : usesEtherscanV2
+      ? await fetchEtherscanV2Page(address, chain, network, 'tokentx', Number(cursor.tokenTransfers.params?.page || 1))
       : await fetchJson(pageUrl(base, address, 'token-transfers', cursor.tokenTransfers.params));
 
   let highestBlock = asNumber(syncState.last_indexed_block, 0);
