@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { ethers } from 'ethers';
 import bs58 from 'bs58';
 import { Buffer } from 'buffer';
+import { sha256 } from '@noble/hashes/sha2.js';
 import { useWallet, Blockchain, Token } from '../context/WalletContext';
 import { getMnemonic, signSolanaMessage, deriveAddresses } from '../mobile/services/walletService';
 import { getCentralEvmChainId, serverRpcRequest } from '../mobile/services/serverRpc';
@@ -19,6 +20,104 @@ const TOKEN_ABI = [
 const shortvec = (n: number) => { const a: number[] = []; while (n >= 128) { a.push((n & 127) | 128); n >>>= 7; } a.push(n); return a; };
 const u32 = (n: number) => [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255];
 const u64 = (n: bigint) => { const a: number[] = []; for (let i = 0n; i < 8n; i++) a.push(Number((n >> (8n * i)) & 255n)); return a; };
+const SOL_SYSTEM_PROGRAM = '11111111111111111111111111111111';
+const SOL_TOKEN_PROGRAM = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
+const SOL_TOKEN_2022_PROGRAM = 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb';
+const SOL_ASSOCIATED_TOKEN_PROGRAM = 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL';
+type SolanaAccountMeta = { pubkey: string; isSigner: boolean; isWritable: boolean };
+type SolanaInstruction = { programId: string; keys: SolanaAccountMeta[]; data: number[] };
+
+const mod = (value: bigint, p: bigint) => ((value % p) + p) % p;
+function modPow(base: bigint, exponent: bigint, modulus: bigint): bigint {
+  let result = 1n;
+  let value = mod(base, modulus);
+  let power = exponent;
+  while (power > 0n) {
+    if (power & 1n) result = (result * value) % modulus;
+    value = (value * value) % modulus;
+    power >>= 1n;
+  }
+  return result;
+}
+function isEd25519Point(bytes: Uint8Array): boolean {
+  if (bytes.length !== 32) return false;
+  const p = (1n << 255n) - 19n;
+  const encoded = Uint8Array.from(bytes);
+  const sign = encoded[31] >>> 7;
+  encoded[31] &= 0x7f;
+  let y = 0n;
+  for (let i = 31; i >= 0; i -= 1) y = (y << 8n) | BigInt(encoded[i]);
+  if (y >= p) return false;
+  const d = mod(-121665n * modPow(121666n, p - 2n, p), p);
+  const y2 = (y * y) % p;
+  const x2 = mod((y2 - 1n) * modPow(mod(d * y2 + 1n, p), p - 2n, p), p);
+  let x = modPow(x2, (p + 3n) / 8n, p);
+  if ((x * x) % p !== x2) {
+    const sqrtMinusOne = modPow(2n, (p - 1n) / 4n, p);
+    x = (x * sqrtMinusOne) % p;
+  }
+  if ((x * x) % p !== x2) return false;
+  return !(x === 0n && sign === 1);
+}
+async function deriveAssociatedTokenAddress(owner: string, mint: string, tokenProgram: string): Promise<string> {
+  const ownerBytes = bs58.decode(owner);
+  const mintBytes = bs58.decode(mint);
+  const tokenProgramBytes = bs58.decode(tokenProgram);
+  const associatedProgramBytes = bs58.decode(SOL_ASSOCIATED_TOKEN_PROGRAM);
+  const marker = Buffer.from('ProgramDerivedAddress', 'utf8');
+  for (let bump = 255; bump >= 0; bump -= 1) {
+    const digest = sha256(Uint8Array.from([
+      ...ownerBytes, ...tokenProgramBytes, ...mintBytes, bump, ...associatedProgramBytes, ...marker,
+    ]));
+    if (!isEd25519Point(digest)) return bs58.encode(digest);
+  }
+  throw new Error('Unable to derive the recipient token account.');
+}
+function compileSolanaMessage(payer: string, blockhash: string, instructions: SolanaInstruction[]): Uint8Array {
+  const accounts = new Map<string, { isSigner: boolean; isWritable: boolean }>();
+  accounts.set(payer, { isSigner: true, isWritable: true });
+  for (const instruction of instructions) {
+    for (const key of instruction.keys) {
+      const previous = accounts.get(key.pubkey);
+      accounts.set(key.pubkey, {
+        isSigner: Boolean(previous?.isSigner || key.isSigner),
+        isWritable: Boolean(previous?.isWritable || key.isWritable),
+      });
+    }
+    if (!accounts.has(instruction.programId)) accounts.set(instruction.programId, { isSigner: false, isWritable: false });
+  }
+  const rest = [...accounts.entries()].filter(([key]) => key !== payer);
+  rest.sort((a, b) => Number(b[1].isSigner) - Number(a[1].isSigner) || Number(b[1].isWritable) - Number(a[1].isWritable));
+  const ordered = [payer, ...rest.map(([key]) => key)];
+  if (ordered.length > 256) throw new Error('Solana transaction contains too many accounts.');
+  const indexes = new Map(ordered.map((key, index) => [key, index]));
+  const readonlyUnsigned = ordered.filter((key) => {
+    const meta = accounts.get(key)!;
+    return !meta.isSigner && !meta.isWritable;
+  }).length;
+  const compiled = instructions.map((instruction) => {
+    const programIndex = indexes.get(instruction.programId);
+    if (programIndex === undefined) throw new Error('Invalid Solana instruction program.');
+    const accountIndexes = instruction.keys.map((key) => {
+      const index = indexes.get(key.pubkey);
+      if (index === undefined) throw new Error('Invalid Solana instruction account.');
+      return index;
+    });
+    return [
+      programIndex,
+      ...shortvec(accountIndexes.length), ...accountIndexes,
+      ...shortvec(instruction.data.length), ...instruction.data,
+    ];
+  });
+  return Uint8Array.from([
+    1, 0, readonlyUnsigned,
+    ...shortvec(ordered.length),
+    ...ordered.flatMap((key) => [...bs58.decode(key)]),
+    ...bs58.decode(blockhash),
+    ...shortvec(compiled.length),
+    ...compiled.flat(),
+  ]);
+}
 async function solRpc<T>(network: 'mainnet' | 'testnet', method: string, params: unknown[] = []): Promise<T> {
   return serverRpcRequest<T>('solana', network, method, params);
 }
@@ -40,6 +139,7 @@ type Review = {
   solMessage?: Uint8Array;
   blockhash?: string;
   lastValidBlockHeight?: number;
+  rent?: string;
 };
 
 export default function Send() {
@@ -115,7 +215,26 @@ export default function Send() {
           setBalance(ethers.formatEther(BigInt(value)));
         }
       } else if (selectedBlockchain === 'solana') {
-        setBalance(String(selectedAsset.balance ?? 0));
+        const mint = selectedAsset.contractAddress;
+        if (!mint) throw new Error('Token mint address is missing.');
+        const [mintInfo, accounts] = await Promise.all([
+          solRpc<any>(network, 'getAccountInfo', [mint, { encoding: 'base64', commitment: 'confirmed' }]),
+          solRpc<any>(network, 'getTokenAccountsByOwner', [address, { mint }, { encoding: 'jsonParsed', commitment: 'confirmed' }]),
+        ]);
+        const ownerProgram = mintInfo?.value?.owner;
+        if (![SOL_TOKEN_PROGRAM, SOL_TOKEN_2022_PROGRAM].includes(ownerProgram)) throw new Error('This mint is not a supported SPL token on the selected network.');
+        const mintData = Buffer.from(mintInfo.value.data[0], 'base64');
+        if (mintData.length < 82) throw new Error('The SPL token mint data is invalid.');
+        const onChainDecimals = mintData[44];
+        if (onChainDecimals > 36) throw new Error('The SPL token has unsupported decimals.');
+        setSelectedAsset((current) => current.id === selectedAsset.id && current.decimals !== onChainDecimals
+          ? { ...current, decimals: onChainDecimals }
+          : current);
+        const rawBalance = (accounts?.value ?? []).reduce((sum: bigint, item: any) => {
+          const raw = item?.account?.data?.parsed?.info?.tokenAmount?.amount;
+          return sum + (raw ? BigInt(raw) : 0n);
+        }, 0n);
+        setBalance(ethers.formatUnits(rawBalance, onChainDecimals));
       } else {
         const iface = new ethers.Interface(TOKEN_ABI);
         const decimalsIface = new ethers.Interface(['function decimals() view returns (uint8)']);
@@ -133,7 +252,7 @@ export default function Send() {
         const [onChainDecimals] = decimalsIface.decodeFunctionResult('decimals', decimalsRaw);
         const resolvedDecimals = Number(onChainDecimals);
         if (!Number.isInteger(resolvedDecimals) || resolvedDecimals < 0 || resolvedDecimals > 36) throw new Error('Token contract returned invalid decimals.');
-        setSelectedAsset((current) => current.id === selectedAsset.id ? { ...current, decimals: resolvedDecimals } : current);
+        setSelectedAsset((current) => current.id === selectedAsset.id && current.decimals !== resolvedDecimals ? { ...current, decimals: resolvedDecimals } : current);
         setBalance(formatAmount(rawBalance.toString(), resolvedDecimals));
       }
     } catch (e: any) {
@@ -153,10 +272,6 @@ export default function Send() {
 
   const chooseAsset = (asset: Token) => {
     if (asset.blockchain !== selectedBlockchain) return;
-    if (selectedBlockchain === 'solana' && asset.contractAddress) {
-      setError('SPL token transfers are not enabled yet. Native SOL transfers are available now.');
-      return;
-    }
     setSelectedAsset(asset);
     setAssetPickerVisible(false);
     setAmount('');
@@ -170,9 +285,6 @@ export default function Send() {
     if (!address) { setError('No wallet address is available for the selected blockchain.'); return; }
     if (!to.trim()) { setError('Enter a recipient address.'); return; }
     if (!cleanAmount(amount)) { setError('Enter a valid amount greater than zero.'); return; }
-    if (selectedBlockchain === 'solana' && !isNative) {
-      setError('SPL token transfers are not enabled yet.'); return;
-    }
     setPreparing(true);
     try {
       await getMnemonicForOriginalWallet();
@@ -180,30 +292,113 @@ export default function Send() {
         const recipientBytes = bs58.decode(to.trim());
         if (recipientBytes.length !== 32) throw new Error('Enter a valid Solana address.');
         if (to.trim() === address) throw new Error('Recipient must be different from your own address.');
-        const lamports = ethers.parseUnits(amount, 9);
+
         const [latest, currentBalance] = await Promise.all([
           solRpc<any>(network, 'getLatestBlockhash', [{ commitment: 'confirmed' }]),
           solRpc<any>(network, 'getBalance', [address, { commitment: 'confirmed' }]),
         ]);
-        const keys = [...bs58.decode(address), ...recipientBytes, ...bs58.decode('11111111111111111111111111111111')];
-        const data = [...u32(2), ...u64(lamports)];
-        const message = Uint8Array.from([
-          1, 0, 1, ...shortvec(3), ...keys, ...bs58.decode(latest.value.blockhash),
-          ...shortvec(1), 2, ...shortvec(2), 0, 1, ...shortvec(data.length), ...data,
-        ]);
+        if (!latest?.value?.blockhash || latest.value.lastValidBlockHeight === undefined) throw new Error('Solana did not return a valid recent blockhash.');
+        const instructions: SolanaInstruction[] = [];
+        let transferUnits: bigint;
+        let rentReserve = 0n;
+
+        if (isNative) {
+          transferUnits = ethers.parseUnits(amount, 9);
+          instructions.push({
+            programId: SOL_SYSTEM_PROGRAM,
+            keys: [
+              { pubkey: address, isSigner: true, isWritable: true },
+              { pubkey: to.trim(), isSigner: false, isWritable: true },
+            ],
+            data: [...u32(2), ...u64(transferUnits)],
+          });
+        } else {
+          const mint = selectedAsset.contractAddress;
+          if (!mint) throw new Error('Token mint address is missing.');
+          const mintInfo = await solRpc<any>(network, 'getAccountInfo', [mint, { encoding: 'base64', commitment: 'confirmed' }]);
+          if (!mintInfo?.value) throw new Error('SPL token mint was not found on the selected network.');
+          const tokenProgram = mintInfo.value.owner as string;
+          if (![SOL_TOKEN_PROGRAM, SOL_TOKEN_2022_PROGRAM].includes(tokenProgram)) throw new Error('This mint is not owned by a supported Solana token program.');
+          const mintData = Buffer.from(mintInfo.value.data[0], 'base64');
+          if (mintData.length < 82) throw new Error('The SPL token mint data is invalid.');
+          const tokenDecimals = mintData[44];
+          if (!Number.isInteger(tokenDecimals) || tokenDecimals < 0 || tokenDecimals > 36) throw new Error('The SPL token has unsupported decimals.');
+          transferUnits = ethers.parseUnits(amount, tokenDecimals);
+
+          const sourceAccounts = await solRpc<any>(network, 'getTokenAccountsByOwner', [
+            address, { mint }, { encoding: 'jsonParsed', commitment: 'confirmed' },
+          ]);
+          const availableAccounts = (sourceAccounts?.value ?? []).map((item: any) => ({
+            address: String(item.pubkey),
+            amount: BigInt(item?.account?.data?.parsed?.info?.tokenAmount?.amount ?? '0'),
+          }));
+          const source = availableAccounts.find((item: { address: string; amount: bigint }) => item.amount >= transferUnits);
+          if (!source) {
+            const total = availableAccounts.reduce((sum: bigint, item: { address: string; amount: bigint }) => sum + item.amount, 0n);
+            throw new Error(total >= transferUnits
+              ? 'This balance is spread across multiple token accounts. Consolidate the SPL token accounts before sending.'
+              : 'Insufficient ' + assetSymbol + ' balance.');
+          }
+
+          const recipientTokenAccount = await deriveAssociatedTokenAddress(to.trim(), mint, tokenProgram);
+          const destinationInfo = await solRpc<any>(network, 'getAccountInfo', [
+            recipientTokenAccount, { encoding: 'base64', commitment: 'confirmed' },
+          ]);
+          if (!destinationInfo?.value) {
+            instructions.push({
+              programId: SOL_ASSOCIATED_TOKEN_PROGRAM,
+              keys: [
+                { pubkey: address, isSigner: true, isWritable: true },
+                { pubkey: recipientTokenAccount, isSigner: false, isWritable: true },
+                { pubkey: to.trim(), isSigner: false, isWritable: false },
+                { pubkey: mint, isSigner: false, isWritable: false },
+                { pubkey: SOL_SYSTEM_PROGRAM, isSigner: false, isWritable: false },
+                { pubkey: tokenProgram, isSigner: false, isWritable: false },
+              ],
+              data: [1],
+            });
+            const rentLamports = await solRpc<number>(network, 'getMinimumBalanceForRentExemption', [165, { commitment: 'confirmed' }]);
+            rentReserve = BigInt(rentLamports);
+            if (tokenProgram === SOL_TOKEN_2022_PROGRAM) rentReserve += 1_000_000n;
+          } else if (destinationInfo.value.owner !== tokenProgram) {
+            throw new Error('Recipient token account has an unexpected owner program.');
+          }
+
+          instructions.push({
+            programId: tokenProgram,
+            keys: [
+              { pubkey: source.address, isSigner: false, isWritable: true },
+              { pubkey: mint, isSigner: false, isWritable: false },
+              { pubkey: recipientTokenAccount, isSigner: false, isWritable: true },
+              { pubkey: address, isSigner: true, isWritable: false },
+            ],
+            data: [12, ...u64(transferUnits), tokenDecimals],
+          });
+        }
+
+        const message = compileSolanaMessage(address, latest.value.blockhash, instructions);
         const feeResult = await solRpc<any>(network, 'getFeeForMessage', [
           Buffer.from(message).toString('base64'),
           { commitment: 'confirmed', encoding: 'base64' },
         ]);
         if (feeResult.value === null || feeResult.value === undefined) throw new Error('Unable to estimate Solana network fee.');
         const fee = BigInt(feeResult.value);
-        if (lamports + fee > BigInt(currentBalance.value)) throw new Error('Insufficient SOL for the transfer amount and network fee.');
+        const nativeBalance = BigInt(currentBalance.value);
+        const requiredLamports = fee + rentReserve + (isNative ? transferUnits : 0n);
+        if (requiredLamports > nativeBalance) {
+          throw new Error(isNative
+            ? 'Insufficient SOL for the transfer amount and network fee.'
+            : rentReserve > 0n
+              ? 'Insufficient SOL to pay the network fee and create the recipient token account.'
+              : 'Insufficient SOL to pay the network fee.');
+        }
         setReview({
           to: to.trim(), amount, fee: ethers.formatUnits(fee, 9), feeSymbol: 'SOL',
           network: testnet ? 'Solana Devnet' : 'Solana Mainnet',
-          assetName: selectedAsset.name, assetSymbol, isNative: true,
+          assetName: selectedAsset.name, assetSymbol, isNative,
           solMessage: message, blockhash: latest.value.blockhash,
           lastValidBlockHeight: latest.value.lastValidBlockHeight,
+          rent: rentReserve > 0n ? ethers.formatUnits(rentReserve, 9) : undefined,
         });
       } else {
         if (!ethers.isAddress(to.trim())) throw new Error('Enter a valid EVM wallet address.');
@@ -302,15 +497,21 @@ export default function Send() {
       let txHash = '';
       if (selectedBlockchain === 'solana') {
         if (!review.solMessage || !review.blockhash || review.lastValidBlockHeight === undefined) throw new Error('Transaction review expired. Review again.');
-        const currentBlockHeight = await solRpc<number>(network, 'getBlockHeight', [{ commitment: 'confirmed' }]);
+        const [currentBlockHeight, actualWalletAddress] = await Promise.all([
+          solRpc<number>(network, 'getBlockHeight', [{ commitment: 'confirmed' }]),
+          Promise.resolve((await deriveAddresses(mnemonic)).solana),
+        ]);
+        if (actualWalletAddress !== address) throw new Error('Signing account does not match the active Solana address.');
         if (currentBlockHeight > review.lastValidBlockHeight) throw new Error('Solana transaction review expired. Please review the transfer again.');
         const signature = await signSolanaMessage(review.solMessage);
+        if (signature.length !== 64) throw new Error('The wallet returned an invalid Solana signature.');
+        const expectedSignature = bs58.encode(Uint8Array.from(signature));
         const raw = Uint8Array.from([...shortvec(1), ...signature, ...review.solMessage]);
         txHash = await solRpc<string>(network, 'sendTransaction', [
           Buffer.from(raw).toString('base64'),
           { encoding: 'base64', preflightCommitment: 'confirmed', skipPreflight: false },
         ]);
-        if (!txHash || txHash.length < 80) throw new Error('Solana RPC returned an invalid transaction signature.');
+        if (!txHash || txHash.length < 80 || txHash !== expectedSignature) throw new Error('Solana RPC returned a signature that does not match the signed transaction.');
         submittedHash = txHash;
         let confirmed = false;
         for (let attempt = 0; attempt < 25; attempt++) {
@@ -334,6 +535,7 @@ export default function Send() {
         const signed = await signer.signTransaction(review.evmTx);
         txHash = await serverRpcRequest<string>(selectedBlockchain, network, 'eth_sendRawTransaction', [signed]);
         if (!/^0x[a-fA-F0-9]{64}$/.test(txHash)) throw new Error('RPC returned an invalid transaction hash.');
+        if (txHash.toLowerCase() !== ethers.keccak256(signed).toLowerCase()) throw new Error('RPC transaction hash did not match the signed transaction.');
         submittedHash = txHash;
         let confirmed = false;
         for (let attempt = 0; attempt < 30; attempt++) {
@@ -455,6 +657,7 @@ export default function Send() {
               <View style={s.row}><Text style={s.muted}>You send</Text><Text style={s.value}>{review.amount} {review.assetSymbol}</Text></View>
               <View style={s.row}><Text style={s.muted}>Network</Text><Text style={s.value}>{review.network}</Text></View>
               <View style={s.row}><Text style={s.muted}>Network fee</Text><Text style={s.value}>{Number(review.fee).toFixed(8)} {review.feeSymbol}</Text></View>
+              {review.rent ? <View style={s.row}><Text style={s.muted}>Recipient token account rent</Text><Text style={s.value}>{Number(review.rent).toFixed(8)} SOL</Text></View> : null}
               <Text style={s.muted}>Recipient</Text><Text selectable style={s.recipient}>{review.to}</Text>
               <Text style={s.warning}>Verify the recipient, asset and network. Blockchain transfers are generally irreversible.</Text>
               <TouchableOpacity style={[s.primary, sending && s.disabled]} disabled={sending} onPress={send}>
@@ -483,13 +686,12 @@ export default function Send() {
               </View>
               <ScrollView style={{ maxHeight: 360 }}>
                 {chainAssets.map((asset) => {
-                  const unsupported = selectedBlockchain === 'solana' && Boolean(asset.contractAddress);
                   const active = selectedAsset.id === asset.id;
                   return (
-                    <TouchableOpacity key={asset.id} style={[s.assetOption, active && s.assetOptionActive, unsupported && { opacity: 0.45 }]} disabled={unsupported} onPress={() => chooseAsset(asset)}>
+                    <TouchableOpacity key={asset.id} style={[s.assetOption, active && s.assetOptionActive]} onPress={() => chooseAsset(asset)}>
                       <View style={s.assetIcon}><Ionicons name={asset.contractAddress ? 'pricetag-outline' : 'diamond-outline'} size={19} color="#6C4CF1" /></View>
                       <View style={{ flex: 1 }}><Text style={s.assetName}>{asset.name}</Text><Text style={s.assetSub}>{asset.symbol}{asset.contractAddress ? ' · Imported token' : ' · Native asset'}</Text></View>
-                      {active ? <Ionicons name="checkmark-circle" size={20} color="#6C4CF1" /> : unsupported ? <Text style={s.comingSoon}>Soon</Text> : <Ionicons name="chevron-forward" size={17} color="#9B97A8" />}
+                      {active ? <Ionicons name="checkmark-circle" size={20} color="#6C4CF1" /> : <Ionicons name="chevron-forward" size={17} color="#9B97A8" />}
                     </TouchableOpacity>
                   );
                 })}
