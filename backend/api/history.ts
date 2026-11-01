@@ -89,7 +89,7 @@ async function transfers(
     pageKey=payload?.result?.pageKey;
     pages++;
   } while(pageKey && rows.length<TRANSFER_PAGE_SIZE && pages<MAX_TRANSFER_PAGES);
-  return {rows:rows.slice(0,TRANSFER_PAGE_SIZE),complete:!pageKey};
+  return {rows:rows.slice(0,TRANSFER_PAGE_SIZE),complete:rows.length>=TRANSFER_PAGE_SIZE||!pageKey};
 }
 
 export default async function handler(req:ApiRequest,res:ApiResponse) {
@@ -127,7 +127,7 @@ export default async function handler(req:ApiRequest,res:ApiResponse) {
     const querySucceeded=settled.some(item=>item.status==='fulfilled');
     if(!querySucceeded)throw new Error('history_provider_unavailable');
     const seen=new Set<string>();
-    const rows=[...outgoing.map(item=>({item,incoming:false})),...incoming.map(item=>({item,incoming:true}))].flatMap(({item,isIncoming})=>{
+    const rows=[...outgoing.map(item=>({item,incoming:false})),...incoming.map(item=>({item,incoming:true}))].flatMap(({item,incoming:isIncoming})=>{
       const hash=String(item.hash||''),from=String(item.from||''),to=String(item.to||'');
       if(!/^0x[a-fA-F0-9]{64}$/.test(hash)||!from||!to)return [];
       const tokenAddress=String(item.rawContract?.address||'').toLowerCase();
