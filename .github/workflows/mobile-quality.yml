@@ -71,6 +71,9 @@ jobs:
       - name: Run Solana history regression tests
         run: node --test tests/solana-history-regression.test.mjs
 
+      - name: Run Phase 5 RPC regression tests
+        run: node --test tests/phase-5-rpc-regression.test.mjs
+
       - name: Export Android JavaScript bundle
         run: npx expo export --platform android --output-dir /tmp/xu-wallet-export
 
