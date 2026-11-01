@@ -40,11 +40,6 @@ async function rpc<T>(network:'mainnet'|'testnet',method:string,params:unknown[]
  const payload=JSON.parse(response.body) as RpcResult<T>;
  if(payload.error||payload.result===undefined)throw new Error('solana_rpc_unavailable');return payload.result;
 }
-async function mapLimit<T,R>(items:T[],limit:number,mapper:(item:T)=>Promise<R>):Promise<R[]>{
- const output=new Array<R>(items.length);let next=0;
- await Promise.all(Array.from({length:Math.min(limit,items.length)},async()=>{while(true){const i=next++;if(i>=items.length)return;try{output[i]=await mapper(items[i]);}catch{output[i]=null as R;}}}));
- return output;
-}
 async function mapLimitStrict<T,R>(items:T[],limit:number,mapper:(item:T)=>Promise<R>):Promise<R[]>{
  const output=new Array<R>(items.length);let next=0;
  await Promise.all(Array.from({length:Math.min(limit,items.length)},async()=>{while(true){const i=next++;if(i>=items.length)return;output[i]=await mapper(items[i]);}}));
@@ -89,7 +84,7 @@ export default async function handler(req:ApiRequest,res:ApiResponse){
   const pageByAddress=new Map<string,SignatureInfo[]>(),bySignature=new Map<string,SignatureInfo>();
   for(const entry of pages){pageByAddress.set(entry.address,entry.page);for(const item of entry.page)if(!bySignature.has(item.signature))bySignature.set(item.signature,item);}
   const signatures=[...bySignature.values()].sort((a,b)=>b.slot-a.slot);
-  const transactions=await mapLimit(signatures,TX_CONCURRENCY,item=>rpc<Transaction|null>(network,'getTransaction',[item.signature,{encoding:'jsonParsed',commitment:'confirmed',maxSupportedTransactionVersion:0}]));
+  const transactions=await mapLimitStrict(signatures,TX_CONCURRENCY,item=>rpc<Transaction|null>(network,'getTransaction',[item.signature,{encoding:'jsonParsed',commitment:'confirmed',maxSupportedTransactionVersion:0}]));
   const tokenSet=new Set(tokenAccounts),rows:SolanaHistoryRow[]=[],consumed=new Set<string>();
   for(let i=0;i<transactions.length;i++){
    const tx=transactions[i],sig=signatures[i];if(!sig)continue;consumed.add(sig.signature);
