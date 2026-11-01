@@ -7,19 +7,13 @@ import { ethers } from 'ethers';
 import bs58 from 'bs58';
 import { Buffer } from 'buffer';
 import { useWallet, Blockchain, Token } from '../context/WalletContext';
-import { getEvmRpcConfig, getSolanaRpcEndpoint } from '../mobile/services/rpcManager';
+import { getCentralEvmChainId, getCentralRpcUrl, serverRpcRequest } from '../mobile/services/serverRpc';
 
 const ABI = ['function name() view returns (string)', 'function symbol() view returns (string)', 'function decimals() view returns (uint8)', 'function balanceOf(address) view returns (uint256)'];
 const TOKEN_PROGRAM = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
 const TOKEN_2022_PROGRAM = 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb';
 
-async function solRpc(url: string, method: string, params: unknown[] = []) {
-  const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) });
-  if (!response.ok) throw new Error('Solana RPC request failed.');
-  const json = await response.json();
-  if (json.error) throw new Error(json.error.message || 'Solana RPC request failed.');
-  return json.result;
-}
+
 
 export default function ImportToken() {
   const router = useRouter();
@@ -42,13 +36,12 @@ export default function ImportToken() {
       if (isSolana) {
         const decoded = bs58.decode(value);
         if (decoded.length !== 32) throw new Error('Enter a valid Solana token mint address.');
-        const rpc = getSolanaRpcEndpoint(network);
-        const account = await solRpc(rpc, 'getAccountInfo', [value, { encoding: 'base64', commitment: 'confirmed' }]);
+        const account=await serverRpcRequest<any>('solana',network,'getAccountInfo',[value,{encoding:'base64',commitment:'confirmed'}]);
         if (!account?.value || ![TOKEN_PROGRAM, TOKEN_2022_PROGRAM].includes(account.value.owner)) throw new Error('Token not found. This address is not a supported SPL token mint on the selected Solana network.');
         const mintData = Buffer.from(account.value.data[0], 'base64');
         if (mintData.length < 82) throw new Error('Invalid SPL mint account data.');
         const decimals = mintData[44];
-        const accounts = await solRpc(rpc, 'getTokenAccountsByOwner', [walletAddress, { mint: value }, { encoding: 'jsonParsed', commitment: 'confirmed' }]);
+        const accounts=await serverRpcRequest<any>('solana',network,'getTokenAccountsByOwner',[walletAddress,{mint:value},{encoding:'jsonParsed',commitment:'confirmed'}]);
         const balance = (accounts?.value || []).reduce((sum: number, item: any) => sum + Number(item.account.data.parsed.info.tokenAmount.uiAmountString || 0), 0);
         let name = 'Solana SPL Token';
         let symbol = `SPL-${value.slice(0, 4)}`;
@@ -62,10 +55,10 @@ export default function ImportToken() {
         } catch {}
         found = { id: `custom-${selectedBlockchain}-${value}`, name, symbol, balance, balanceUSD: 0, contractAddress: value, decimals, blockchain: selectedBlockchain };
       } else {
-        const config = getEvmRpcConfig(selectedBlockchain, network);
-        const provider = new ethers.JsonRpcProvider(config.rpc, config.chainId);
+        const chainId=getCentralEvmChainId(selectedBlockchain,network);
+        const provider=new ethers.JsonRpcProvider(getCentralRpcUrl(selectedBlockchain,network),chainId);
         const chain = await provider.getNetwork();
-        if (Number(chain.chainId) !== config.chainId) throw new Error('RPC network mismatch. Import cancelled.');
+        if (Number(chain.chainId) !== chainId) throw new Error('RPC network mismatch. Import cancelled.');
         if (!ethers.isAddress(value)) throw new Error('Enter a valid token contract address.');
         const checksumAddress = ethers.getAddress(value);
         const bytecode = await provider.getCode(checksumAddress);

@@ -6,7 +6,7 @@ import {
   clearWalletFromStorage,
   WalletAddresses,
 } from "../services/walletService";
-import { fetchEvmNativeBalance, fetchSolanaBalance } from "../services/balanceService";
+import { fetchEvmNativeBalance, fetchSolanaBalance, fetchERC20Info, fetchSolanaTokenBalance } from "../services/balanceService";
 
 export type Blockchain = "solana" | "ethereum" | "bnb" | "polygon";
 export type Network = "mainnet" | "testnet";
@@ -110,14 +110,24 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setIsLoadingBalances(true);
     try {
       const [ethBal, solBal, bnbBal, maticBal] = await Promise.all([
-        fetchEvmNativeBalance(addresses.ethereum, "ethereum"),
-        fetchSolanaBalance(addresses.solana),
-        fetchEvmNativeBalance(addresses.bnb, "bnb"),
-        fetchEvmNativeBalance(addresses.polygon, "polygon"),
+        fetchEvmNativeBalance(addresses.ethereum, "ethereum", network),
+        fetchSolanaBalance(addresses.solana, network),
+        fetchEvmNativeBalance(addresses.bnb, "bnb", network),
+        fetchEvmNativeBalance(addresses.polygon, "polygon", network),
       ]);
 
+      const currentTokens = tokens;
+      const customTokens = await Promise.all(currentTokens.filter((t) => t.contractAddress).map(async (token) => {
+        try {
+          if (token.blockchain === "solana") {
+            const result = await fetchSolanaTokenBalance(token.contractAddress!, addresses.solana, network);
+            return { ...token, ...result };
+          }
+          const result = await fetchERC20Info(token.contractAddress!, addresses[token.blockchain], token.blockchain, network);
+          return { ...token, ...result };
+        } catch { return token; }
+      }));
       setTokens((prev) => {
-        const customTokens = prev.filter((t) => t.contractAddress);
         const nativeTokens: Token[] = NATIVE_TOKEN_DEFS.map((def) => {
           const balMap: Record<string, { balance: number; balanceUSD: number }> = {
             ethereum: ethBal,
@@ -135,7 +145,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoadingBalances(false);
     }
-  }, []);
+  }, [network, tokens]);
 
   const initWallet = useCallback(
     async (mnemonic: string) => {
@@ -175,7 +185,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setTokens(nativeTokens);
       fetchNativeBalances(addresses);
     }
-  }, [fetchNativeBalances]);
+  }, [network]);
 
   useEffect(() => {
     if (isWalletCreated && !isLocked && autoLockTimer > 0) {

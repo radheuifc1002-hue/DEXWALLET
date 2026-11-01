@@ -1,36 +1,43 @@
-# XU Wallet API backend
+# DEXWALLET API backend
 
-This directory is the independent Vercel project root. Configure the Vercel project **Root Directory** as `backend`. Vercel will then build only this directory; the web wallet and Expo application are outside its deployment root.
+The independent Vercel project uses this directory as its root. The repository-root `dexwallet` Vercel project also contains API routes and may serve the mobile RPC alias.
 
-## Vercel Functions
+## API routes
+- `POST /api/rpc?chain=<chain>&network=<network>` — server-side JSON-RPC proxy.
+- `GET /api/rpc-health?chain=<chain>&network=<network>` — configured providers and this function instance's circuit state (not an upstream probe).
+- `POST /api/history` — stateless EVM asset history via Alchemy Transfers API.
+- `POST /api/solana-history` — stateless Solana SOL/SPL history via the central Solana RPC manager.
+- `GET /api/health` and `GET /api/ready` — basic health/readiness.
 
-Routes:
-- `GET /api/health` — process liveness only.
-- `GET /api/ready` — database/schema readiness.
-- `GET /api/rpc-config` — public RPC endpoint registry.
-- `POST /api/indexed-history` — cached indexed EVM history (maximum 50 rows).
-- `POST /api/indexer/register-address` — explicit opt-in address enrollment.
+## Solana history request
 
-Required Vercel **Production** environment variables:
-- `DATABASE_URL` — Neon pooled connection string. Server-side only.
-- `API_RATE_LIMIT_SECRET` — cryptographically random secret of at least 32 characters. Server-side only.
-
-Never prefix these secrets with `EXPO_PUBLIC_`. The mobile app must never receive database credentials or rate-limit secrets.
-
-## Persistent indexer worker
-
-The worker is not a Vercel Function. Build the container with this directory as context:
-
-```sh
-docker build -t xu-wallet-indexer ./backend/indexer
+Send JSON to `/api/solana-history`:
+```json
+{
+  "network": "mainnet",
+  "walletAddress": "<base58 address>",
+  "isNative": true,
+  "limit": 50
+}
 ```
 
-Run it on an always-on container service with `DATABASE_URL`, restart-on-failure, health monitoring and logs. It requires database permissions limited to the indexer tables.
+For an SPL token, set `isNative` to `false` and provide `mintAddress`. To continue, pass the returned `nextBefore` signature as `before`. The adapter fetches at most 50 signatures per page and fetches transaction details with a bounded concurrency of five. The response reports `hasMore` and `complete`; consumers should not infer full-history completeness from one page.
 
-## Database
+## Security and operations
 
-Apply `database/migrations/001_initial_indexer_schema.sql` to the intended Neon production branch only after testing the migration on a temporary Neon branch and confirming the schema smoke tests. Do not enable mobile indexed-history opt-in until `/api/ready` is HTTP 200 and an end-to-end address sync has completed.
+- The API handles public wallet addresses and chain data only.
+- Seed phrases, private keys and signing never leave the mobile device.
+- Provider credentials and upstream URLs are configured server-side.
+- No database, indexer, address-registration system or persistent transaction-history store is required.
+- The RPC manager's circuit-breaker state is process-local to each serverless function instance.
+- Configure a compatible fallback provider per chain/network before relying on failover.
 
-## Release gate
 
-A successful Vercel build is not proof that indexing works. Production readiness additionally requires database migration, worker deployment, chain-specific provider coverage, reorg/finality reconciliation, monitoring/alerts, backup/restore validation and end-to-end mobile tests.
+## Solana history behavior
+
+The Solana history API discovers SPL token accounts for the selected mint and merges wallet/token-account signature streams using a validated opaque per-address cursor. It caps associated token accounts at 20 and uses bounded concurrent RPC requests. Mobile asset-detail history uses the typed `mobile/services/solanaHistory.ts` client. See [Phase 4 documentation](../docs/PHASE_4_SOLANA_HISTORY.md).
+
+
+## Central RPC gateway
+
+`POST /api/rpc?chain=<chain>&network=<network>` is the mobile JSON-RPC gateway. It accepts an explicit read-only method allowlist and only the signed broadcast methods `eth_sendRawTransaction` and Solana `sendTransaction` as non-replayable writes. Unknown methods and mixed read/write batches are rejected. Read-only calls may fail over to configured compatible providers; signed broadcasts are sent to the primary provider only. Wallet signing and secret storage remain on-device.

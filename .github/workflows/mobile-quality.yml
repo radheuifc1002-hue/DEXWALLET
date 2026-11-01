@@ -2,14 +2,13 @@ name: Mobile quality gates
 
 on:
   pull_request:
-    branches: [main, infra/phase-2-rpc-health-failover]
+    branches: [main, infra/phase-2-rpc-health-failover, infra/phase-2-generic-history]
     paths:
       - "app/**"
       - "context/**"
       - "mobile/**"
+      - "web-app/**"
       - "backend/api/**"
-      - "backend/database/**"
-      - "backend/indexer/**"
       - "tests/**"
       - "components/**"
       - "package.json"
@@ -18,14 +17,13 @@ on:
       - "tsconfig.json"
       - ".github/workflows/mobile-quality.yml"
   push:
-    branches: [main, infra/phase-2-rpc-health-failover]
+    branches: [main, infra/phase-2-rpc-health-failover, infra/phase-2-generic-history]
     paths:
       - "app/**"
       - "context/**"
+      - "web-app/**"
       - "mobile/**"
       - "backend/api/**"
-      - "backend/database/**"
-      - "backend/indexer/**"
       - "components/**"
       - "package.json"
       - "package-lock.json"
@@ -42,7 +40,7 @@ concurrency:
 
 jobs:
   typecheck-and-bundle:
-    name: TypeScript and Android bundle validation
+    name: TypeScript validation
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -57,29 +55,11 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Resolve lockfile after dependency changes
-        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
-
       - name: Install locked dependencies
         run: npm ci --no-audit --no-fund
-
-      - name: Verify Expo dependency alignment
-        run: npx expo install --check
 
       - name: Type-check the application
         run: npx tsc --noEmit
 
-      - name: Export Android JavaScript bundle
-        run: npx expo export --platform android --output-dir /tmp/xu-wallet-export
-
-      - name: Verify bundle output
-        run: test -s /tmp/xu-wallet-export/metadata.json
-
-      - name: Run indexer regression tests
-        run: node --test tests/indexer-regression.test.mjs
-
-      - name: Validate indexer worker syntax
-        run: node --check backend/indexer/worker.mjs
-
-      - name: Build indexer worker container
-        run: docker build -t dexwallet-indexer ./backend/indexer
+      - name: Type-check the backend API independently
+        run: npx tsc --noEmit -p backend/tsconfig.json

@@ -9,5 +9,5 @@
     "types": ["node"],
     "noEmit": true
   },
-  "include": ["api/**/*.ts", "indexer/**/*.ts"]
+  "include": ["api/**/*.ts"]
 }

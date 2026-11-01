@@ -13,6 +13,11 @@ const rpcConfig = {
       mainnet: { chainId: 137, endpoints: ['https://dexwallet-radheuifc1002-2100s-projects.vercel.app/api/rpc?chain=polygon&network=mainnet'] },
       testnet: { chainId: 80002, endpoints: ['https://dexwallet-radheuifc1002-2100s-projects.vercel.app/api/rpc?chain=polygon&network=testnet'] }
     },
+    arbitrum: { mainnet: { chainId: 42161, endpoints: ['https://dexwallet-radheuifc1002-2100s-projects.vercel.app/api/rpc?chain=arbitrum&network=mainnet'] } },
+    optimism: { mainnet: { chainId: 10, endpoints: ['https://dexwallet-radheuifc1002-2100s-projects.vercel.app/api/rpc?chain=optimism&network=mainnet'] } },
+    base: { mainnet: { chainId: 8453, endpoints: ['https://dexwallet-radheuifc1002-2100s-projects.vercel.app/api/rpc?chain=base&network=mainnet'] } },
+    avalanche: { mainnet: { chainId: 43114, endpoints: ['https://dexwallet-radheuifc1002-2100s-projects.vercel.app/api/rpc?chain=avalanche&network=mainnet'] } },
+    linea: { mainnet: { chainId: 59144, endpoints: ['https://dexwallet-radheuifc1002-2100s-projects.vercel.app/api/rpc?chain=linea&network=mainnet'] } },
     solana: {
       mainnet: { endpoints: ['https://dexwallet-radheuifc1002-2100s-projects.vercel.app/api/rpc?chain=solana&network=mainnet'] },
       testnet: { endpoints: ['https://dexwallet-radheuifc1002-2100s-projects.vercel.app/api/rpc?chain=solana&network=testnet'] }
