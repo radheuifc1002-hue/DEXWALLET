@@ -5,11 +5,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useWallet, type Blockchain } from '../context/WalletContext';
 import {
-  createWalletVault, renameWalletVault, addMnemonicSource, addDerivedAccount,
+  createWalletVault, renameWalletVault, addMnemonicSource, addDerivedAccounts,
   addPrivateKeyAccount, addWatchOnlyAccount, renameWalletAccount, removeWalletAccount,
 } from '../mobile/services/walletVaultService';
 
-type Mode = 'vault'|'mnemonic'|'private'|'watch'|'rename'|null;
+type Mode = 'vault'|'mnemonic'|'private'|'watch'|'rename'|'derive'|null;
 const CHAINS: Blockchain[] = ['ethereum','bnb','polygon','solana'];
 const CHAIN_NAMES: Record<Blockchain,string> = { ethereum:'Ethereum',bnb:'BNB Chain',polygon:'Polygon',solana:'Solana' };
 const short = (value?:string) => value ? value.slice(0,8)+'…'+value.slice(-6) : 'Not available';
@@ -25,6 +25,7 @@ export default function WalletManagement() {
   const [chain,setChain]=useState<Blockchain>('ethereum');
   const [addresses,setAddresses]=useState<Record<Blockchain,string>>({ethereum:'',bnb:'',polygon:'',solana:''});
   const [busy,setBusy]=useState(false);
+  const [batchCount,setBatchCount]=useState('5');
   const vaults=walletVaultStore?.vaults??[];
 
   const openMode=(next:Mode,vaultId?:string,accountId?:string)=>{
@@ -32,6 +33,7 @@ export default function WalletManagement() {
     setTargetAccount(accountId??'');
     setName('');
     setSecret('');
+    setBatchCount('5');
     setAddresses({ethereum:'',bnb:'',polygon:'',solana:''});
     setMode(next);
   };
@@ -53,6 +55,11 @@ export default function WalletManagement() {
         const input:Partial<Record<Blockchain,string>>={};
         for(const item of CHAINS)if(addresses[item].trim())input[item]=addresses[item].trim();
         await addWatchOnlyAccount(targetVault,input,name.trim()||'Watch Wallet');
+      }else if(mode==='derive'){
+        if(!targetVault||!targetAccount)throw new Error('Recovery phrase source not selected.');
+        const count=Number(batchCount);
+        if(!Number.isInteger(count)||count<1||count>20)throw new Error('Choose between 1 and 20 accounts.');
+        await addDerivedAccounts(targetVault,targetAccount,count,name.trim()||'Account');
       }else if(mode==='rename'){
         if(!targetVault)throw new Error('Wallet or vault not selected.');
         if(targetAccount==='__vault__') await renameWalletVault(targetVault,name);
@@ -77,11 +84,6 @@ export default function WalletManagement() {
       {text:'Remove',style:'destructive',onPress:async()=>{try{await removeWalletAccount(vaultId,accountId);await refreshWalletVaultStore();}catch(e){Alert.alert('Unable to remove wallet',e instanceof Error?e.message:'Please try again.');}}}
     ]);
   };
-  const addAccount=async(vaultId:string,sourceId:string)=>{
-    try{await addDerivedAccount(vaultId,sourceId);await refreshWalletVaultStore();}
-    catch(e){Alert.alert('Unable to derive account',e instanceof Error?e.message:'Please try again.');}
-  };
-
   return <SafeAreaView style={styles.container} edges={['top']}>
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <View style={styles.header}>
@@ -119,7 +121,7 @@ export default function WalletManagement() {
             </View>
           </View>;
         })}
-        {vault.sources.filter(source=>source.type==='mnemonic').map(source=><TouchableOpacity key={source.id} style={styles.deriveRow} onPress={()=>addAccount(vault.id,source.id)}><Ionicons name="git-branch-outline" size={16} color="#6C4CF1"/><Text style={styles.deriveText}>Add derived account from {source.name}</Text><Ionicons name="add-circle-outline" size={18} color="#6C4CF1"/></TouchableOpacity>)}
+        {vault.sources.filter(source=>source.type==='mnemonic').map(source=><TouchableOpacity key={source.id} style={styles.deriveRow} onPress={()=>openMode('derive',vault.id,source.id)}><Ionicons name="git-branch-outline" size={16} color="#6C4CF1"/><Text style={styles.deriveText}>Add accounts from {source.name}</Text><Ionicons name="add-circle-outline" size={18} color="#6C4CF1"/></TouchableOpacity>)}
         <View style={styles.vaultActions}><TouchableOpacity style={styles.vaultAction} onPress={()=>openMode('mnemonic',vault.id)}><Ionicons name="key-outline" size={15} color="#6C4CF1"/><Text style={styles.addToVaultText}>Recovery phrase</Text></TouchableOpacity><TouchableOpacity style={styles.vaultAction} onPress={()=>openMode('watch',vault.id)}><Ionicons name="eye-outline" size={15} color="#0D9488"/><Text style={styles.addToVaultText}>Watch wallet</Text></TouchableOpacity><TouchableOpacity style={styles.vaultAction} onPress={()=>openMode('private',vault.id)}><Ionicons name="key" size={15} color="#6C4CF1"/><Text style={styles.addToVaultText}>Private key</Text></TouchableOpacity></View>
       </View>)}
       {vaults.length===0?<View style={styles.empty}><Ionicons name="wallet-outline" size={38} color="#9B97B2"/><Text style={styles.emptyTitle}>No vaults found</Text><Text style={styles.emptyText}>Create a vault or add a wallet to get started.</Text></View>:null}
@@ -128,13 +130,14 @@ export default function WalletManagement() {
     <Modal visible={mode!==null} transparent animationType="slide" onRequestClose={()=>setMode(null)}>
       <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS==='ios'?'padding':undefined}>
         <View style={styles.modalCard}>
-          <View style={styles.modalHeader}><Text style={styles.modalTitle}>{mode==='vault'?'Create vault':mode==='mnemonic'?'Add recovery phrase':mode==='private'?'Import private key':mode==='watch'?'Add watch wallet':'Rename'}</Text><TouchableOpacity onPress={()=>setMode(null)}><Ionicons name="close" size={22} color="#777286"/></TouchableOpacity></View>
+          <View style={styles.modalHeader}><Text style={styles.modalTitle}>{mode==='vault'?'Create vault':mode==='mnemonic'?'Add recovery phrase':mode==='private'?'Import private key':mode==='watch'?'Add watch wallet':mode==='derive'?'Add derived accounts':'Rename'}</Text><TouchableOpacity onPress={()=>setMode(null)}><Ionicons name="close" size={22} color="#777286"/></TouchableOpacity></View>
           {mode==='vault'||mode==='rename'?<TextInput style={styles.input} value={name} onChangeText={setName} placeholder={mode==='vault'?'Vault name':'New name'} placeholderTextColor="#9B97B2" autoCapitalize="words"/>:null}
+          {mode==='derive'?<><Text style={styles.fieldLabel}>Number of accounts (1–20)</Text><TextInput style={styles.input} value={batchCount} onChangeText={setBatchCount} keyboardType="number-pad" placeholder="5" placeholderTextColor="#9B97B2"/><Text style={styles.fieldLabel}>Account name prefix</Text><TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Account" placeholderTextColor="#9B97B2" autoCapitalize="words"/><Text style={styles.helper}>New accounts are derived locally from this recovery phrase. The phrase remains in secure device storage.</Text></>:null}
           {mode==='mnemonic'?<><Text style={styles.fieldLabel}>Recovery phrase (12 or 24 words)</Text><TextInput style={[styles.input,styles.secretInput]} value={secret} onChangeText={setSecret} placeholder="Enter recovery phrase" placeholderTextColor="#9B97B2" autoCapitalize="none" autoCorrect={false} secureTextEntry multiline={false}/><Text style={styles.helper}>This phrase is processed locally and stored in secure device storage.</Text></>:null}
           {mode==='private'?<><Text style={styles.fieldLabel}>Blockchain</Text><View style={styles.chainChips}>{CHAINS.map(item=><TouchableOpacity key={item} style={[styles.chainChip,chain===item&&styles.chainChipActive]} onPress={()=>setChain(item)}><Text style={[styles.chainChipText,chain===item&&styles.chainChipTextActive]}>{CHAIN_NAMES[item]}</Text></TouchableOpacity>)}</View><Text style={styles.fieldLabel}>Private key</Text><TextInput style={styles.input} value={secret} onChangeText={setSecret} placeholder="Enter private key" placeholderTextColor="#9B97B2" autoCapitalize="none" autoCorrect={false} secureTextEntry/></>:null}
           {mode==='watch'?<><Text style={styles.fieldLabel}>Enter any addresses you want to watch</Text>{CHAINS.map(item=><View key={item} style={styles.addressField}><Text style={styles.addressLabel}>{CHAIN_NAMES[item]}</Text><TextInput style={styles.input} value={addresses[item]} onChangeText={value=>setAddresses(current=>({...current,[item]:value}))} placeholder={item==='solana'?'Solana public address':'0x… public address'} placeholderTextColor="#9B97B2" autoCapitalize="none" autoCorrect={false}/></View>)}</>:null}
-          {mode!=='vault'&&mode!=='rename'?<TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Wallet name (optional)" placeholderTextColor="#9B97B2" autoCapitalize="words"/>:null}
-          <TouchableOpacity style={[styles.submit,busy&&{opacity:0.6}]} onPress={submit} disabled={busy}><Text style={styles.submitText}>{busy?'Saving…':mode==='vault'?'Create vault':mode==='rename'?'Save name':'Add wallet'}</Text></TouchableOpacity>
+          {mode!=='vault'&&mode!=='rename'&&mode!=='derive'?<TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Wallet name (optional)" placeholderTextColor="#9B97B2" autoCapitalize="words"/>:null}
+          <TouchableOpacity style={[styles.submit,busy&&{opacity:0.6}]} onPress={submit} disabled={busy}><Text style={styles.submitText}>{busy?'Saving…':mode==='vault'?'Create vault':mode==='rename'?'Save name':mode==='derive'?'Create accounts':'Add wallet'}</Text></TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
     </Modal>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Linking,
+  Alert,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -80,7 +81,7 @@ export default function AssetDetails() {
     decimals?: string;
     isNative?: string;
   }>();
-  const { walletAddresses, network } = useWallet();
+  const { walletAddresses, network, setSelectedBlockchain } = useWallet();
   const [rows, setRows] = useState<HistoryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -232,6 +233,21 @@ export default function AssetDetails() {
         </View>
       ) : null}
 
+      <View style={styles.assetActions}>
+        <TouchableOpacity style={styles.assetActionPrimary} onPress={() => {
+          setSelectedBlockchain(chain);
+          if (isNative) router.push('/send');
+          else Alert.alert('Token transfer', 'Token-specific sending is being implemented in Phase 3. The current Send screen only supports native coins.');
+        }}>
+          <Ionicons name="arrow-up" size={17} color="#FFFFFF" />
+          <Text style={styles.assetActionPrimaryText}>Send</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.assetActionSecondary} onPress={() => { setSelectedBlockchain(chain); router.push('/receive'); }}>
+          <Ionicons name="arrow-down" size={17} color="#6C4CF1" />
+          <Text style={styles.assetActionSecondaryText}>Receive</Text>
+        </TouchableOpacity>
+      </View>
+
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
@@ -305,6 +321,11 @@ const styles = StyleSheet.create({
   contractAddress: { color: '#211B35', fontSize: 11, fontFamily: 'monospace' },
   copyButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', marginLeft: 8 },
   content: { padding: 18, paddingBottom: 36 },
+  assetActions: { flexDirection: 'row', gap: 10, marginHorizontal: 18, marginTop: 14 },
+  assetActionPrimary: { flex: 1, minHeight: 46, borderRadius: 13, backgroundColor: '#6C4CF1', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  assetActionPrimaryText: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
+  assetActionSecondary: { flex: 1, minHeight: 46, borderRadius: 13, borderWidth: 1, borderColor: '#DCD5F4', backgroundColor: '#FFFFFF', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  assetActionSecondaryText: { color: '#6C4CF1', fontSize: 13, fontWeight: '800' },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
   sectionTitle: { color: '#211B35', fontSize: 18, fontWeight: '900' },
   sectionSubtitle: { color: '#8A849B', fontSize: 11, marginTop: 4 },

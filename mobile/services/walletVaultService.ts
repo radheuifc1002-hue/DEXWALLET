@@ -440,14 +440,27 @@ export async function setActiveWalletAccount(vaultId: string, accountId: string)
 export async function removeWalletAccount(vaultId: string, accountId: string): Promise<WalletVaultStore> {
   const store = await getWalletVaultStore();
   const vault = findVault(store, vaultId);
-  if (!vault.accounts.some((account) => account.id === accountId)) throw new Error('Wallet account not found.');
-  const accounts = vault.accounts.filter((account) => account.id !== accountId);
-  const nextVaults = store.vaults.map((item) => item.id === vaultId ? { ...item, accounts } : item);
+  const account = vault.accounts.find((item) => item.id === accountId);
+  if (!account) throw new Error('Wallet account not found.');
+
+  const accounts = vault.accounts.filter((item) => item.id !== accountId);
+  const sourceStillUsed = account.sourceId
+    ? store.vaults.some((item) => item.accounts.some((other) => other.id !== accountId && other.sourceId === account.sourceId))
+    : true;
+  const sources = account.sourceId && !sourceStillUsed
+    ? vault.sources.filter((source) => source.id !== account.sourceId)
+    : vault.sources;
+  const nextVaults = store.vaults.map((item) => item.id === vaultId ? { ...item, accounts, sources } : item);
   const remaining = nextVaults.flatMap((item) => item.accounts);
   const activeAccountId = store.activeAccountId === accountId ? (remaining[0]?.id ?? null) : store.activeAccountId;
-  const activeVaultId = store.activeAccountId === accountId ? (remaining[0] ? nextVaults.find((item) => item.accounts.some((a) => a.id === remaining[0].id))?.id ?? null : null) : store.activeVaultId;
+  const activeVaultId = store.activeAccountId === accountId
+    ? (remaining[0] ? nextVaults.find((item) => item.accounts.some((entry) => entry.id === remaining[0].id))?.id ?? null : null)
+    : store.activeVaultId;
   const next = { ...store, vaults: nextVaults, activeVaultId, activeAccountId };
   await persistStore(next);
+  if (account.sourceId && !sourceStillUsed) {
+    await SecureStore.deleteItemAsync(secretKey(account.sourceId)).catch(() => {});
+  }
   return next;
 }
 
