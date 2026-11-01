@@ -26,7 +26,7 @@ const TX_CONCURRENCY = 5;
 const SOL_LAMPORTS = 1_000_000_000;
 const EXPLORERS = {
   mainnet: 'https://solscan.io/tx/',
-  testnet: 'https://solscan.io/tx/?cluster=devnet&',
+  testnet: 'https://solscan.io/tx/',
 };
 
 function parseBody(value: unknown): Record<string, unknown> | null {
@@ -45,8 +45,8 @@ function formatUnits(raw: bigint, decimals: number): string {
 function accountKey(value: AccountKey): string {
   return typeof value === 'string' ? value : String(value?.pubkey || '');
 }
-async function rpc<T>(method: string, params: unknown[]): Promise<T> {
-  const response = await proxyRpc('solana', 'mainnet', {
+async function rpc<T>(network: 'mainnet' | 'testnet', method: string, params: unknown[]): Promise<T> {
+  const response = await proxyRpc('solana', network, {
     jsonrpc: '2.0', id: randomUUID(), method, params,
   });
   if (response.status < 200 || response.status >= 300) throw new Error('solana_rpc_unavailable');
@@ -96,11 +96,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (before && !/^[1-9A-HJ-NP-Za-km-z]{32,100}$/.test(before)) { res.status(400).json({ error: { code: 'invalid_cursor', requestId } }); return; }
 
   try {
-    const signatures = await rpc<SignatureInfo[]>('getSignaturesForAddress', [
+    const signatures = await rpc<SignatureInfo[]>(network, 'getSignaturesForAddress', [
       wallet, { limit: MAX_SIGNATURES, commitment: 'confirmed', ...(before ? { before } : {}) },
     ]);
     const transactions = await mapLimit(signatures, TX_CONCURRENCY, item =>
-      rpc<Transaction | null>('getTransaction', [item.signature, { encoding: 'jsonParsed', commitment: 'confirmed', maxSupportedTransactionVersion: 0 }])
+      rpc<Transaction | null>(network, 'getTransaction', [item.signature, { encoding: 'jsonParsed', commitment: 'confirmed', maxSupportedTransactionVersion: 0 }])
     );
     const rows = transactions.flatMap((tx, index) => {
       const signature = signatures[index];
@@ -109,7 +109,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const failed = Boolean(meta?.err ?? signature.err);
       const keys = (tx.transaction?.message?.accountKeys || []).map(accountKey);
       const walletIndex = keys.indexOf(wallet);
-      const explorerUrl = EXPLORERS[network] + (network === 'testnet' ? 'cluster=devnet&' : '') + signature.signature;
+      const explorerUrl = EXPLORERS[network] + signature.signature + (network === 'testnet' ? '?cluster=devnet' : '');
       const timestamp = Number(tx.blockTime ?? signature.blockTime ?? 0);
       if (isNative) {
         if (walletIndex < 0) return [];
