@@ -24,10 +24,10 @@ const READ_ONLY_METHODS = new Set([
   'eth_maxPriorityFeePerGas','eth_feeHistory','eth_getBalance','eth_getBlockByHash',
   'eth_getBlockByNumber','eth_getCode','eth_getLogs','eth_getStorageAt',
   'eth_getTransactionByHash','eth_getTransactionCount','eth_getTransactionReceipt',
-  'net_version','web3_clientVersion','getAccountInfo','getBalance','getBlock',
+  'net_version','web3_clientVersion','getAccountInfo','getBalance','getBlock','getFeeForMessage',
   'getBlockHeight','getBlockTime','getEpochInfo','getHealth','getLatestBlockhash',
   'getMinimumBalanceForRentExemption','getMultipleAccounts','getProgramAccounts',
-  'getSignaturesForAddress','getSlot','getTokenAccountBalance','getTokenAccountsByOwner',
+  'getSignatureStatuses','getSignaturesForAddress','getSlot','getTokenAccountBalance','getTokenAccountsByOwner',
   'getTransaction','getVersion',
 ]);
 const SIGNED_BROADCAST_METHODS = new Set(['eth_sendRawTransaction','sendTransaction']);
@@ -59,7 +59,7 @@ function getProviders(chain: RpcChain, network: RpcNetwork): Provider[] {
   if (validHttpsUrl(fallback)) providers.push({ name: 'configured-fallback', url: fallback, priority: 30 });
   return providers.sort((a,b) => a.priority-b.priority);
 }
-function retryableHttp(status: number) { return status === 408 || status === 425 || status === 429 || status >= 500; }
+function retryableHttp(status: number) { return status === 401 || status === 403 || status === 408 || status === 425 || status === 429 || status >= 500; }
 function retryableJsonRpc(payload: unknown): boolean {
   if (!payload || typeof payload !== 'object') return false;
   return (Array.isArray(payload) ? payload : [payload]).some((item: any) => {

@@ -1,5 +1,6 @@
 import { ethers } from "ethers";
-import { Blockchain } from "../context/WalletContext";
+import { Blockchain, Network } from "../context/WalletContext";
+import { getCentralEvmChainId, getCentralRpcUrl, serverRpcRequest } from "./serverRpc";
 
 const ERC20_ABI = [
   "function name() view returns (string)",
@@ -7,12 +8,6 @@ const ERC20_ABI = [
   "function decimals() view returns (uint8)",
   "function balanceOf(address owner) view returns (uint256)",
 ];
-
-const RPC_URLS: Record<string, string> = {
-  ethereum: "https://eth.llamarpc.com",
-  bnb: "https://bsc-dataseed.binance.org",
-  polygon: "https://polygon-rpc.com",
-};
 
 const EXPLORER_URLS: Record<string, string> = {
   ethereum: "https://api.etherscan.io/api",
@@ -30,13 +25,14 @@ const EXPLORER_KEYS: Record<string, string> = {
   polygon: POLYGONSCAN_KEY,
 };
 
-export const getProvider = (chain: string): ethers.JsonRpcProvider => {
-  return new ethers.JsonRpcProvider(RPC_URLS[chain]);
+export const getProvider = (chain: string, network: Network = "mainnet"): ethers.JsonRpcProvider => {
+  const selected = chain as Exclude<Blockchain, "solana">;
+  return new ethers.JsonRpcProvider(getCentralRpcUrl(selected, network), getCentralEvmChainId(selected, network), { staticNetwork: true });
 };
 
-export const fetchEvmNativeBalance = async (address: string, chain: string): Promise<{ balance: number; balanceUSD: number }> => {
+export const fetchEvmNativeBalance = async (address: string, chain: string, network: Network = 'mainnet'): Promise<{ balance: number; balanceUSD: number }> => {
   try {
-    const provider = getProvider(chain);
+    const provider = getProvider(chain, network);
     const rawBalance = await provider.getBalance(address);
     const balance = parseFloat(ethers.formatEther(rawBalance));
     const price = await fetchCoinPrice(chain);
@@ -46,21 +42,10 @@ export const fetchEvmNativeBalance = async (address: string, chain: string): Pro
   }
 };
 
-export const fetchSolanaBalance = async (address: string): Promise<{ balance: number; balanceUSD: number }> => {
+export const fetchSolanaBalance = async (address: string, network: Network = "mainnet"): Promise<{ balance: number; balanceUSD: number }> => {
   try {
-    const response = await fetch("https://api.mainnet-beta.solana.com", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "getBalance",
-        params: [address],
-      }),
-    });
-    const data = await response.json();
-    const lamports = data.result?.value ?? 0;
-    const balance = lamports / 1e9;
+    const result = await serverRpcRequest<{value:number}>("solana", network, "getBalance", [address, { commitment: "confirmed" }]);
+    const balance = Number(ethers.formatUnits(BigInt(result.value), 9));
     const price = await fetchCoinPrice("solana");
     return { balance, balanceUSD: balance * price };
   } catch {
@@ -105,9 +90,10 @@ export interface ERC20TokenInfo {
 export const fetchERC20Info = async (
   contractAddress: string,
   ownerAddress: string,
-  chain: string
+  chain: string,
+  network: Network = 'mainnet'
 ): Promise<ERC20TokenInfo> => {
-  const provider = getProvider(chain);
+  const provider = getProvider(chain, network);
   const contract = new ethers.Contract(contractAddress, ERC20_ABI, provider);
 
   const [name, symbol, decimalsRaw, rawBalance] = await Promise.all([
@@ -163,20 +149,9 @@ export const fetchEvmTransactions = async (
   }
 };
 
-export const fetchSolanaTransactions = async (address: string): Promise<Transaction[]> => {
+export const fetchSolanaTransactions = async (address: string, network: Network = 'mainnet'): Promise<Transaction[]> => {
   try {
-    const sigRes = await fetch("https://api.mainnet-beta.solana.com", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "getSignaturesForAddress",
-        params: [address, { limit: 10 }],
-      }),
-    });
-    const sigData = await sigRes.json();
-    const signatures: any[] = sigData.result ?? [];
+    const signatures: any[] = await serverRpcRequest('solana', network, 'getSignaturesForAddress', [address, { limit: 10, commitment: 'confirmed' }]);
 
     return signatures.slice(0, 10).map((sig: any) => ({
       hash: sig.signature,
@@ -194,8 +169,9 @@ export const fetchSolanaTransactions = async (address: string): Promise<Transact
 
 export const fetchTransactions = async (
   address: string,
-  chain: Blockchain
+  chain: Blockchain,
+  network: Network = 'mainnet'
 ): Promise<Transaction[]> => {
-  if (chain === "solana") return fetchSolanaTransactions(address);
+  if (chain === "solana") return fetchSolanaTransactions(address, network);
   return fetchEvmTransactions(address, chain);
 };

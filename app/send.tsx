@@ -120,6 +120,7 @@ export default function Send() {
   const send = async () => {
     if (!review || sending) return;
     setSending(true); setError('');
+    let submittedHash = '';
     try {
       let txHash = '';
       const mnemonic = await getMnemonic();
@@ -129,6 +130,9 @@ export default function Send() {
         const sig = await signSolanaMessage(review.solMessage);
         const raw = Uint8Array.from([...shortvec(1), ...sig, ...review.solMessage]);
         txHash = await solRpc<string>(network, 'sendTransaction', [Buffer.from(raw).toString('base64'), { encoding: 'base64', preflightCommitment: 'confirmed', skipPreflight: false }]);
+        submittedHash = txHash;
+        setHash(txHash);
+        setReview(null);
         let confirmed=false;
         for(let attempt=0;attempt<15;attempt++){
           const status=await solRpc<any>(network,'getSignatureStatuses',[[txHash],{searchTransactionHistory:true}]);
@@ -147,13 +151,25 @@ export default function Send() {
         if (w.address.toLowerCase() !== address.toLowerCase()) throw new Error('Signing account does not match selected wallet.');
         const tx = await w.sendTransaction(review.evmTx);
         txHash = tx.hash;
+        submittedHash = txHash;
+        setHash(txHash);
+        setReview(null);
         await tx.wait(1);
       }
       setHash(txHash);
       setReview(null);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       void loadBalance();
-    } catch (e: any) { setError(e?.shortMessage || e?.message || 'Transaction failed.'); }
+    } catch (e: any) {
+      if (submittedHash) {
+        setHash(submittedHash);
+        setPendingConfirmation(true);
+        setReview(null);
+        setError('Transaction was submitted, but confirmation could not be verified. Check the transaction hash before trying again.');
+      } else {
+        setError(e?.shortMessage || e?.message || 'Transaction failed.');
+      }
+    }
     finally { setSending(false); }
   };
 

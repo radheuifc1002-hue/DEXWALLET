@@ -67,12 +67,16 @@ Known limitations to close before production:
 
 ## Phase 5 — Centralize remaining RPC access
 
-**Started.** Initial mobile migration is committed; full-wallet coverage and end-to-end validation remain in progress.
+**Implementation completed on the infrastructure branch; automated and Preview validation are release gates.**
 - Added a typed mobile JSON-RPC client targeting the server gateway, with bounded request timeout and normalized errors.
 - Migrated send-screen native balance reads, SOL transaction preparation, SOL signed-message broadcast/status lookup, EVM balance/fee/gas estimation, and EVM wallet-provider operations to the central gateway URL.
 - Migrated SPL mint/account lookup and EVM ERC-20 contract inspection/balance lookup to the central gateway.
 - Wallet signing remains on-device. The gateway accepts an explicit read-only method allowlist and only signed raw broadcast methods (`eth_sendRawTransaction`, Solana `sendTransaction`) as non-replayable writes; unknown methods are rejected. Signed broadcasts are never retried against a secondary provider.
-- Remaining audit: wallet home/portfolio balance refresh is currently a no-op; other web-app/legacy code and all provider URLs must be searched and migrated or explicitly classified. Nonce lookup, receipt polling, and send error/rebroadcast behavior need dedicated regression coverage.
+- Wallet portfolio refresh now queries all four native balances and imported ERC-20/SPL balances through the central gateway, preserving last-known values when a provider/token call fails.
+- Web-app native and imported ERC-20 balance reads and Solana balance/signature reads now use the same gateway; explorer transaction APIs and market-price APIs remain separate data services, not RPC endpoints.
+- Added Solana fee-estimation and signature-status methods to the RPC read allowlist. HTTP 401/403 provider failures now trigger read-only fallback; signed broadcasts remain primary-only and are never automatically replayed.
+- Send flow stores the transaction hash immediately after broadcast and retains it if confirmation polling fails, preventing a user from accidentally resubmitting an already-broadcast transaction.
+- Final repository-wide RPC URL audit and Preview live tests remain required before production readiness.
 
 ## Phase 6 — Mobile history and provider migration
 

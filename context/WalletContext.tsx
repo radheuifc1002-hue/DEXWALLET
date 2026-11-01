@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { refreshWalletTokenBalances } from '../mobile/services/balanceService';
 import {
   deriveAddresses,
   saveWalletToStorage,
@@ -204,7 +205,20 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     await AsyncStorage.removeItem(BACKGROUND_AT_KEY).catch(() => {});
   }, [setIsLocked]);
 
-  const refreshBalances = useCallback(() => {}, []);
+  const refreshBalances = useCallback(async () => {
+    if (!walletAddresses || isLocked || !isWalletCreated) return;
+    setIsLoadingBalances(true);
+    try {
+      const refreshed = await refreshWalletTokenBalances(walletAddresses, tokens, network);
+      setTokens((current) => current.map((token) => refreshed.find((item) => item.id === token.id) || token));
+    } finally {
+      setIsLoadingBalances(false);
+    }
+  }, [walletAddresses, isLocked, isWalletCreated, tokens, network]);
+
+  useEffect(() => {
+    if (isWalletCreated && !isLocked && walletAddresses) void refreshBalances();
+  }, [isWalletCreated, isLocked, walletAddresses, network]);
 
   const addToken = useCallback((token: Token) => {
     setTokens((prev) => {
