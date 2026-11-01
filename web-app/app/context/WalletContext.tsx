@@ -6,7 +6,7 @@ import {
   clearWalletFromStorage,
   WalletAddresses,
 } from "../services/walletService";
-import { fetchEvmNativeBalance, fetchSolanaBalance } from "../services/balanceService";
+import { fetchEvmNativeBalance, fetchSolanaBalance, fetchERC20Info } from "../services/balanceService";
 
 export type Blockchain = "solana" | "ethereum" | "bnb" | "polygon";
 export type Network = "mainnet" | "testnet";
@@ -110,14 +110,27 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setIsLoadingBalances(true);
     try {
       const [ethBal, solBal, bnbBal, maticBal] = await Promise.all([
-        fetchEvmNativeBalance(addresses.ethereum, "ethereum"),
-        fetchSolanaBalance(addresses.solana),
-        fetchEvmNativeBalance(addresses.bnb, "bnb"),
-        fetchEvmNativeBalance(addresses.polygon, "polygon"),
+        fetchEvmNativeBalance(addresses.ethereum, "ethereum", network),
+        fetchSolanaBalance(addresses.solana, network),
+        fetchEvmNativeBalance(addresses.bnb, "bnb", network),
+        fetchEvmNativeBalance(addresses.polygon, "polygon", network),
       ]);
 
+      const currentTokens = tokens;
+      const customTokens = await Promise.all(currentTokens.filter((t) => t.contractAddress).map(async (token) => {
+        try {
+          if (token.blockchain === "solana") {
+            const response = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd");
+            const info = await response.json();
+            const price = Number(info?.solana?.usd || 0);
+            const result = await fetchERC20Info(token.contractAddress!, addresses.solana, "solana", network);
+            return { ...token, ...result, balanceUSD: result.balance * price };
+          }
+          const result = await fetchERC20Info(token.contractAddress!, addresses[token.blockchain], token.blockchain, network);
+          return { ...token, ...result };
+        } catch { return token; }
+      }));
       setTokens((prev) => {
-        const customTokens = prev.filter((t) => t.contractAddress);
         const nativeTokens: Token[] = NATIVE_TOKEN_DEFS.map((def) => {
           const balMap: Record<string, { balance: number; balanceUSD: number }> = {
             ethereum: ethBal,
@@ -135,7 +148,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoadingBalances(false);
     }
-  }, []);
+  }, [network, tokens]);
 
   const initWallet = useCallback(
     async (mnemonic: string) => {
