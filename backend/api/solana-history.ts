@@ -1,3 +1,4 @@
+import { consumeRateLimit } from './_lib/rate-limit.js';
 import { randomUUID } from 'node:crypto';
 import { proxyRpc } from './_lib/rpc-manager.js';
 type RpcResult<T>={result?:T;error?:{message?:string}};
@@ -60,6 +61,9 @@ export default async function handler(req:ApiRequest,res:ApiResponse){
  res.setHeader('Access-Control-Allow-Origin','*');res.setHeader('Access-Control-Allow-Methods','POST, OPTIONS');res.setHeader('Access-Control-Allow-Headers','Content-Type, Accept');
  if(req.method==='OPTIONS'){res.status(204).end();return;}
  if(req.method!=='POST'){res.setHeader('Allow','POST, OPTIONS');res.status(405).json({error:{code:'method_not_allowed',requestId}});return;}
+ const rate=consumeRateLimit(req,'solana-history',60);
+ res.setHeader('X-RateLimit-Limit','60');res.setHeader('X-RateLimit-Remaining',String(rate.remaining));
+ if(!rate.allowed){res.setHeader('Retry-After',String(Math.max(1,Math.ceil((rate.resetAt-Date.now())/1000))));res.status(429).json({error:{code:'rate_limit_exceeded',requestId}});return;}
  const body=parseBody(req.body);if(!body){res.status(400).json({error:{code:'invalid_request_body',requestId}});return;}
  const wallet=String(body.walletAddress||''),network=String(body.network||'mainnet').toLowerCase(),isNative=body.isNative!==false,mint=String(body.mintAddress||'');
  const cursor=decodeCursor(String(body.before||'')),limitValue=Number(body.limit??MAX_ROWS),limit=Number.isInteger(limitValue)?Math.max(1,Math.min(MAX_ROWS,limitValue)):MAX_ROWS;
