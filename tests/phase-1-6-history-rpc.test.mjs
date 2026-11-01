@@ -74,3 +74,9 @@ test('native DApp browser uses the central EVM gateway and contains no public RP
   assert.match(browser,/getCentralEvmChainId/);
   assert.doesNotMatch(browser,/publicnode\.com|bsc-dataseed|polygon-rpc\.com/);
 });
+
+test('multiple same-asset transfer logs in one transaction are aggregated by direction',()=>{
+  assert.match(history,/const grouped=new Map<string/);
+  assert.match(history,/current\.rawValue\+=rawValue/);
+  assert.match(history,/current\.fallbackValue\+=fallbackValue/);
+});
