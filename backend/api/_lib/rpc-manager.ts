@@ -10,8 +10,6 @@ const NETWORKS: Record<RpcChain, Partial<Record<RpcNetwork,string>>> = {
   ethereum: { mainnet: 'eth-mainnet', testnet: 'eth-sepolia' },
   bnb: { mainnet: 'bnb-mainnet', testnet: 'bnb-testnet' },
   polygon: { mainnet: 'polygon-mainnet', testnet: 'polygon-amoy' },
-  arbitrum: { mainnet:'arb-mainnet' }, optimism:{mainnet:'opt-mainnet'},
-  base:{mainnet:'base-mainnet'}, avalanche:{mainnet:'avax-mainnet'}, linea:{mainnet:'linea-mainnet'},
   solana: { mainnet: 'solana-mainnet', testnet: 'solana-devnet' },
 };
 const CHAIN_IDS: Partial<Record<RpcChain, Partial<Record<RpcNetwork,number>>>> = {
