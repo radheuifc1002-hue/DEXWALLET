@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { AppState, AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { refreshWalletTokenBalances } from '../mobile/services/balanceService';
+import { initializeWalletVaultStore, clearWalletVaultStore, type WalletVaultStore } from '../mobile/services/walletVaultService';
 import {
   deriveAddresses,
   saveWalletToStorage,
@@ -55,6 +56,8 @@ interface WalletContextType {
   setIsLocked: (value: boolean) => void;
   resetWallet: () => Promise<void>;
   isLoading: boolean;
+  walletVaultStore: WalletVaultStore | null;
+  refreshWalletVaultStore: () => Promise<void>;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -83,6 +86,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [autoLockTimer, setAutoLockTimerState] = useState(5);
   const [isLocked, setIsLockedState] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [walletVaultStore, setWalletVaultStore] = useState<WalletVaultStore | null>(null);
   const lastBackgroundAt = React.useRef<number | null>(null);
 
   useEffect(() => {
@@ -96,6 +100,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           AsyncStorage.getItem(BACKGROUND_AT_KEY),
           AsyncStorage.getItem(CUSTOM_TOKENS_KEY),
         ]);
+        const migratedVaultStore = await initializeWalletVaultStore();
+        setWalletVaultStore(migratedVaultStore);
         const parsedTimer = storedTimer === null ? 5 : Number(storedTimer);
         const timer = [0, 1, 5, 15, 30].includes(parsedTimer) ? parsedTimer : 5;
         setAutoLockTimerState(timer);
@@ -194,6 +200,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     const addresses = await deriveAddresses(mnemonic);
     setWalletAddresses(addresses);
     await saveWalletToStorage(addresses, mnemonic);
+    const vaultStore = await initializeWalletVaultStore();
+    setWalletVaultStore(vaultStore);
     setSeedPhrase(mnemonic.split(' '));
     const native = NATIVE_TOKEN_DEFS.map((d) => ({ ...d, balance: 0, balanceUSD: 0 }));
     const storedCustom = await AsyncStorage.getItem(CUSTOM_TOKENS_KEY);
@@ -229,8 +237,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const refreshWalletVaultStore = useCallback(async () => {
+    setWalletVaultStore(await initializeWalletVaultStore());
+  }, []);
+
   const resetWallet = useCallback(async () => {
     await clearWalletFromStorage();
+    await clearWalletVaultStore();
+    setWalletVaultStore(null);
     await AsyncStorage.removeItem(CUSTOM_TOKENS_KEY);
     setPinState(null);
     setSeedPhrase([]);
@@ -269,6 +283,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         setIsLocked,
         resetWallet,
         isLoading,
+        walletVaultStore,
+        refreshWalletVaultStore,
       }}
     >
       {children}
