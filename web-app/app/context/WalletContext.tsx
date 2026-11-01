@@ -6,7 +6,7 @@ import {
   clearWalletFromStorage,
   WalletAddresses,
 } from "../services/walletService";
-import { fetchEvmNativeBalance, fetchSolanaBalance, fetchERC20Info } from "../services/balanceService";
+import { fetchEvmNativeBalance, fetchSolanaBalance, fetchERC20Info, fetchSolanaTokenBalance } from "../services/balanceService";
 
 export type Blockchain = "solana" | "ethereum" | "bnb" | "polygon";
 export type Network = "mainnet" | "testnet";
@@ -120,11 +120,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const customTokens = await Promise.all(currentTokens.filter((t) => t.contractAddress).map(async (token) => {
         try {
           if (token.blockchain === "solana") {
-            const response = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd");
-            const info = await response.json();
-            const price = Number(info?.solana?.usd || 0);
-            const result = await fetchERC20Info(token.contractAddress!, addresses.solana, "solana", network);
-            return { ...token, ...result, balanceUSD: result.balance * price };
+            const result = await fetchSolanaTokenBalance(token.contractAddress!, addresses.solana, network);
+            return { ...token, ...result };
           }
           const result = await fetchERC20Info(token.contractAddress!, addresses[token.blockchain], token.blockchain, network);
           return { ...token, ...result };
@@ -188,7 +185,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setTokens(nativeTokens);
       fetchNativeBalances(addresses);
     }
-  }, [fetchNativeBalances]);
+  }, [network]);
 
   useEffect(() => {
     if (isWalletCreated && !isLocked && autoLockTimer > 0) {
