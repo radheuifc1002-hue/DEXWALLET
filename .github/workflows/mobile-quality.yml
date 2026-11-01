@@ -21,6 +21,7 @@ on:
     paths:
       - "app/**"
       - "context/**"
+      - "web-app/**"
       - "mobile/**"
       - "backend/api/**"
       - "components/**"
