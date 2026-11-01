@@ -4,18 +4,30 @@ The independent Vercel project uses this directory as its root. The repository-r
 
 ## API routes
 - `POST /api/rpc?chain=<chain>&network=<network>` — server-side JSON-RPC proxy.
-- `GET /api/rpc-health?chain=<chain>&network=<network>` — configured provider names and this function instance's circuit state; no upstream probe or secrets.
-- `POST /api/history` — generic EVM asset history through the configured server-side Alchemy RPC provider.
+- `GET /api/rpc-health?chain=<chain>&network=<network>` — configured providers and this function instance's circuit state (not an upstream probe).
+- `POST /api/history` — stateless EVM asset history via Alchemy Transfers API.
+- `POST /api/solana-history` — stateless Solana SOL/SPL history via the central Solana RPC manager.
+- `GET /api/health` and `GET /api/ready` — basic health/readiness.
 
-## Server-only environment variables
-- `ALCHEMY_API_KEY` or `ALCHEMY_<CHAIN>_<NETWORK>_API_KEY` — Alchemy primary.
-- `CHAINSTACK_BNB_MAINNET_RPC_URL` — BNB mainnet secondary.
-- `RPC_FALLBACK_<CHAIN>_<NETWORK>_URL` — optional HTTPS fallback.
+## Solana history request
 
-Never prefix credentials with `EXPO_PUBLIC_`. Never embed provider URLs or credentials in the APK.
+Send JSON to `/api/solana-history`:
+```json
+{
+  "network": "mainnet",
+  "walletAddress": "<base58 address>",
+  "isNative": true,
+  "limit": 50
+}
+```
 
-## Provider failover safety
-Alchemy is preferred. Chainstack is the preferred BNB mainnet secondary, followed by a configured generic fallback. Automatic failover is restricted to an explicit allowlist of idempotent read methods. Transaction submission and unknown methods are sent only to the first provider to avoid replaying writes after ambiguous timeouts. Retryable failures include HTTP 408/425/429/5xx, transport failures, invalid JSON and provider capacity/rate-limit errors. Circuit-breaker state is process-local; Vercel instances are independent.
+For an SPL token, set `isNative` to `false` and provide `mintAddress`. To continue, pass the returned `nextBefore` signature as `before`. The adapter fetches at most 50 signatures per page and fetches transaction details with a bounded concurrency of five. The response reports `hasMore` and `complete`; consumers should not infer full-history completeness from one page.
 
-## Data architecture
-History is fetched on demand from Alchemy Transfers API. This repository does not run a custom indexer, database-backed job queue, wallet-address registration service, or persistent history database. Wallet secrets and signing remain on-device.
+## Security and operations
+
+- The API handles public wallet addresses and chain data only.
+- Seed phrases, private keys and signing never leave the mobile device.
+- Provider credentials and upstream URLs are configured server-side.
+- No database, indexer, address-registration system or persistent transaction-history store is required.
+- The RPC manager's circuit-breaker state is process-local to each serverless function instance.
+- Configure a compatible fallback provider per chain/network before relying on failover.
