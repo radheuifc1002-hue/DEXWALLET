@@ -56,7 +56,7 @@ export async function refreshWalletTokenBalances(addresses:Record<Blockchain,str
         balance=await evmTokenBalance(token.blockchain,network,token.contractAddress,address);
       }
       if(!Number.isFinite(balance))throw new Error('invalid_balance');
-      return {...token,balance,balanceUSD:balance*priceMap[token.blockchain]};
+      return {...token,balance,balanceUSD:token.contractAddress ? 0 : balance*priceMap[token.blockchain]};
     }catch{
       return token;
     }
