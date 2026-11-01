@@ -4,7 +4,7 @@ import { proxyRpc, type RpcChain, type RpcNetwork } from './_lib/rpc-manager.js'
 type Chain = Exclude<RpcChain, 'solana'>;
 type Network = RpcNetwork;
 type Transfer = {
-  hash?: string; from?: string; to?: string; value?: number | null; asset?: string | null;
+  hash?: string; from?: string; to?: string; value?: string | number | null; asset?: string | null;
   category?: string; rawContract?: { address?: string | null; value?: string | null; decimal?: string | null };
   metadata?: { blockTimestamp?: string | null };
 };
@@ -15,26 +15,20 @@ const NETWORKS: Record<Chain, Partial<Record<Network,string>>> = {
   ethereum:{mainnet:'eth-mainnet',testnet:'eth-sepolia'},
   bnb:{mainnet:'bnb-mainnet',testnet:'bnb-testnet'},
   polygon:{mainnet:'polygon-mainnet',testnet:'polygon-amoy'},
-  arbitrum:{mainnet:'arb-mainnet'},
-  optimism:{mainnet:'opt-mainnet'},
-  base:{mainnet:'base-mainnet'},
-  avalanche:{mainnet:'avax-mainnet'},
-  linea:{mainnet:'linea-mainnet'},
 };
 const EXPLORERS: Record<Chain,Partial<Record<Network,string>>> = {
   ethereum:{mainnet:'https://etherscan.io/tx/',testnet:'https://sepolia.etherscan.io/tx/'},
   bnb:{mainnet:'https://bscscan.com/tx/',testnet:'https://testnet.bscscan.com/tx/'},
   polygon:{mainnet:'https://polygonscan.com/tx/',testnet:'https://amoy.polygonscan.com/tx/'},
-  arbitrum:{mainnet:'https://arbiscan.io/tx/'}, optimism:{mainnet:'https://optimistic.etherscan.io/tx/'},
-  base:{mainnet:'https://basescan.org/tx/'}, avalanche:{mainnet:'https://snowtrace.io/tx/'},
-  linea:{mainnet:'https://lineascan.build/tx/'},
 };
 const MAX_ROWS = 50;
-const TIMEOUT_MS = 16_000;
+const TRANSFER_PAGE_SIZE = 100;
+const MAX_TRANSFER_PAGES = 5;
 
 function parseBody(value:unknown): Record<string,unknown>|null {
   if(typeof value==='string'){if(value.length>8192)return null;try{value=JSON.parse(value);}catch{return null;}}
-  if(!value||typeof value!=='object'||Array.isArray(value)||JSON.stringify(value).length>8192)return null;
+  if(!value||typeof value!=='object'||Array.isArray(value))return null;
+  try { if(JSON.stringify(value).length>8192)return null; } catch { return null; }
   return value as Record<string,unknown>;
 }
 function rawAmount(raw:string|null|undefined, decimals:string|null|undefined):string {
@@ -45,38 +39,57 @@ function rawAmount(raw:string|null|undefined, decimals:string|null|undefined):st
     return fraction?whole.toString()+'.'+fraction:whole.toString();
   } catch { return '0'; }
 }
-function isZeroValue(value:string|null|undefined):boolean {
-  if(value===null||value===undefined||value==='') return true;
-  try { return BigInt(value)===0n; } catch { return false; }
-}
 function formatTimestamp(value:string|null|undefined):number {
   const n=value?Math.floor(Date.parse(value)/1000):0;
   return Number.isFinite(n)?n:0;
 }
 function shortAddress(value:string):string { return value.slice(0,10)+'…'+value.slice(-6); }
 
-async function receiptStatus(chain:Chain,network:Network,hash:string):Promise<boolean|null>{
+async function receiptStatus(chain:Chain,network:Network,hash:string):Promise<'success'|'failed'|null>{
   const result=await proxyRpc(chain,network,{jsonrpc:'2.0',id:randomUUID(),method:'eth_getTransactionReceipt',params:[hash]});
   if(result.status<200||result.status>=300)return null;
   try{
     const payload=JSON.parse(result.body) as {result?:{status?:string}|null;error?:unknown};
     if(payload.error||!payload.result)return null;
-    return payload.result.status==='0x0';
+    if(payload.result.status==='0x0')return 'failed';
+    if(payload.result.status==='0x1')return 'success';
+    return null;
   }catch{return null;}
 }
 
-async function transfers(chain:Chain, network:Network, wallet:string, direction:'from'|'to', category:'external'|'erc20', contract?:string):Promise<Transfer[]> {
-  const params:Record<string,unknown> = {
-    fromBlock:'0x0',toBlock:'latest',fromAddress:direction==='from'?wallet:undefined,
-    toAddress:direction==='to'?wallet:undefined,categories:[category],withMetadata:true,
-    excludeZeroValue:false,maxCount:'0x64',order:'desc',
-  };
-  if(contract) params.contractAddresses=[contract];
-  const result=await proxyRpc(chain,network,{jsonrpc:'2.0',id:randomUUID(),method:'alchemy_getAssetTransfers',params:[params]});
-  if(result.status<200||result.status>=300) throw new Error('history_provider_unavailable');
-  const payload=JSON.parse(result.body) as any;
-  if(payload?.error) throw new Error('history_provider_unavailable');
-  return Array.isArray(payload?.result?.transfers)?payload.result.transfers:[];
+/**
+ * Alchemy's Transfers API uses the singular "category" parameter.
+ * Fetch both directions independently. Each direction returns up to 100 newest
+ * transfers, which is enough to select the newest 50 after merging. Continue
+ * through pageKey if a provider returns a short page while more results exist.
+ */
+async function transfers(
+  chain:Chain, network:Network, wallet:string, direction:'from'|'to',
+  category:'external'|'erc20', contract?:string,
+):Promise<{rows:Transfer[];complete:boolean}> {
+  const rows:Transfer[]=[];
+  let pageKey:string|undefined;
+  let pages=0;
+  do {
+    const params:Record<string,unknown> = {
+      fromBlock:'0x0',toBlock:'latest',
+      fromAddress:direction==='from'?wallet:undefined,
+      toAddress:direction==='to'?wallet:undefined,
+      category:[category],withMetadata:true,excludeZeroValue:false,
+      maxCount:'0x64',order:'desc',
+    };
+    if(contract) params.contractAddresses=[contract];
+    if(pageKey) params.pageKey=pageKey;
+    const result=await proxyRpc(chain,network,{jsonrpc:'2.0',id:randomUUID(),method:'alchemy_getAssetTransfers',params:[params]});
+    if(result.status<200||result.status>=300) throw new Error('history_provider_unavailable');
+    const payload=JSON.parse(result.body) as {result?:{transfers?:Transfer[];pageKey?:string};error?:unknown};
+    if(payload?.error) throw new Error('history_provider_unavailable');
+    const batch=Array.isArray(payload?.result?.transfers)?payload.result.transfers:[];
+    rows.push(...batch);
+    pageKey=payload?.result?.pageKey;
+    pages++;
+  } while(pageKey && rows.length<TRANSFER_PAGE_SIZE && pages<MAX_TRANSFER_PAGES);
+  return {rows:rows.slice(0,TRANSFER_PAGE_SIZE),complete:!pageKey};
 }
 
 export default async function handler(req:ApiRequest,res:ApiResponse) {
@@ -98,67 +111,63 @@ export default async function handler(req:ApiRequest,res:ApiResponse) {
   const contract=String(body.contractAddress||'').toLowerCase();
   const requestedLimit=body.limit===undefined?MAX_ROWS:Number(body.limit);
   const limit=Number.isInteger(requestedLimit)?Math.min(MAX_ROWS,Math.max(1,requestedLimit)):MAX_ROWS;
-  const networkName=NETWORKS[chain]?.[network];
-  if(!networkName){res.status(400).json({error:{code:'unsupported_chain_or_network',requestId}});return;}
+  if(!NETWORKS[chain]?.[network]){res.status(400).json({error:{code:'unsupported_chain_or_network',requestId}});return;}
   if(!/^0x[a-fA-F0-9]{40}$/.test(wallet)){res.status(400).json({error:{code:'invalid_wallet_address',requestId}});return;}
   if(!isNative&&!/^0x[a-fA-F0-9]{40}$/.test(contract)){res.status(400).json({error:{code:'invalid_token_contract',requestId}});return;}
   const category=isNative?'external':'erc20';
   try {
-    const transferQueries:Promise<Transfer[]>[]=[
+    // Asset history intentionally includes direct incoming/outgoing asset
+    // transfers only. Internal traces and generic contract calls are out of scope.
+    const settled=await Promise.allSettled([
       transfers(chain,network,wallet,'from',category,isNative?undefined:contract),
       transfers(chain,network,wallet,'to',category,isNative?undefined:contract),
-    ];
-    if(!isNative){
-      transferQueries.push(
-        transfers(chain,network,wallet,'from','external'),
-        transfers(chain,network,wallet,'to','external'),
-      );
-    }
-    const settled=await Promise.allSettled(transferQueries);
-    const outgoing=settled[0]?.status==='fulfilled'?settled[0].value:[];
-    const incoming=settled[1]?.status==='fulfilled'?settled[1].value:[];
-    const interactionTransfers=settled.slice(2).flatMap(item=>item.status==='fulfilled'?item.value:[]);
-    const requiredStreamsSucceeded=settled.every(item=>item.status==='fulfilled');
-    if(!outgoing.length&&!incoming.length&&!interactionTransfers.length&&!requiredStreamsSucceeded)
-      throw new Error('history_provider_unavailable');
+    ]);
+    const outgoing=settled[0]?.status==='fulfilled'?settled[0].value.rows:[];
+    const incoming=settled[1]?.status==='fulfilled'?settled[1].value.rows:[];
+    const querySucceeded=settled.some(item=>item.status==='fulfilled');
+    if(!querySucceeded)throw new Error('history_provider_unavailable');
     const seen=new Set<string>();
-    const rows=[...outgoing,...incoming,...interactionTransfers.filter(item=>
-      String(item.to||'').toLowerCase()===contract && isZeroValue(item.rawContract?.value)
-    )].flatMap((item)=>{
-      const hash=String(item.hash||'');
-      const from=String(item.from||''),to=String(item.to||'');
+    const rows=[...outgoing.map(item=>({item,incoming:false})),...incoming.map(item=>({item,incoming:true}))].flatMap(({item,isIncoming})=>{
+      const hash=String(item.hash||''),from=String(item.from||''),to=String(item.to||'');
       if(!/^0x[a-fA-F0-9]{64}$/.test(hash)||!from||!to)return [];
-      const isIncoming=to.toLowerCase()===wallet.toLowerCase();
       const tokenAddress=String(item.rawContract?.address||'').toLowerCase();
-      const isInteraction=!isNative&&String(item.to||'').toLowerCase()===contract&&Number(item.value??0)===0;
-      if(!isNative&&!isInteraction&&tokenAddress!==contract)return [];
-      const id=hash.toLowerCase()+':'+(isNative?'native':isInteraction?'interaction':contract)+':'+(isIncoming?'in':'out');
+      if(!isNative&&tokenAddress!==contract)return [];
+      const direction=isIncoming?'incoming':'outgoing';
+      const id=hash.toLowerCase()+':'+(isNative?'native':contract)+':'+direction;
       if(seen.has(id))return [];
       seen.add(id);
-      const symbol=String(item.asset||(chain==='bnb'?'BNB':chain==='polygon'?'POL':chain==='avalanche'?'AVAX':'ETH'));
-      const raw=item.rawContract?.value;
-      const amount=raw?rawAmount(raw,item.rawContract?.decimal):String(item.value??0);
-      const timestamp=formatTimestamp(item.metadata?.blockTimestamp);
+      const symbol=String(item.asset||(chain==='bnb'?'BNB':chain==='polygon'?'POL':'ETH'));
+      const amount=isNative?String(item.value??'0'):rawAmount(item.rawContract?.value,item.rawContract?.decimal);
       return [{
-        id,hash,title:isInteraction?'Contract interaction':(isIncoming?'Received ':'Sent ')+symbol,
+        id,hash,title:(isIncoming?'Received ':'Sent ')+symbol,
         detail:(isIncoming?'From ':'To ')+shortAddress(isIncoming?from:to),
-        amount:isInteraction?'':(isIncoming?'+':'-')+amount+' '+symbol,timestamp,incoming:isIncoming,failed:false,direction:isIncoming?'incoming':'outgoing',status:'success',asset:{type:isNative?'native':'token',address:isNative?null:contract},
-        explorerUrl:(EXPLORERS[chain]?.[network]||'')+hash,
-        from,to,contractAddress:tokenAddress||null,category:isInteraction?'contract_interaction':item.category||category,
+        amount:(isIncoming?'+':'-')+amount+' '+symbol,
+        timestamp:formatTimestamp(item.metadata?.blockTimestamp),incoming:isIncoming,
+        failed:false,status:'unknown' as const,direction,asset:{type:isNative?'native':'token',address:isNative?null:contract},
+        explorerUrl:(EXPLORERS[chain]?.[network]||'')+hash,from,to,contractAddress:tokenAddress||null,
+        category:item.category||category,
       }];
     }).sort((a,b)=>b.timestamp-a.timestamp||b.hash.localeCompare(a.hash)).slice(0,limit);
     const hashes=[...new Set(rows.map(row=>row.hash))];
     const receiptResults=await Promise.allSettled(hashes.map(hash=>receiptStatus(chain,network,hash)));
-    const receiptByHash=new Map<string,boolean|null>();
+    const receiptByHash=new Map<string,'success'|'failed'|null>();
     hashes.forEach((hash,index)=>{
       const result=receiptResults[index];
       receiptByHash.set(hash,result?.status==='fulfilled'?result.value:null);
     });
     const receiptCoverage=receiptResults.every(result=>result.status==='fulfilled'&&result.value!==null);
-    const finalRows=rows.map(row=>({...row,failed:receiptByHash.get(row.hash)===true}));
-    res.status(200).json({chain,network,walletAddress:wallet,asset:{type:isNative?'native':'token',address:isNative?null:contract,contractAddress:isNative?null:contract},
-      rows:finalRows,limit,requestId,source:'alchemy-transfers',complete:requiredStreamsSucceeded&&receiptCoverage,
-      ...((requiredStreamsSucceeded&&receiptCoverage)?{}:{warning:'partial_history_result'})});
+    const finalRows=rows.map(row=>{
+      const status=receiptByHash.get(row.hash)||'unknown';
+      return {...row,status,failed:status==='failed'};
+    });
+    const streamsComplete=settled.every(item=>item.status==='fulfilled'&&item.value.complete);
+    const complete=streamsComplete&&receiptCoverage;
+    res.status(200).json({
+      chain,network,walletAddress:wallet,
+      asset:{type:isNative?'native':'token',address:isNative?null:contract,contractAddress:isNative?null:contract},
+      rows:finalRows,limit,requestId,source:'alchemy-asset-transfers',complete,
+      ...(complete?{}:{warning:'partial_history_result'}),
+    });
   } catch {
     res.status(502).json({error:{code:'history_provider_unavailable',requestId}});
   }
