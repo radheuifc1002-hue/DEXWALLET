@@ -144,7 +144,7 @@ async function proxyRpcUncached(chain: RpcChain, network: RpcNetwork, body: unkn
   const methods = (Array.isArray(body) ? body : [body]).map((item: any) => String(item.method));
   const compatible = getProviders(chain,network).filter(provider => providerSupportsMethods(provider,methods));
   const all = orderProviders(chain,network,compatible), providers = parsed.readOnly ? all : all.slice(0,1);
-  if (!providers.length) return { status:503, body:JSON.stringify({error:{code:'rpc_not_configured',requestId}}), provider:'none', requestId, attempts:0 };
+  if (!providers.length) { console.warn(JSON.stringify({event:'rpc_not_configured',requestId,chain,network,methods})); return { status:503, body:JSON.stringify({error:{code:'rpc_not_configured',requestId}}), provider:'none', requestId, attempts:0 }; }
   let status = 502, responseBody = JSON.stringify({error:{code:'upstream_unavailable',requestId}}), attempts = 0;
   for (const provider of providers) {
     if (attempts) await sleep(jitter(attempts));
@@ -156,15 +156,16 @@ async function proxyRpcUncached(chain: RpcChain, network: RpcNetwork, body: unkn
       release = await acquireProviderSlot(key);
       const response = await fetch(provider.url,{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:parsed.serialized,signal:controller.signal});
       responseBody = await response.text(); status = response.status;
-      if (retryableHttp(status)) { markFailure(key,new Error('HTTP '+status)); if (!parsed.readOnly) break; continue; }
+      if (retryableHttp(status)) { markFailure(key,new Error('HTTP '+status)); console.warn(JSON.stringify({event:'rpc_provider_retry',requestId,chain,network,provider:provider.name,attempt:attempts,status,methods})); if (!parsed.readOnly) break; continue; }
       let json: unknown;
       try { json = JSON.parse(responseBody); } catch { markFailure(key,new Error('Invalid JSON-RPC response')); if (!parsed.readOnly) break; continue; }
-      if (retryableJsonRpc(json)) { markFailure(key,new Error('Provider rate limit or capacity response')); if (!parsed.readOnly) break; continue; }
-      markSuccess(key,Date.now()-started);
+      if (retryableJsonRpc(json)) { markFailure(key,new Error('Provider rate limit or capacity response')); console.warn(JSON.stringify({event:'rpc_provider_retry',requestId,chain,network,provider:provider.name,attempt:attempts,status,methods,reason:'provider_capacity'})); if (!parsed.readOnly) break; continue; }
+      const latencyMs=Date.now()-started;markSuccess(key,latencyMs);
+      console.info(JSON.stringify({event:'rpc_provider_success',requestId,chain,network,provider:provider.name,attempt:attempts,status,latencyMs,methods}));
       return {status,body:responseBody,provider:provider.name,requestId,attempts};
     } catch (error) {
       if (!retryableNetwork(error)) throw error;
-      markFailure(key,error); status = (error as {name?:string})?.name === 'AbortError' ? 504 : 502;
+      markFailure(key,error); console.warn(JSON.stringify({event:'rpc_provider_failure',requestId,chain,network,provider:provider.name,attempt:attempts,errorType:(error as {name?:string})?.name||'Error',methods})); status = (error as {name?:string})?.name === 'AbortError' ? 504 : 502;
       responseBody = JSON.stringify({error:{code:status===504?'upstream_timeout':'upstream_unavailable',requestId}});
       if (!parsed.readOnly) break;
     } finally { clearTimeout(timeout); release?.(); }
