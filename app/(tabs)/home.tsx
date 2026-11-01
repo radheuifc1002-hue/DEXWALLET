@@ -323,7 +323,8 @@ export default function Home() {
                   {token.balance.toFixed(4)} {token.symbol}
                 </Text>
                 <Text style={styles.tokenUSD}>
-                  {token.contractAddress ? 'Price unavailable' : '
+                  {token.contractAddress ? 'Price unavailable' : '$' + token.balanceUSD.toFixed(2)}
+                </Text>
               </View>
             </TouchableOpacity>
           ))
