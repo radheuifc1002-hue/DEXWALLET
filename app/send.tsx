@@ -7,7 +7,7 @@ import { ethers } from 'ethers';
 import bs58 from 'bs58';
 import { Buffer } from 'buffer';
 import { useWallet, Blockchain } from '../context/WalletContext';
-import { getMnemonic, signSolanaMessage } from '../mobile/services/walletService';
+import { getMnemonic, signSolanaMessage, deriveAddresses } from '../mobile/services/walletService';
 import { getCentralEvmChainId, serverRpcRequest } from '../mobile/services/serverRpc';
 
 const SYMBOL: Record<Blockchain, string> = { ethereum: 'ETH', bnb: 'BNB', polygon: 'POL', solana: 'SOL' };
@@ -21,7 +21,7 @@ type Review = { to: string; amount: string; fee: string; feeSymbol: string; netw
 
 export default function Send() {
   const router = useRouter();
-  const { selectedBlockchain, setSelectedBlockchain, network, walletAddresses, isLocked } = useWallet();
+  const { selectedBlockchain, setSelectedBlockchain, network, walletAddresses, isLocked, activeWallet } = useWallet();
   const [to, setTo] = useState('');
   const [amount, setAmount] = useState('');
   const [balance, setBalance] = useState<string | null>(null);
@@ -36,6 +36,22 @@ export default function Send() {
   const symbol = SYMBOL[selectedBlockchain];
   const testnet = network === 'testnet';
   const rpc = useMemo(() => selectedBlockchain === 'solana' ? null : { chainId:getCentralEvmChainId(selectedBlockchain,network) }, [selectedBlockchain,network]);
+
+  const getMnemonicForActiveAccount = async () => {
+    if (!activeWallet || activeWallet.sourceType !== 'mnemonic') {
+      throw new Error('This is a read-only wallet. Switch to a wallet with a locally stored recovery phrase to send.');
+    }
+    const mnemonic = await getMnemonic();
+    if (!mnemonic) throw new Error('Wallet secret unavailable. Restore your wallet.');
+    const derived = await deriveAddresses(mnemonic);
+    const activeAddress = activeWallet.addresses[selectedBlockchain];
+    const derivedAddress = derived[selectedBlockchain];
+    const matches = selectedBlockchain === 'solana'
+      ? derivedAddress === activeAddress
+      : Boolean(activeAddress && derivedAddress && derivedAddress.toLowerCase() === activeAddress.toLowerCase());
+    if (!matches) throw new Error('Signing for this account is not enabled yet. Switch to the original wallet until vault-aware signing is added.');
+    return mnemonic;
+  };
 
   const loadBalance = useCallback(async () => {
     if (!address || isLocked) { setBalance(null); return; }
@@ -62,8 +78,7 @@ export default function Send() {
     if (!amount.trim() || !Number.isFinite(Number(amount)) || Number(amount) <= 0) { setError('Enter a valid amount.'); return; }
     setPreparing(true);
     try {
-      const mnemonic = await getMnemonic();
-      if (!mnemonic) throw new Error('Wallet secret unavailable. Restore your wallet.');
+      const mnemonic = await getMnemonicForActiveAccount();
       if (selectedBlockchain === 'solana') {
         const recipient = bs58.decode(to.trim());
         if (recipient.length !== 32) throw new Error('Enter a valid Solana address.');
@@ -116,8 +131,7 @@ export default function Send() {
     let submittedHash = '';
     try {
       let txHash = '';
-      const mnemonic = await getMnemonic();
-      if (!mnemonic) throw new Error('Wallet secret unavailable. Restore your wallet.');
+      const mnemonic = await getMnemonicForActiveAccount();
       if (selectedBlockchain === 'solana') {
         if (!review.solMessage || !review.blockhash || review.lastValidBlockHeight === undefined) throw new Error('Transaction review expired. Review again.');
         const sig = await signSolanaMessage(review.solMessage);
