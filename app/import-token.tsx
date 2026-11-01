@@ -58,7 +58,7 @@ export default function ImportToken() {
         const chainId=getCentralEvmChainId(selectedBlockchain,network);
         const provider=new ethers.JsonRpcProvider(getCentralRpcUrl(selectedBlockchain,network),chainId);
         const chain = await provider.getNetwork();
-        if (Number(chain.chainId) !== config.chainId) throw new Error('RPC network mismatch. Import cancelled.');
+        if (Number(chain.chainId) !== chainId) throw new Error('RPC network mismatch. Import cancelled.');
         if (!ethers.isAddress(value)) throw new Error('Enter a valid token contract address.');
         const checksumAddress = ethers.getAddress(value);
         const bytecode = await provider.getCode(checksumAddress);

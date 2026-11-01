@@ -104,7 +104,7 @@ export default function Send() {
           if (!price) throw new Error('Unable to estimate network fee.');
           const fee = gasLimit * price;
           if (value + fee > balanceWei) throw new Error('Insufficient balance for amount plus network fee.');
-          const tx: ethers.TransactionRequest = { to: recipient, value, gasLimit, chainId,
+          const tx: ethers.TransactionRequest = { to: recipient, value, gasLimit, chainId: rpc!.chainId,
             ...(fees.maxFeePerGas && fees.maxPriorityFeePerGas ? { maxFeePerGas: fees.maxFeePerGas, maxPriorityFeePerGas: fees.maxPriorityFeePerGas } : { gasPrice: price }) };
           const netName = testnet ? (selectedBlockchain === 'ethereum' ? 'Sepolia' : selectedBlockchain === 'bnb' ? 'BNB Testnet' : 'Polygon Amoy') : LABEL[selectedBlockchain] + ' Mainnet';
           return { to: recipient, amount, fee: ethers.formatEther(fee), feeSymbol: symbol, network: netName, evmTx: tx };
