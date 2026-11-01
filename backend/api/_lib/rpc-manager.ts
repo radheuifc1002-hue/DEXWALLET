@@ -18,9 +18,10 @@ const CHAIN_IDS: Partial<Record<RpcChain, Partial<Record<RpcNetwork,number>>>> =
 };
 const READ_ONLY_METHODS = new Set([
   'alchemy_getAssetTransfers','eth_chainId','eth_blockNumber','eth_call','eth_estimateGas','eth_gasPrice',
-  'eth_maxPriorityFeePerGas','eth_feeHistory','eth_getBalance','eth_getBlockByHash',
-  'eth_getBlockByNumber','eth_getCode','eth_getLogs','eth_getStorageAt',
-  'eth_getTransactionByHash','eth_getTransactionCount','eth_getTransactionReceipt',
+  'eth_maxPriorityFeePerGas','eth_feeHistory','eth_blobBaseFee','eth_getBalance','eth_getBlockByHash',
+  'eth_getBlockByNumber','eth_getBlockTransactionCountByHash','eth_getBlockTransactionCountByNumber',
+  'eth_getTransactionByBlockHashAndIndex','eth_getTransactionByBlockNumberAndIndex','eth_getCode','eth_getLogs','eth_getStorageAt','eth_getProof',
+  'eth_getTransactionByHash','eth_getTransactionCount','eth_getTransactionReceipt','eth_getBlockReceipts',
   'net_version','web3_clientVersion','getAccountInfo','getBalance','getBlock','getFeeForMessage',
   'getBlockHeight','getBlockTime','getEpochInfo','getHealth','getLatestBlockhash',
   'getMinimumBalanceForRentExemption','getMultipleAccounts','getProgramAccounts',
