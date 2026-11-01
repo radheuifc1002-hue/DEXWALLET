@@ -9,6 +9,7 @@ DEXWALLET is non-custodial. Seed phrases, private keys, wallet derivation and tr
 - **Server RPC:** `backend/api/rpc.ts` routes JSON-RPC through `backend/api/_lib/rpc-manager.ts`.
 - **Provider health:** `GET /api/rpc-health` reports configured providers and per-function-instance circuit state. It is not a live probe or globally shared health registry.
 - **EVM history:** `POST /api/history` queries Alchemy Transfers API on demand. There is no custom address indexer, persistent history store, database-backed job queue or wallet registration service.
+- **Solana history:** `POST /api/solana-history` uses the central server RPC manager to page signatures and fetch confirmed transaction details; native SOL activity is derived from lamport deltas and SPL-token activity from owner/mint token-balance deltas.
 - **Readiness:** `GET /api/ready` checks that the stateless API is ready; no database is required.
 - **Mobile secrets:** Wallet creation, recovery, key derivation and signing stay on the device.
 
@@ -41,24 +42,32 @@ Known limitations to close before production:
 
 ## Phase 3 — Remove unused database/indexer architecture
 
-The project owner confirms that no database or indexer was deployed or used. Therefore:
-- Remove the database-backed indexed-history and address-registration APIs.
-- Remove the BNB trace-scan endpoint, worker, Docker image, indexer package and schema migration.
-- Remove the opt-in setting that sent public addresses to the unused indexer.
-- Remove Neon/Supabase dependencies and placeholder integrations that belong only to the unused backend scaffold.
-- Keep readiness stateless and independent of database environment variables.
-- Do not attempt database migrations, table drops or data deletion: there is no deployed database to migrate and no live data to preserve.
-- Keep the active API package free of database drivers and worker dependencies.
-
-Phase 3 does not remove mobile secure storage, wallet signing, public RPC access or the stateless history endpoint.
+**Implemented.** See [PHASE_3_DATABASE_INDEXER_REMOVAL.md](./PHASE_3_DATABASE_INDEXER_REMOVAL.md) for the detailed change record.
+- Retired database-backed history, address registration, indexer jobs and BNB trace scanning.
+- Removed the worker, Docker/package artifacts, schema migration and mobile indexer opt-in.
+- Removed unused database integrations/dependencies from the relevant backend packages.
+- Kept readiness and active history stateless.
+- No database migration or data deletion was performed because the project owner confirmed no database/indexer was deployed or used.
 
 ## Phase 4 — Non-EVM data adapters
 
-Add Solana and future non-EVM chains behind the same normalized history response contract. Each chain gets a separate adapter with chain-specific address validation, pagination, status decoding and explorer links. Keep chain-specific logic out of the generic EVM adapter.
+**Solana adapter implemented; production validation remains required.**
+- Separate `POST /api/solana-history` adapter, not mixed into EVM-specific logic.
+- Uses the central Solana RPC manager; no provider credential or direct provider URL in the mobile service.
+- Signature pagination with a `before` cursor.
+- Fetches transaction details with bounded concurrency.
+- Native SOL activity derives from wallet lamport balance changes.
+- SPL-token activity derives from wallet-owned pre/post token-balance deltas for the selected mint.
+- Normalized rows include signature, direction, amount, timestamp, failure status and Solscan transaction URL.
+- Added a typed mobile service with cursor metadata.
+- Known constraints: the first adapter returns net wallet balance changes per transaction, not every instruction-level transfer; token accounts must be correctly attributed by RPC owner metadata; unsupported transaction versions or unavailable historical transaction data can result in skipped rows. Live mainnet/devnet fixtures and pagination tests remain release gates.
 
 ## Phase 5 — Centralize remaining RPC access
 
-Audit balances, token import, gas estimation, nonce lookup, transaction preparation and signed-transaction broadcast. Route public data reads through the server RPC interface where appropriate. Signing remains local. Broadcast retries must reuse the exact signed payload and must not create a replacement transaction after an ambiguous timeout.
+- Audit balances, token import, gas estimation, nonce lookup, transaction preparation and signed-transaction broadcast.
+- Route public data reads through the server RPC interface where appropriate.
+- Signing remains local.
+- Broadcast retries must reuse the exact signed payload and must not create a replacement transaction after an ambiguous timeout.
 
 ## Phase 6 — Mobile history and provider migration
 
