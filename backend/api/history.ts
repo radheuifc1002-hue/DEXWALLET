@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
+import { proxyRpc, type RpcChain, type RpcNetwork } from './_lib/rpc-manager.js';
 
-type Chain = 'ethereum' | 'bnb' | 'polygon' | 'arbitrum' | 'optimism' | 'base' | 'avalanche' | 'linea';
-type Network = 'mainnet' | 'testnet';
+type Chain = RpcChain;
+type Network = RpcNetwork;
 type Transfer = {
   hash?: string; from?: string; to?: string; value?: number | null; asset?: string | null;
   category?: string; rawContract?: { address?: string | null; value?: string | null; decimal?: string | null };
@@ -50,22 +51,18 @@ function formatTimestamp(value:string|undefined):number {
 }
 function shortAddress(value:string):string { return value.slice(0,10)+'…'+value.slice(-6); }
 
-async function transfers(url:string, wallet:string, direction:'from'|'to', category:'external'|'erc20', contract?:string):Promise<Transfer[]> {
+async function transfers(chain:Chain, network:Network, wallet:string, direction:'from'|'to', category:'external'|'erc20', contract?:string):Promise<Transfer[]> {
   const params:Record<string,unknown> = {
     fromBlock:'0x0',toBlock:'latest',fromAddress:direction==='from'?wallet:undefined,
     toAddress:direction==='to'?wallet:undefined,categories:[category],withMetadata:true,
     excludeZeroValue:false,maxCount:'0x64',order:'desc',
   };
   if(contract) params.contractAddresses=[contract];
-  const controller=new AbortController(), timer=setTimeout(()=>controller.abort(),TIMEOUT_MS);
-  try {
-    const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},
-      body:JSON.stringify({jsonrpc:'2.0',id:randomUUID(),method:'alchemy_getAssetTransfers',params:[params]}),signal:controller.signal});
-    if(!response.ok) throw new Error('provider_http_'+response.status);
-    const payload=await response.json() as any;
-    if(payload?.error) throw new Error('provider_rpc_error');
-    return Array.isArray(payload?.result?.transfers)?payload.result.transfers:[];
-  } finally {clearTimeout(timer);}
+  const result=await proxyRpc(chain,network,{jsonrpc:'2.0',id:randomUUID(),method:'alchemy_getAssetTransfers',params:[params]});
+  if(result.status<200||result.status>=300) throw new Error('history_provider_unavailable');
+  const payload=JSON.parse(result.body) as any;
+  if(payload?.error) throw new Error('history_provider_unavailable');
+  return Array.isArray(payload?.result?.transfers)?payload.result.transfers:[];
 }
 
 export default async function handler(req:ApiRequest,res:ApiResponse) {
@@ -90,36 +87,48 @@ export default async function handler(req:ApiRequest,res:ApiResponse) {
   if(!networkName){res.status(400).json({error:{code:'unsupported_chain_or_network',requestId}});return;}
   if(!/^0x[a-fA-F0-9]{40}$/.test(wallet)){res.status(400).json({error:{code:'invalid_wallet_address',requestId}});return;}
   if(!isNative&&!/^0x[a-fA-F0-9]{40}$/.test(contract)){res.status(400).json({error:{code:'invalid_token_contract',requestId}});return;}
-  const key=process.env['ALCHEMY_'+chain.toUpperCase()+'_'+network.toUpperCase()+'_API_KEY']||process.env.ALCHEMY_API_KEY;
-  if(!key){res.status(503).json({error:{code:'history_provider_not_configured',requestId}});return;}
-  const url='https://'+networkName+'.g.alchemy.com/v2/'+encodeURIComponent(key);
   const category=isNative?'external':'erc20';
   try {
-    const [outgoing,incoming]=await Promise.all([
-      transfers(url,wallet,'from',category,isNative?undefined:contract),
-      transfers(url,wallet,'to',category,isNative?undefined:contract),
-    ]);
+    const transferQueries:Promise<Transfer[]>[]=[
+      transfers(chain,network,wallet,'from',category,isNative?undefined:contract),
+      transfers(chain,network,wallet,'to',category,isNative?undefined:contract),
+    ];
+    if(!isNative){
+      transferQueries.push(
+        transfers(chain,network,wallet,'from','external'),
+        transfers(chain,network,wallet,'to','external'),
+      );
+    }
+    const settled=await Promise.allSettled(transferQueries);
+    const successful=settled.filter((item):item is PromiseFulfilledResult<Transfer[]>=>item.status==='fulfilled');
+    if(successful.length===0) throw new Error('history_provider_unavailable');
+    const outgoing=successful[0]?.value||[];
+    const incoming=successful[1]?.value||[];
+    const interactionTransfers=successful.slice(2).flatMap(item=>item.value);
     const seen=new Set<string>();
-    const rows=[...outgoing,...incoming].flatMap((item)=>{
+    const rows=[...outgoing,...incoming,...interactionTransfers.filter(item=>
+      String(item.to||'').toLowerCase()===contract && BigInt(String(item.rawContract?.value||'0x0'))===0n
+    )].flatMap((item)=>{
       const hash=String(item.hash||'');
       const from=String(item.from||''),to=String(item.to||'');
       if(!/^0x[a-fA-F0-9]{64}$/.test(hash)||!from||!to)return [];
       const isIncoming=to.toLowerCase()===wallet.toLowerCase();
       const tokenAddress=String(item.rawContract?.address||'').toLowerCase();
-      if(!isNative&&tokenAddress!==contract)return [];
-      const id=hash.toLowerCase()+':'+(isNative?'native':contract)+':'+(isIncoming?'in':'out');
+      const isInteraction=!isNative&&String(item.to||'').toLowerCase()===contract&&BigInt(String(item.value??0))===0n;
+      if(!isNative&&!isInteraction&&tokenAddress!==contract)return [];
+      const id=hash.toLowerCase()+':'+(isNative?'native':isInteraction?'interaction':contract)+':'+(isIncoming?'in':'out');
       if(seen.has(id))return [];
       seen.add(id);
-      const symbol=String(item.asset||(isNative?(chain==='ethereum'?'ETH':chain==='bnb'?'BNB':chain==='polygon'?'POL':chain==='avalanche'?'AVAX':chain==='arbitrum'?'ETH':chain==='optimism'?'ETH':chain==='base'?'ETH':'ETH'):'TOKEN'));
+      const symbol=String(item.asset||(chain==='bnb'?'BNB':chain==='polygon'?'POL':chain==='avalanche'?'AVAX':'ETH'));
       const raw=item.rawContract?.value;
       const amount=raw?rawAmount(raw,item.rawContract?.decimal):String(item.value??0);
       const timestamp=formatTimestamp(item.metadata?.blockTimestamp);
       return [{
-        id,hash,title:(isIncoming?'Received ':'Sent ')+symbol,
+        id,hash,title:isInteraction?'Contract interaction':(isIncoming?'Received ':'Sent ')+symbol,
         detail:(isIncoming?'From ':'To ')+shortAddress(isIncoming?from:to),
-        amount:(isIncoming?'+':'-')+amount+' '+symbol,timestamp,incoming:isIncoming,failed:false,
+        amount:isInteraction?'':(isIncoming?'+':'-')+amount+' '+symbol,timestamp,incoming:isIncoming,failed:false,
         explorerUrl:(EXPLORERS[chain]?.[network]||'')+hash,
-        from,to,contractAddress:tokenAddress||null,category:item.category||category,
+        from,to,contractAddress:tokenAddress||null,category:isInteraction?'contract_interaction':item.category||category,
       }];
     }).sort((a,b)=>b.timestamp-a.timestamp||b.hash.localeCompare(a.hash)).slice(0,limit);
     res.status(200).json({chain,network,walletAddress:wallet,asset:{type:isNative?'native':'token',contractAddress:isNative?null:contract},

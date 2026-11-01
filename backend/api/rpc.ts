@@ -1,6 +1,6 @@
 import { proxyRpc, type RpcChain, type RpcNetwork } from './_lib/rpc-manager.js';
 
-const CHAINS = new Set<RpcChain>(['ethereum','bnb','polygon','solana']);
+const CHAINS = new Set<RpcChain>(['ethereum','bnb','polygon','arbitrum','optimism','base','avalanche','linea','solana']);
 const NETWORKS = new Set<RpcNetwork>(['mainnet','testnet']);
 
 export default async function handler(req: any, res: any) {
