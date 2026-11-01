@@ -81,6 +81,13 @@ function markFailure(key: string, error: unknown) {
     latencyMs: old?.latencyMs ?? Number.MAX_SAFE_INTEGER,
     lastFailure: error instanceof Error ? error.message.slice(0,160) : 'upstream failure' });
 }
+function providerSupportsMethods(provider: Provider, methods: string[]): boolean {
+  // Alchemy's Transfers API is an Alchemy-specific extension. Never send it
+  // to Chainstack or a generic JSON-RPC fallback and mistake "method not found"
+  // for an upstream outage.
+  if (methods.includes('alchemy_getAssetTransfers')) return provider.name === 'alchemy';
+  return true;
+}
 function orderProviders(chain: RpcChain, network: RpcNetwork, list: Provider[]) {
   const now = Date.now(), usable = list.filter(p => (health.get(providerKey(chain,network,p))?.openUntil || 0) <= now);
   return usable.length ? usable : [...list].sort((a,b) =>
@@ -102,12 +109,14 @@ function parseBody(body: unknown) {
 function sleep(ms: number) { return new Promise(resolve => setTimeout(resolve,ms)); }
 function jitter(attempt: number) { return Math.floor(Math.random() * Math.min(750,100 * (2 ** Math.max(0,attempt-1)))); }
 export type RpcProxyResult = { status:number; body:string; provider:string; requestId:string; attempts:number };
-export type RpcProviderStatus = { name:string; configured:boolean; circuit:'closed'|'open'; cooldownMs:number; latencyMs:number|null; consecutiveFailures:number };
+export type RpcProviderStatus = { name:string; configured:boolean; circuit:'closed'|'open'; cooldownMs:number; latencyMs:number|null; consecutiveFailures:number; lastFailure?:string };
 export async function proxyRpc(chain: RpcChain, network: RpcNetwork, body: unknown): Promise<RpcProxyResult> {
   const requestId = randomUUID(), parsed = parseBody(body);
   if (!parsed || Buffer.byteLength(parsed.serialized,'utf8') > 1_000_000)
     return { status:400, body:JSON.stringify({error:{code:'invalid_json_rpc_request',requestId}}), provider:'none', requestId, attempts:0 };
-  const all = orderProviders(chain,network,getProviders(chain,network)), providers = parsed.readOnly ? all : all.slice(0,1);
+  const methods = (Array.isArray(body) ? body : [body]).map((item: any) => String(item.method));
+  const compatible = getProviders(chain,network).filter(provider => providerSupportsMethods(provider,methods));
+  const all = orderProviders(chain,network,compatible), providers = parsed.readOnly ? all : all.slice(0,1);
   if (!providers.length) return { status:503, body:JSON.stringify({error:{code:'rpc_not_configured',requestId}}), provider:'none', requestId, attempts:0 };
   let status = 502, responseBody = JSON.stringify({error:{code:'upstream_unavailable',requestId}}), attempts = 0;
   for (const provider of providers) {
@@ -138,7 +147,7 @@ export function getRpcProviderStatus(chain: RpcChain, network: RpcNetwork): RpcP
     const state = health.get(providerKey(chain,network,provider));
     return { name:provider.name, configured:true, circuit:(state?.openUntil || 0)>Date.now()?'open':'closed',
       cooldownMs:Math.max(0,(state?.openUntil || 0)-Date.now()),
-      latencyMs:state && Number.isFinite(state.latencyMs)?state.latencyMs:null, consecutiveFailures:state?.failures || 0 };
+      latencyMs:state && Number.isFinite(state.latencyMs)?state.latencyMs:null, consecutiveFailures:state?.failures || 0, ...(state?.lastFailure ? {lastFailure:state.lastFailure} : {}) };
   });
 }
 export function getRpcChainId(chain: RpcChain, network: RpcNetwork): number | undefined { return CHAIN_IDS[chain]?.[network]; }
