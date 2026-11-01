@@ -70,3 +70,19 @@ test('Supported chain configuration remains limited to the four agreed chains',(
   const context=read('context/WalletContext.tsx');
   assert.match(context,/export type Blockchain = 'solana' \| 'ethereum' \| 'bnb' \| 'polygon'/);
 });
+
+test('Phase 6: mobile and server network configuration share the canonical API host',()=>{
+  const client=read('mobile/services/serverRpc.ts');
+  const config=read('backend/api/rpc-config.ts');
+  const mobileConfig=read('mobile/services/rpcManager.ts');
+  assert.match(client,/https:\/\/dexwallet-api\.vercel\.app/);
+  assert.match(config,/https:\/\/dexwallet-api\.vercel\.app/);
+  assert.match(mobileConfig,/https:\/\/dexwallet-api\.vercel\.app/);
+});
+
+test('Operational documentation distinguishes active probes from process-local state',()=>{
+  const readme=read('backend/README.md');
+  assert.match(readme,/actively probes configured providers/);
+  assert.match(readme,/process-local/);
+  assert.match(readme,/5,000-user capacity guarantee/);
+});
