@@ -4,7 +4,7 @@ type RpcResult<T>={result?:T;error?:{message?:string}};
 type SignatureInfo={signature:string;slot:number;blockTime?:number|null;err?:unknown};
 type TokenBalance={accountIndex:number;mint:string;owner?:string;uiTokenAmount?:{amount?:string;decimals?:number}};
 type AccountKey=string|{pubkey?:string};
-type SolanaHistoryRow={id:string;hash:string;title:string;detail:string;amount:string;timestamp:number;incoming:boolean;failed:boolean;explorerUrl:string;assetType:'native'|'token';mintAddress:string|null};
+type SolanaHistoryRow={id:string;hash:string;title:string;detail:string;amount:string;timestamp:number;incoming:boolean;failed:boolean;explorerUrl:string;assetType:'native'|'token';mintAddress:string|null;direction:'incoming'|'outgoing'|'self';status:'success'|'failed';asset:{type:'native'|'token';address:string|null}};
 type Transaction={blockTime?:number|null;meta?:{err?:unknown;fee?:number;preBalances?:number[];postBalances?:number[];preTokenBalances?:TokenBalance[];postTokenBalances?:TokenBalance[]};transaction?:{message?:{accountKeys?:AccountKey[]}}};
 type CursorState={v:1;before:Record<string,string|null>};
 type ApiRequest={method?:string;body?:unknown};
@@ -99,7 +99,7 @@ export default async function handler(req:ApiRequest,res:ApiResponse){
      if(delta!==0n||failed){const incoming=delta>0n,other=keys.find(k=>k&&k!==wallet)||'';
       rows.push({id:sig.signature+':sol',hash:sig.signature,title:failed?'Failed SOL transaction':incoming?'Received SOL':'Sent SOL',
        detail:other?(incoming?'From ':'To ')+other.slice(0,8)+'…'+other.slice(-6):'Solana transaction',
-       amount:delta===0n?'':(incoming?'+':'-')+formatUnits(delta<0n?-delta:delta,9)+' SOL',timestamp,incoming,failed,explorerUrl,assetType:'native',mintAddress:null});
+       amount:delta===0n?'':(incoming?'+':'-')+formatUnits(delta<0n?-delta:delta,9)+' SOL',timestamp,incoming,failed,explorerUrl,assetType:'native',mintAddress:null,direction:delta===0n?'self':incoming?'incoming':'outgoing',status:failed?'failed':'success',asset:{type:'native',address:null}});
      }
     }
    }else if(!isNative&&tx){
@@ -107,7 +107,7 @@ export default async function handler(req:ApiRequest,res:ApiResponse){
     if(touched&&(delta!==0n||failed)){const incoming=delta>0n,other=keys.find(k=>k&&k!==wallet&&!tokenSet.has(k))||'';
      rows.push({id:sig.signature+':'+mint,hash:sig.signature,title:failed?'Failed token transaction':incoming?'Received token':'Sent token',
       detail:other?(incoming?'From ':'To ')+other.slice(0,8)+'…'+other.slice(-6):'Token account activity',
-      amount:delta===0n?'':(incoming?'+':'-')+formatUnits(delta<0n?-delta:delta,decimals),timestamp,incoming,failed,explorerUrl,assetType:'token',mintAddress:mint});
+      amount:delta===0n?'':(incoming?'+':'-')+formatUnits(delta<0n?-delta:delta,decimals),timestamp,incoming,failed,explorerUrl,assetType:'token',mintAddress:mint,direction:delta===0n?'self':incoming?'incoming':'outgoing',status:failed?'failed':'success',asset:{type:'token',address:mint}});
     }
    }
    if(rows.length>=limit)break;

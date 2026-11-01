@@ -142,7 +142,7 @@ export default async function handler(req:ApiRequest,res:ApiResponse) {
       return [{
         id,hash,title:isInteraction?'Contract interaction':(isIncoming?'Received ':'Sent ')+symbol,
         detail:(isIncoming?'From ':'To ')+shortAddress(isIncoming?from:to),
-        amount:isInteraction?'':(isIncoming?'+':'-')+amount+' '+symbol,timestamp,incoming:isIncoming,failed:false,
+        amount:isInteraction?'':(isIncoming?'+':'-')+amount+' '+symbol,timestamp,incoming:isIncoming,failed:false,direction:isIncoming?'incoming':'outgoing',status:'success',asset:{type:isNative?'native':'token',address:isNative?null:contract},
         explorerUrl:(EXPLORERS[chain]?.[network]||'')+hash,
         from,to,contractAddress:tokenAddress||null,category:isInteraction?'contract_interaction':item.category||category,
       }];
@@ -156,7 +156,7 @@ export default async function handler(req:ApiRequest,res:ApiResponse) {
     });
     const receiptCoverage=receiptResults.every(result=>result.status==='fulfilled'&&result.value!==null);
     const finalRows=rows.map(row=>({...row,failed:receiptByHash.get(row.hash)===true}));
-    res.status(200).json({chain,network,walletAddress:wallet,asset:{type:isNative?'native':'token',contractAddress:isNative?null:contract},
+    res.status(200).json({chain,network,walletAddress:wallet,asset:{type:isNative?'native':'token',address:isNative?null:contract,contractAddress:isNative?null:contract},
       rows:finalRows,limit,requestId,source:'alchemy-transfers',complete:requiredStreamsSucceeded&&receiptCoverage,
       ...((requiredStreamsSucceeded&&receiptCoverage)?{}:{warning:'partial_history_result'})});
   } catch {
