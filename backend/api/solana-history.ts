@@ -80,7 +80,7 @@ async function mapLimit<T, R>(items: T[], limit: number, mapper: (item: T) => Pr
   return output;
 }
 function parseRawAmount(value?: string): bigint {
-  if (!value || !/^-?\\d+$/.test(value)) return 0n;
+  if (!value || !/^-?\d+$/.test(value)) return 0n;
   try { return BigInt(value); } catch { return 0n; }
 }
 function amountDelta(pre?: string, post?: string): bigint {
