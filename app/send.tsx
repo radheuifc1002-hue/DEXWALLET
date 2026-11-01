@@ -25,7 +25,7 @@ async function solRpc<T>(network: 'mainnet' | 'testnet', method: string, params:
 const formatAmount = (value: string, decimals: number) => {
   try { return ethers.formatUnits(BigInt(value), decimals); } catch { return '0'; }
 };
-const cleanAmount = (value: string) => /^(?:\\d+(?:\\.\\d*)?|\\.\\d+)$/.test(value) && /[1-9]/.test(value);
+const cleanAmount = (value: string) => /^(?:\d+(?:\.\d*)?|\.\d+)$/.test(value) && /[1-9]/.test(value);
 
 type Review = {
   to: string;
@@ -351,7 +351,7 @@ export default function Send() {
       const available = ethers.parseUnits(balance, decimals);
       const feeReserve = ethers.parseUnits(reserve, decimals);
       const max = available > feeReserve ? available - feeReserve : 0n;
-      setAmount(max > 0n ? ethers.formatUnits(max, decimals).replace(/\\.0$/, '') : '');
+      setAmount(max > 0n ? ethers.formatUnits(max, decimals).replace(/\.0$/, '') : '');
       setReview(null);
     } catch {
       setError('Unable to calculate the maximum transferable amount.');
