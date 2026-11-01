@@ -7,11 +7,7 @@
     "node": "22.x"
   },
   "scripts": {
-    "check:worker": "node --check indexer/worker.mjs",
     "build": "tsc --noEmit -p tsconfig.json"
-  },
-  "dependencies": {
-    "@neondatabase/serverless": "1.2.0"
   },
   "devDependencies": {
     "@types/node": "^22.19.11",
