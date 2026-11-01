@@ -55,6 +55,16 @@ function formatTimestamp(value:string|null|undefined):number {
 }
 function shortAddress(value:string):string { return value.slice(0,10)+'…'+value.slice(-6); }
 
+async function receiptStatus(chain:Chain,network:Network,hash:string):Promise<boolean|null>{
+  const result=await proxyRpc(chain,network,{jsonrpc:'2.0',id:randomUUID(),method:'eth_getTransactionReceipt',params:[hash]});
+  if(result.status<200||result.status>=300)return null;
+  try{
+    const payload=JSON.parse(result.body) as {result?:{status?:string}|null;error?:unknown};
+    if(payload.error||!payload.result)return null;
+    return payload.result.status==='0x0';
+  }catch{return null;}
+}
+
 async function transfers(chain:Chain, network:Network, wallet:string, direction:'from'|'to', category:'external'|'erc20', contract?:string):Promise<Transfer[]> {
   const params:Record<string,unknown> = {
     fromBlock:'0x0',toBlock:'latest',fromAddress:direction==='from'?wallet:undefined,
@@ -137,9 +147,18 @@ export default async function handler(req:ApiRequest,res:ApiResponse) {
         from,to,contractAddress:tokenAddress||null,category:isInteraction?'contract_interaction':item.category||category,
       }];
     }).sort((a,b)=>b.timestamp-a.timestamp||b.hash.localeCompare(a.hash)).slice(0,limit);
+    const hashes=[...new Set(rows.map(row=>row.hash))];
+    const receiptResults=await Promise.allSettled(hashes.map(hash=>receiptStatus(chain,network,hash)));
+    const receiptByHash=new Map<string,boolean|null>();
+    hashes.forEach((hash,index)=>{
+      const result=receiptResults[index];
+      receiptByHash.set(hash,result?.status==='fulfilled'?result.value:null);
+    });
+    const receiptCoverage=receiptResults.every(result=>result.status==='fulfilled'&&result.value!==null);
+    const finalRows=rows.map(row=>({...row,failed:receiptByHash.get(row.hash)===true}));
     res.status(200).json({chain,network,walletAddress:wallet,asset:{type:isNative?'native':'token',contractAddress:isNative?null:contract},
-      rows,limit,requestId,source:'alchemy-transfers',complete:requiredStreamsSucceeded,
-      ...(requiredStreamsSucceeded?{}:{warning:'partial_history_result'})});
+      rows:finalRows,limit,requestId,source:'alchemy-transfers',complete:requiredStreamsSucceeded&&receiptCoverage,
+      ...((requiredStreamsSucceeded&&receiptCoverage)?{}:{warning:'partial_history_result'})});
   } catch {
     res.status(502).json({error:{code:'history_provider_unavailable',requestId}});
   }
