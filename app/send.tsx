@@ -25,7 +25,7 @@ async function solRpc<T>(network: 'mainnet' | 'testnet', method: string, params:
 const formatAmount = (value: string, decimals: number) => {
   try { return ethers.formatUnits(BigInt(value), decimals); } catch { return '0'; }
 };
-const cleanAmount = (value: string) => /^\\d+(\\.\\d*)?$/.test(value) && Number(value) > 0;
+const cleanAmount = (value: string) => /^(?:\\d+(?:\\.\\d*)?|\\.\\d+)$/.test(value) && /[1-9]/.test(value);
 
 type Review = {
   to: string;
@@ -333,12 +333,29 @@ export default function Send() {
 
   const maxAmount = () => {
     if (!balance) return;
-    const value = Number(balance);
-    if (!Number.isFinite(value) || value <= 0) return;
-    if (!isNative) { setAmount(balance); return; }
-    const reserve = selectedBlockchain === 'solana' ? 0.00001 : selectedBlockchain === 'ethereum' ? 0.001 : selectedBlockchain === 'bnb' ? 0.0005 : 0.05;
-    setAmount(Math.max(0, value - reserve).toFixed(8).replace(/0+$/, '').replace(/\\.$/, ''));
-    setReview(null);
+    try {
+      if (!isNative) {
+        setAmount(balance);
+        setReview(null);
+        return;
+      }
+      // Reserve a small amount for the network fee without converting balances
+      // through JavaScript Number (which loses precision for crypto amounts).
+      const reserve = selectedBlockchain === 'solana'
+        ? '0.00001'
+        : selectedBlockchain === 'ethereum'
+          ? '0.001'
+          : selectedBlockchain === 'bnb'
+            ? '0.0005'
+            : '0.05';
+      const available = ethers.parseUnits(balance, decimals);
+      const feeReserve = ethers.parseUnits(reserve, decimals);
+      const max = available > feeReserve ? available - feeReserve : 0n;
+      setAmount(max > 0n ? ethers.formatUnits(max, decimals).replace(/\\.0$/, '') : '');
+      setReview(null);
+    } catch {
+      setError('Unable to calculate the maximum transferable amount.');
+    }
   };
 
   if (hash) return (
