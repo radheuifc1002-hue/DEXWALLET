@@ -105,11 +105,12 @@ export default async function handler(req:ApiRequest,res:ApiResponse) {
       );
     }
     const settled=await Promise.allSettled(transferQueries);
-    const successful=settled.filter((item):item is PromiseFulfilledResult<Transfer[]>=>item.status==='fulfilled');
-    if(successful.length===0) throw new Error('history_provider_unavailable');
-    const outgoing=successful[0]?.value||[];
-    const incoming=successful[1]?.value||[];
-    const interactionTransfers=successful.slice(2).flatMap(item=>item.value);
+    const outgoing=settled[0]?.status==='fulfilled'?settled[0].value:[];
+    const incoming=settled[1]?.status==='fulfilled'?settled[1].value:[];
+    const interactionTransfers=settled.slice(2).flatMap(item=>item.status==='fulfilled'?item.value:[]);
+    const requiredStreamsSucceeded=settled.every(item=>item.status==='fulfilled');
+    if(!outgoing.length&&!incoming.length&&!interactionTransfers.length&&!requiredStreamsSucceeded)
+      throw new Error('history_provider_unavailable');
     const seen=new Set<string>();
     const rows=[...outgoing,...incoming,...interactionTransfers.filter(item=>
       String(item.to||'').toLowerCase()===contract && isZeroValue(item.rawContract?.value)
@@ -137,7 +138,8 @@ export default async function handler(req:ApiRequest,res:ApiResponse) {
       }];
     }).sort((a,b)=>b.timestamp-a.timestamp||b.hash.localeCompare(a.hash)).slice(0,limit);
     res.status(200).json({chain,network,walletAddress:wallet,asset:{type:isNative?'native':'token',contractAddress:isNative?null:contract},
-      rows,limit,requestId,source:'alchemy-transfers',complete:true});
+      rows,limit,requestId,source:'alchemy-transfers',complete:requiredStreamsSucceeded,
+      ...(requiredStreamsSucceeded?{}:{warning:'partial_history_result'})});
   } catch {
     res.status(502).json({error:{code:'history_provider_unavailable',requestId}});
   }
