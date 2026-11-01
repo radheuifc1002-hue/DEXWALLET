@@ -1,7 +1,7 @@
 {
   "name": "xu-wallet-backend",
   "version": "1.0.0",
-  "description": "Backend logic for the XU Non-Custodial Crypto Wallet app.",
+  "description": "Legacy reference scaffold; not used or deployed by the active Expo application.",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
@@ -14,7 +14,6 @@
     "bip39": "^3.0.5",
     "bip44": "^0.0.4",
     "expo-secure-store": "^11.0.0",
-    "supabase-js": "^2.0.0",
     "axios": "^0.27.2",
     "qrcode.react": "^1.0.0"
   },

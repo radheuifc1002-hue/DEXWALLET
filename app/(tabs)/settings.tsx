@@ -274,13 +274,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-  helperText: {
-    color: '#777286',
-    fontSize: 12,
-    lineHeight: 18,
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-  },
   version: {
     color: '#9A95A8',
     fontSize: 12,
