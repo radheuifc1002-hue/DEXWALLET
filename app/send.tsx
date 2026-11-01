@@ -322,7 +322,7 @@ export default function Send() {
         setHash(submittedHash);
         setPendingConfirmation(true);
         setReview(null);
-        setError('Transaction was broadcast, but confirmation could not be verified. Check its hash before attempting another transfer.');
+        setError('Transaction was submitted, but confirmation could not be verified. Check the transaction hash before trying again.');
       } else {
         setError(e?.shortMessage || e?.message || 'Transaction failed.');
       }
