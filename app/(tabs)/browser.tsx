@@ -16,7 +16,8 @@ import { WebView } from 'react-native-webview';
 import { SafeAreaView as SafeAreaContextView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { ethers } from 'ethers';
-import { useWallet } from '../../context/WalletContext';
+import { useWallet, type Blockchain } from '../../context/WalletContext';
+import { getCentralEvmChainId, getCentralRpcUrl } from '../../mobile/services/serverRpc';
 import { getMnemonic, signSolanaMessage } from '../../mobile/services/walletService';
 
 type DAppShortcut = {
@@ -278,9 +279,9 @@ export default function Browser() {
       respond(undefined, { code: 4100, message: 'Invalid DApp origin.' }); return;
     }
     const chains: Record<string, any> = {
-      ethereum: { id: 1, rpc: 'https://ethereum-rpc.publicnode.com', name: 'Ethereum Mainnet', testId: 11155111, testRpc: 'https://ethereum-sepolia-rpc.publicnode.com' },
-      bnb: { id: 56, rpc: 'https://bsc-rpc.publicnode.com', name: 'BNB Smart Chain', testId: 97, testRpc: 'https://bsc-testnet-rpc.publicnode.com' },
-      polygon: { id: 137, rpc: 'https://polygon-bor-rpc.publicnode.com', name: 'Polygon', testId: 80002, testRpc: 'https://polygon-amoy-bor-rpc.publicnode.com' },
+      ethereum: { id: 1, name: 'Ethereum Mainnet', testId: 11155111 },
+      bnb: { id: 56, name: 'BNB Smart Chain', testId: 97 },
+      polygon: { id: 137, name: 'Polygon', testId: 80002 },
     };
     const chainById: Record<number, any> = {
       1:{blockchain:'ethereum',network:'mainnet'},11155111:{blockchain:'ethereum',network:'testnet'},
@@ -291,8 +292,9 @@ export default function Browser() {
       if (isLocked) throw Object.assign(new Error('Unlock XU Wallet before using DApps.'), {code:4100});
       if (!chains[selectedBlockchain]) throw Object.assign(new Error('EIP-1193 supports Ethereum, BNB Chain and Polygon only.'), {code:4200});
       const cfg = chains[selectedBlockchain];
-      const chainId = network === 'testnet' ? cfg.testId : cfg.id;
-      const provider = new ethers.JsonRpcProvider(network === 'testnet' ? cfg.testRpc : cfg.rpc);
+      const evmChain = selectedBlockchain as Exclude<Blockchain, 'solana'>;
+      const chainId = getCentralEvmChainId(evmChain, network);
+      const provider = new ethers.JsonRpcProvider(getCentralRpcUrl(evmChain, network), chainId, { staticNetwork: true });
       const address = walletAddresses?.[selectedBlockchain];
       const params = Array.isArray(m.params) ? m.params : [];
       let result: any;
