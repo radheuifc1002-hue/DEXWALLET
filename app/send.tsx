@@ -118,12 +118,23 @@ export default function Send() {
         setBalance(String(selectedAsset.balance ?? 0));
       } else {
         const iface = new ethers.Interface(TOKEN_ABI);
-        const raw = await serverRpcRequest<string>(selectedBlockchain, network, 'eth_call', [{
-          to: selectedAsset.contractAddress,
-          data: iface.encodeFunctionData('balanceOf', [address]),
-        }, 'latest']);
+        const decimalsIface = new ethers.Interface(['function decimals() view returns (uint8)']);
+        const [raw, decimalsRaw] = await Promise.all([
+          serverRpcRequest<string>(selectedBlockchain, network, 'eth_call', [{
+            to: selectedAsset.contractAddress,
+            data: iface.encodeFunctionData('balanceOf', [address]),
+          }, 'latest']),
+          serverRpcRequest<string>(selectedBlockchain, network, 'eth_call', [{
+            to: selectedAsset.contractAddress,
+            data: decimalsIface.encodeFunctionData('decimals', []),
+          }, 'latest']),
+        ]);
         const [rawBalance] = iface.decodeFunctionResult('balanceOf', raw);
-        setBalance(formatAmount(rawBalance.toString(), decimals));
+        const [onChainDecimals] = decimalsIface.decodeFunctionResult('decimals', decimalsRaw);
+        const resolvedDecimals = Number(onChainDecimals);
+        if (!Number.isInteger(resolvedDecimals) || resolvedDecimals < 0 || resolvedDecimals > 36) throw new Error('Token contract returned invalid decimals.');
+        setSelectedAsset((current) => current.id === selectedAsset.id ? { ...current, decimals: resolvedDecimals } : current);
+        setBalance(formatAmount(rawBalance.toString(), resolvedDecimals));
       }
     } catch (e: any) {
       setBalance(null);
@@ -218,7 +229,15 @@ export default function Send() {
         } else {
           if (!selectedAsset.contractAddress || !ethers.isAddress(selectedAsset.contractAddress)) throw new Error('This token has an invalid contract address.');
           const iface = new ethers.Interface(TOKEN_ABI);
-          const data = iface.encodeFunctionData('transfer', [recipient, ethers.parseUnits(amount, decimals)]);
+          const decimalsIface = new ethers.Interface(['function decimals() view returns (uint8)']);
+          const decimalsRaw = await serverRpcRequest<string>(selectedBlockchain, network, 'eth_call', [{
+            to: selectedAsset.contractAddress,
+            data: decimalsIface.encodeFunctionData('decimals', []),
+          }, 'latest']);
+          const [onChainDecimals] = decimalsIface.decodeFunctionResult('decimals', decimalsRaw);
+          const tokenDecimals = Number(onChainDecimals);
+          if (!Number.isInteger(tokenDecimals) || tokenDecimals < 0 || tokenDecimals > 36) throw new Error('Token contract returned invalid decimals.');
+          const data = iface.encodeFunctionData('transfer', [recipient, ethers.parseUnits(amount, tokenDecimals)]);
           tx = { to: ethers.getAddress(selectedAsset.contractAddress), value: 0n, data };
           gasEstimateHex = await serverRpcRequest<string>(selectedBlockchain, network, 'eth_estimateGas', [{
             from: address, to: tx.to, value: '0x0', data,
@@ -231,14 +250,22 @@ export default function Send() {
         if (value + fee > nativeBalance) throw new Error('Insufficient native ' + symbol + ' to cover the transfer amount and network fee.');
         if (!isNative) {
           const iface = new ethers.Interface(TOKEN_ABI);
-          const raw = await serverRpcRequest<string>(selectedBlockchain, network, 'eth_call', [{
-            to: selectedAsset.contractAddress,
-            data: iface.encodeFunctionData('balanceOf', [address]),
-          }, 'latest']);
+          const decimalsIface = new ethers.Interface(['function decimals() view returns (uint8)']);
+          const [raw, decimalsRaw] = await Promise.all([
+            serverRpcRequest<string>(selectedBlockchain, network, 'eth_call', [{
+              to: selectedAsset.contractAddress,
+              data: iface.encodeFunctionData('balanceOf', [address]),
+            }, 'latest']),
+            serverRpcRequest<string>(selectedBlockchain, network, 'eth_call', [{
+              to: selectedAsset.contractAddress,
+              data: decimalsIface.encodeFunctionData('decimals', []),
+            }, 'latest']),
+          ]);
           const [rawBalance] = iface.decodeFunctionResult('balanceOf', raw);
-          const tokenBalance = BigInt(rawBalance);
-          const tokenValue = ethers.parseUnits(amount, decimals);
-          if (tokenValue > tokenBalance) throw new Error('Insufficient ' + assetSymbol + ' balance.');
+          const [onChainDecimals] = decimalsIface.decodeFunctionResult('decimals', decimalsRaw);
+          const tokenDecimals = Number(onChainDecimals);
+          if (!Number.isInteger(tokenDecimals) || tokenDecimals < 0 || tokenDecimals > 36) throw new Error('Token contract returned invalid decimals.');
+          if (ethers.parseUnits(amount, tokenDecimals) > BigInt(rawBalance)) throw new Error('Insufficient ' + assetSymbol + ' balance.');
         }
         tx = {
           ...tx,
@@ -275,6 +302,8 @@ export default function Send() {
       let txHash = '';
       if (selectedBlockchain === 'solana') {
         if (!review.solMessage || !review.blockhash || review.lastValidBlockHeight === undefined) throw new Error('Transaction review expired. Review again.');
+        const currentBlockHeight = await solRpc<number>(network, 'getBlockHeight', [{ commitment: 'confirmed' }]);
+        if (currentBlockHeight > review.lastValidBlockHeight) throw new Error('Solana transaction review expired. Please review the transfer again.');
         const signature = await signSolanaMessage(review.solMessage);
         const raw = Uint8Array.from([...shortvec(1), ...signature, ...review.solMessage]);
         txHash = await solRpc<string>(network, 'sendTransaction', [
@@ -294,8 +323,12 @@ export default function Send() {
         setPendingConfirmation(!confirmed);
       } else {
         if (!rpc || !review.evmTx) throw new Error('Transaction review expired. Review again.');
-        const actualChainId = await serverRpcRequest<string>(selectedBlockchain, network, 'eth_chainId', []);
+        const [actualChainId, currentNonce] = await Promise.all([
+          serverRpcRequest<string>(selectedBlockchain, network, 'eth_chainId', []),
+          serverRpcRequest<string>(selectedBlockchain, network, 'eth_getTransactionCount', [address, 'pending']),
+        ]);
         if (Number(BigInt(actualChainId)) !== rpc.chainId) throw new Error('Network changed. Transaction cancelled.');
+        if (Number(BigInt(currentNonce)) !== Number(review.evmTx.nonce)) throw new Error('Wallet nonce changed during review. Please review the transaction again.');
         const signer = ethers.HDNodeWallet.fromPhrase(mnemonic);
         if (signer.address.toLowerCase() !== address.toLowerCase()) throw new Error('Signing account does not match the original wallet address.');
         const signed = await signer.signTransaction(review.evmTx);
