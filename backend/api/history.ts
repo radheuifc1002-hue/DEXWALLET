@@ -126,27 +126,41 @@ export default async function handler(req:ApiRequest,res:ApiResponse) {
     const incoming=settled[1]?.status==='fulfilled'?settled[1].value.rows:[];
     const querySucceeded=settled.some(item=>item.status==='fulfilled');
     if(!querySucceeded)throw new Error('history_provider_unavailable');
-    const seen=new Set<string>();
-    const rows=[...outgoing.map(item=>({item,incoming:false})),...incoming.map(item=>({item,incoming:true}))].flatMap(({item,incoming:isIncoming})=>{
+    const grouped=new Map<string,{item:Transfer;incoming:boolean;rawValue:bigint;decimals:string|undefined;fallbackValue:number}>();
+    for(const {item,incoming:isIncoming} of [...outgoing.map(item=>({item,incoming:false})),...incoming.map(item=>({item,incoming:true}))]){
       const hash=String(item.hash||''),from=String(item.from||''),to=String(item.to||'');
-      if(!/^0x[a-fA-F0-9]{64}$/.test(hash)||!from||!to)return [];
+      if(!/^0x[a-fA-F0-9]{64}$/.test(hash)||!from||!to)continue;
       const tokenAddress=String(item.rawContract?.address||'').toLowerCase();
-      if(!isNative&&tokenAddress!==contract)return [];
+      if(!isNative&&tokenAddress!==contract)continue;
       const direction=isIncoming?'incoming':'outgoing';
       const id=hash.toLowerCase()+':'+(isNative?'native':contract)+':'+direction;
-      if(seen.has(id))return [];
-      seen.add(id);
+      let rawValue=0n;
+      try{if(item.rawContract?.value)rawValue=BigInt(item.rawContract.value);}catch{}
+      const fallbackValue=rawValue===0n?Number(item.value??0):0;
+      const current=grouped.get(id);
+      if(current){
+        current.rawValue+=rawValue;
+        current.fallbackValue+=fallbackValue;
+      }else{
+        grouped.set(id,{item,incoming:isIncoming,rawValue,decimals:item.rawContract?.decimal||undefined,fallbackValue});
+      }
+    }
+    const rows=[...grouped.entries()].map(([id,entry])=>{
+      const {item,incoming:isIncoming,rawValue,decimals,fallbackValue}=entry;
+      const hash=String(item.hash||''),from=String(item.from||''),to=String(item.to||'');
       const symbol=String(item.asset||(chain==='bnb'?'BNB':chain==='polygon'?'POL':'ETH'));
-      const amount=isNative?String(item.value??'0'):rawAmount(item.rawContract?.value,item.rawContract?.decimal);
-      return [{
+      const amount=rawValue!==0n?rawAmount(rawValue.toString(),decimals):String(fallbackValue);
+      return {
         id,hash,title:(isIncoming?'Received ':'Sent ')+symbol,
         detail:(isIncoming?'From ':'To ')+shortAddress(isIncoming?from:to),
         amount:(isIncoming?'+':'-')+amount+' '+symbol,
         timestamp:formatTimestamp(item.metadata?.blockTimestamp),incoming:isIncoming,
-        failed:false,status:'unknown' as const,direction,asset:{type:isNative?'native':'token',address:isNative?null:contract},
-        explorerUrl:(EXPLORERS[chain]?.[network]||'')+hash,from,to,contractAddress:tokenAddress||null,
+        failed:false,status:'unknown' as const,direction:isIncoming?'incoming':'outgoing',
+        asset:{type:isNative?'native':'token',address:isNative?null:contract},
+        explorerUrl:(EXPLORERS[chain]?.[network]||'')+hash,from,to,
+        contractAddress:String(item.rawContract?.address||'').toLowerCase()||null,
         category:item.category||category,
-      }];
+      };
     }).sort((a,b)=>b.timestamp-a.timestamp||b.hash.localeCompare(a.hash)).slice(0,limit);
     const hashes=[...new Set(rows.map(row=>row.hash))];
     const receiptResults=await Promise.allSettled(hashes.map(hash=>receiptStatus(chain,network,hash)));
