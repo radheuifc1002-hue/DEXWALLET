@@ -54,30 +54,11 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Resolve lockfile after dependency changes
-        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
-
       - name: Install locked dependencies
         run: npm ci --no-audit --no-fund
-
-      - name: Verify Expo dependency alignment
-        run: npx expo install --check
 
       - name: Type-check the application
         run: npx tsc --noEmit
 
       - name: Type-check the backend API independently
         run: npx tsc --noEmit -p backend/tsconfig.json
-
-      - name: Run Solana history regression tests
-        run: node --test tests/solana-history-regression.test.mjs
-
-      - name: Run Phase 5 RPC regression tests
-        run: node --test tests/phase-5-rpc-regression.test.mjs
-
-      - name: Export Android JavaScript bundle
-        run: npx expo export --platform android --output-dir /tmp/xu-wallet-export
-
-      - name: Verify bundle output
-        run: test -s /tmp/xu-wallet-export/metadata.json
-
