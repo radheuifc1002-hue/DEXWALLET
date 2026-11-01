@@ -15,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { Blockchain, useWallet } from '../context/WalletContext';
-import { fetchSolanaAssetHistory } from '../mobile/services/solanaHistory';
+import { getSolanaRpcEndpoint } from '../mobile/services/rpcManager';
 import { fetchEvmAssetHistory } from '../mobile/services/transactionHistory';
 
 type HistoryRow = {
@@ -117,24 +117,54 @@ export default function AssetDetails() {
     try {
       let result: HistoryRow[] = [];
       if (chain === 'solana') {
-        const history = await fetchSolanaAssetHistory({
-          network: network === 'testnet' ? 'testnet' : 'mainnet',
-          walletAddress,
-          isNative,
-          mintAddress: isNative ? undefined : contractAddress,
-          limit: MAX_HISTORY,
-        });
-        result = history.rows.map((row) => ({
-          id: row.id,
-          hash: row.hash,
-          title: row.title,
-          detail: row.detail,
-          amount: row.amount,
-          timestamp: row.timestamp,
-          incoming: row.incoming,
-          failed: row.failed,
-          explorerUrl: row.explorerUrl,
-        }));
+        const endpoint = getSolanaRpcEndpoint(network);
+        const rpc = async (method: string, rpcParams: any[]) => {
+          const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params: rpcParams }),
+          });
+          if (!response.ok) throw new Error('Solana RPC returned HTTP ' + response.status + '.');
+          const json = await response.json();
+          if (json.error) throw new Error(json.error.message || 'Solana history request failed.');
+          return json.result;
+        };
+        const signatures = await rpc('getSignaturesForAddress', [walletAddress, { limit: MAX_HISTORY, commitment: 'confirmed' }]);
+        const signatureRows = Array.isArray(signatures) ? signatures : [];
+        if (isNative) {
+          result = signatureRows.map((item: any) => ({
+            id: String(item.signature),
+            hash: String(item.signature),
+            title: item.err ? 'Failed SOL transaction' : 'SOL transaction',
+            detail: item.memo ? String(item.memo) : 'Solana transaction',
+            amount: '',
+            timestamp: Number(item.blockTime || 0),
+            incoming: false,
+            failed: Boolean(item.err),
+            explorerUrl: transactionExplorerUrl('solana', network, String(item.signature)),
+          }));
+        } else {
+          const parsed = await Promise.all(signatureRows.map(async (item: any) => {
+            const tx = await rpc('getTransaction', [item.signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }]);
+            const changes = tx?.meta?.postTokenBalances || [];
+            const matching = changes.find((b: any) => String(b.mint || '').toLowerCase() === contractAddress.toLowerCase());
+            if (!matching) return null;
+            const pre = (tx?.meta?.preTokenBalances || []).find((b: any) => b.accountIndex === matching.accountIndex);
+            const delta = Number(matching.uiTokenAmount?.uiAmount || 0) - Number(pre?.uiTokenAmount?.uiAmount || 0);
+            return {
+              id: String(item.signature),
+              hash: String(item.signature),
+              title: delta >= 0 ? 'Token received' : 'Token sent',
+              detail: name + ' · ' + (delta >= 0 ? 'Incoming transfer' : 'Outgoing transfer'),
+              amount: Math.abs(delta).toLocaleString(undefined, { maximumFractionDigits: 6 }) + ' ' + symbol,
+              timestamp: Number(item.blockTime || 0),
+              incoming: delta >= 0,
+              failed: Boolean(item.err),
+              explorerUrl: EXPLORERS.solana + String(item.signature) + (network === 'testnet' ? '?cluster=devnet' : ''),
+            } as HistoryRow;
+          }));
+          result = parsed.filter(Boolean) as HistoryRow[];
+        }
       } else {
         result = await fetchEvmAssetHistory({
           chain,

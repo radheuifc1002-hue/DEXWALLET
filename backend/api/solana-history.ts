@@ -110,8 +110,8 @@ export default async function handler(req:ApiRequest,res:ApiResponse) {
     }
     const addresses=[wallet,...tokenAccounts];
     const nextBefore:Record<string,string|null>={...cursor.before};
-    const active=addresses.filter(address=>nextBefore[address]!==null);
     for(const address of addresses) if(!(address in nextBefore)) nextBefore[address]='';
+    const active=addresses.filter(address=>nextBefore[address]!==null);
     const signaturePages=await mapLimit(active,Math.min(5,active.length),async address=>{
       const before=nextBefore[address];
       const config:any={limit:SIGNATURE_PAGE,commitment:'confirmed'};
@@ -120,46 +120,67 @@ export default async function handler(req:ApiRequest,res:ApiResponse) {
       return {address,page:Array.isArray(page)?page:[]};
     });
     const bySignature=new Map<string,SignatureInfo>();
+    const pagesByAddress=new Map<string,SignatureInfo[]>();
     for(const result of signaturePages){
       if(!result) continue;
-      const {address,page}=result;
-      if(page.length>=SIGNATURE_PAGE) nextBefore[address]=page[page.length-1].signature;
-      else nextBefore[address]=null;
-      for(const item of page) if(!bySignature.has(item.signature)) bySignature.set(item.signature,item);
+      pagesByAddress.set(result.address,result.page);
+      for(const item of result.page) if(!bySignature.has(item.signature)) bySignature.set(item.signature,item);
     }
     const signatures=[...bySignature.values()].sort((a,b)=>b.slot-a.slot);
     const transactions=await mapLimit(signatures,TX_CONCURRENCY,item=>
       rpc<Transaction|null>(network,'getTransaction',[item.signature,{encoding:'jsonParsed',commitment:'confirmed',maxSupportedTransactionVersion:0}]));
     const tokenAccountSet=new Set(tokenAccounts);
-    const rows:SolanaHistoryRow[]=transactions.flatMap((tx,index):SolanaHistoryRow[]=>{
-      const signature=signatures[index]; if(!signature) return [];
+    const rows:SolanaHistoryRow[]=[];
+    const consumed=new Set<string>();
+    for(let index=0;index<transactions.length;index++){
+      const tx=transactions[index], signature=signatures[index];
+      if(!signature) continue;
+      consumed.add(signature.signature);
       const failed=Boolean(tx?.meta?.err??signature.err), timestamp=Number(tx?.blockTime??signature.blockTime??0);
       const keys=(tx?.transaction?.message?.accountKeys||[]).map(accountKey);
       const explorerUrl=EXPLORER+signature.signature+(network==='testnet'?'?cluster=devnet':'');
       if(isNative){
-        if(!tx) return [];
-        const walletIndex=keys.indexOf(wallet); if(walletIndex<0) return [];
-        const pre=BigInt(Math.max(0,Number(tx.meta?.preBalances?.[walletIndex]??0)));
-        const post=BigInt(Math.max(0,Number(tx.meta?.postBalances?.[walletIndex]??0)));
-        let delta=post-pre;
-        if(walletIndex===0&&!failed) delta+=BigInt(Math.max(0,Number(tx.meta?.fee??0)));
-        if(delta===0n&&!failed) return [];
-        const other=keys.find(key=>key&&key!==wallet)||'';
-        const incoming=delta>0n;
-        return [{id:signature.signature+':sol',hash:signature.signature,title:failed?'Failed SOL transaction':incoming?'Received SOL':'Sent SOL',
-          detail:other?(incoming?'From ':'To ')+other.slice(0,8)+'…'+other.slice(-6):'Solana transaction',
-          amount:delta===0n?'':(incoming?'+':'-')+formatUnits(delta<0n?-delta:delta,9)+' SOL',
-          timestamp,incoming,failed,explorerUrl,assetType:'native',mintAddress:null}];
+        if(tx){
+          const walletIndex=keys.indexOf(wallet);
+          if(walletIndex>=0){
+            const preValue=Number(tx.meta?.preBalances?.[walletIndex]??0),postValue=Number(tx.meta?.postBalances?.[walletIndex]??0);
+            const feeValue=Number(tx.meta?.fee??0);
+            if(!Number.isSafeInteger(preValue)||!Number.isSafeInteger(postValue)||!Number.isSafeInteger(feeValue))
+              throw new Error('unsafe_lamport_value');
+            const pre=BigInt(Math.max(0,preValue)),post=BigInt(Math.max(0,postValue));
+            let delta=post-pre;
+            if(walletIndex===0&&!failed) delta+=BigInt(Math.max(0,feeValue));
+            if(delta!==0n||failed){
+              const other=keys.find(key=>key&&key!==wallet)||'',incoming=delta>0n;
+              rows.push({id:signature.signature+':sol',hash:signature.signature,
+                title:failed?'Failed SOL transaction':incoming?'Received SOL':'Sent SOL',
+                detail:other?(incoming?'From ':'To ')+other.slice(0,8)+'…'+other.slice(-6):'Solana transaction',
+                amount:delta===0n?'':(incoming?'+':'-')+formatUnits(delta<0n?-delta:delta,9)+' SOL',
+                timestamp,incoming,failed,explorerUrl,assetType:'native',mintAddress:null});
+            }
+          }
+        }
+      }else if(tx){
+        const {delta,decimals,touched}=tokenDelta(tx,wallet,mint,tokenAccountSet,keys);
+        if(touched&&(delta!==0n||failed)){
+          const incoming=delta>0n,other=keys.find(key=>key&&key!==wallet&&!tokenAccountSet.has(key))||'';
+          rows.push({id:signature.signature+':'+mint,hash:signature.signature,
+            title:failed?'Failed token transaction':incoming?'Received token':'Sent token',
+            detail:other?(incoming?'From ':'To ')+other.slice(0,8)+'…'+other.slice(-6):'Token account activity',
+            amount:delta===0n?'':(incoming?'+':'-')+formatUnits(delta<0n?-delta:delta,decimals),
+            timestamp,incoming,failed,explorerUrl,assetType:'token',mintAddress:mint});
+        }
       }
-      if(!tx) return [];
-      const {delta,decimals,touched}=tokenDelta(tx,wallet,mint,tokenAccountSet,keys);
-      if(!touched||(delta===0n&&!failed)) return [];
-      const incoming=delta>0n, other=keys.find(key=>key&&key!==wallet&&!tokenAccountSet.has(key))||'';
-      return [{id:signature.signature+':'+mint,hash:signature.signature,title:failed?'Failed token transaction':incoming?'Received token':'Sent token',
-        detail:other?(incoming?'From ':'To ')+other.slice(0,8)+'…'+other.slice(-6):'Token account activity',
-        amount:delta===0n?'':(incoming?'+':'-')+formatUnits(delta<0n?-delta:delta,decimals),
-        timestamp,incoming,failed,explorerUrl,assetType:'token',mintAddress:mint}];
-    }).sort((a,b)=>b.timestamp-a.timestamp||b.hash.localeCompare(a.hash));
+      if(rows.length>=limit) break;
+    }
+    rows.sort((a,b)=>b.timestamp-a.timestamp||b.hash.localeCompare(a.hash));
+    for(const address of addresses){
+      const page=pagesByAddress.get(address)||[];
+      const used=page.filter(item=>consumed.has(item.signature));
+      if(page.length<SIGNATURE_PAGE&&used.length===page.length) nextBefore[address]=null;
+      else if(used.length) nextBefore[address]=used[used.length-1].signature;
+      else if(!(address in nextBefore)) nextBefore[address]='';
+    }
     const hasMore=addresses.some(address=>nextBefore[address]!==null);
     const encoded=hasMore?encodeCursor({v:1,before:nextBefore}):null;
     res.status(200).json({chain:'solana',network,walletAddress:wallet,asset:{type:isNative?'native':'token',mintAddress:isNative?null:mint},
