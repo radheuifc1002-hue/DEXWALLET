@@ -18,7 +18,7 @@ export interface ChainDerivationMetadata {
   schemeVersion: 1;
 }
 
-interface ChainAdapter {
+export interface ChainAdapter {
   chain: WalletChainId;
   coinType: number;
   curve: DerivationCurve;
@@ -64,7 +64,7 @@ const evmAdapter = (chain: 'ethereum' | 'bnb' | 'polygon'): ChainAdapter => ({
   },
 });
 
-const adapters: Record<WalletChainId, ChainAdapter> = {
+const adapters = new Map<WalletChainId, ChainAdapter>(Object.entries({
   ethereum: evmAdapter('ethereum'),
   bnb: evmAdapter('bnb'),
   polygon: evmAdapter('polygon'),
@@ -86,10 +86,21 @@ const adapters: Record<WalletChainId, ChainAdapter> = {
       return deriveSolanaSlip10(mnemonic, accountIndex);
     },
   },
-};
+} as Record<WalletChainId, ChainAdapter>) as [WalletChainId, ChainAdapter][]);
+
+/** Register a chain implementation without coupling it to vault persistence. */
+export function registerChainAdapter(adapter: ChainAdapter): void {
+  if (!adapter.chain || !Number.isInteger(adapter.coinType) || adapter.coinType < 0) {
+    throw new Error('Invalid chain adapter registration.');
+  }
+  if (adapters.has(adapter.chain)) throw new Error(`A chain adapter is already registered for ${adapter.chain}.`);
+  adapters.set(adapter.chain, adapter);
+}
 
 export function getChainAdapter(chain: WalletChainId): ChainAdapter {
-  return adapters[chain];
+  const adapter = adapters.get(chain);
+  if (!adapter) throw new Error(`No derivation adapter is registered for ${chain}.`);
+  return adapter;
 }
 
 export function getDerivationMetadata(chain: WalletChainId, accountIndex: number): ChainDerivationMetadata {
