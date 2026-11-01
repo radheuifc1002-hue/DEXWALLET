@@ -1,10 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { ethers } from 'ethers';
-import * as bip39 from 'bip39';
 import * as ed from '@noble/ed25519';
-import { hmac } from '@noble/hashes/hmac.js';
-import { sha512 } from '@noble/hashes/sha2.js';
 import bs58 from 'bs58';
 import {
   deriveAddresses,
@@ -13,9 +10,10 @@ import {
   type WalletAddresses,
 } from './walletService';
 import type { Blockchain } from '../../context/WalletContext';
+import { deriveWalletAddresses, getAccountDerivationMetadata } from './chainAdapterRegistry';
 
 const STORE_KEY = 'xu_wallet_vault_store_v1';
-const STORE_VERSION = 1;
+const STORE_VERSION = 2;
 
 export type WalletSourceType = 'mnemonic' | 'private-key' | 'watch-only';
 
@@ -35,6 +33,8 @@ export interface WalletAccount {
   accountIndex: number | null;
   derivationPaths: Partial<Record<Blockchain, string>>;
   addresses: Partial<WalletAddresses>;
+  /** Versioned chain derivation details; absent for imported private-key/watch-only accounts. */
+  derivationMetadata?: Partial<Record<Blockchain, import('./chainAdapterRegistry').ChainDerivationMetadata>>;
   createdAt: number;
 }
 
@@ -47,7 +47,7 @@ export interface WalletVault {
 }
 
 export interface WalletVaultStore {
-  version: 1;
+  version: 2;
   activeVaultId: string | null;
   activeAccountId: string | null;
   vaults: WalletVault[];
@@ -74,8 +74,30 @@ async function readStore(): Promise<WalletVaultStore | null> {
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as WalletVaultStore;
-    if (parsed.version !== STORE_VERSION || !Array.isArray(parsed.vaults)) return null;
-    return parsed;
+    if (![1, STORE_VERSION].includes(parsed.version) || !Array.isArray(parsed.vaults)) return null;
+    const upgraded: WalletVaultStore = {
+      ...parsed,
+      version: STORE_VERSION,
+      vaults: parsed.vaults.map((vault) => ({
+        ...vault,
+        accounts: vault.accounts.map((account) => {
+          if (account.sourceType !== 'mnemonic' || account.accountIndex === null || account.accountIndex === undefined) return account;
+          const metadata = getAccountDerivationMetadata(account.accountIndex);
+          return {
+            ...account,
+            derivationMetadata: account.derivationMetadata ?? metadata,
+            derivationPaths: {
+              ethereum: account.derivationPaths?.ethereum ?? metadata.ethereum.path,
+              bnb: account.derivationPaths?.bnb ?? metadata.bnb.path,
+              polygon: account.derivationPaths?.polygon ?? metadata.polygon.path,
+              solana: account.derivationPaths?.solana ?? metadata.solana.path,
+            },
+          };
+        }),
+      })),
+    };
+    if (parsed.version !== STORE_VERSION || JSON.stringify(parsed) !== JSON.stringify(upgraded)) await persistStore(upgraded);
+    return upgraded;
   } catch {
     return null;
   }
@@ -147,6 +169,7 @@ export async function initializeWalletVaultStore(): Promise<WalletVaultStore> {
           solana: 'legacy:first-32-bytes-of-bip39-seed',
         },
         addresses: legacy.addresses,
+        derivationMetadata: getAccountDerivationMetadata(0),
         createdAt: Date.now(),
       });
     } else {
@@ -237,6 +260,7 @@ export async function addMnemonicSource(
       solana: 'legacy:first-32-bytes-of-bip39-seed',
     },
     addresses,
+    derivationMetadata: getAccountDerivationMetadata(0),
     createdAt: Date.now(),
   };
   const nextVault = { ...vault, sources: [...vault.sources, source], accounts: [...vault.accounts, account] };
@@ -255,33 +279,8 @@ export async function addMnemonicSource(
   return next;
 }
 
-async function deriveSolanaAccount(mnemonic: string, accountIndex: number): Promise<string> {
-  const seed = bip39.mnemonicToSeedSync(mnemonic);
-  const slip10Key = Uint8Array.from([101, 100, 50, 53, 53, 49, 57, 32, 115, 101, 101, 100]);
-  let digest = hmac(sha512, slip10Key, seed);
-  let key = digest.slice(0, 32);
-  let chainCode = digest.slice(32);
-
-  // SLIP-0010 hardened derivation: m/44'/501'/accountIndex'/0'.
-  for (const component of [44, 501, accountIndex, 0]) {
-    const data = new Uint8Array(37);
-    data[0] = 0;
-    data.set(key, 1);
-    new DataView(data.buffer).setUint32(33, (component + 0x80000000) >>> 0, false);
-    digest = hmac(sha512, chainCode, data);
-    key = digest.slice(0, 32);
-    chainCode = digest.slice(32);
-  }
-
-  return bs58.encode(await ed.getPublicKeyAsync(key));
-}
-
 async function deriveAccountAddresses(mnemonic: string, accountIndex: number): Promise<WalletAddresses> {
-  if (accountIndex === 0) return deriveAddresses(mnemonic);
-  const evmPath = `m/44'/60'/0'/0/${accountIndex}`;
-  const evmAddress = ethers.HDNodeWallet.fromPhrase(mnemonic, '', evmPath).address;
-  const solanaAddress = await deriveSolanaAccount(mnemonic, accountIndex);
-  return { ethereum: evmAddress, bnb: evmAddress, polygon: evmAddress, solana: solanaAddress };
+  return deriveWalletAddresses(mnemonic, accountIndex);
 }
 
 export async function addDerivedAccounts(vaultId: string, sourceId: string, count: number, namePrefix = 'Account'): Promise<WalletVaultStore> {
@@ -299,7 +298,18 @@ export async function addDerivedAccounts(vaultId: string, sourceId: string, coun
     const index = first + i;
     const addresses = await deriveAccountAddresses(phrase, index);
     if (accountExists({ ...vault, accounts: [...vault.accounts, ...created] }, addresses)) throw new Error('A derived account already exists. No accounts were added.');
-    created.push({ id: makeId('account'), sourceId, sourceType: 'mnemonic', name: `${namePrefix.trim() || 'Account'} ${index + 1}`, accountIndex: index, derivationPaths: { ethereum: `m/44'/60'/0'/0/${index}`, bnb: `m/44'/60'/0'/0/${index}`, polygon: `m/44'/60'/0'/0/${index}`, solana: index === 0 ? 'legacy:first-32-bytes-of-bip39-seed' : `m/44'/501'/${index}'/0'` }, addresses, createdAt: Date.now() });
+    const derivationMetadata = getAccountDerivationMetadata(index);
+    created.push({
+      id: makeId('account'), sourceId, sourceType: 'mnemonic',
+      name: `${namePrefix.trim() || 'Account'} ${index + 1}`, accountIndex: index,
+      derivationPaths: {
+        ethereum: derivationMetadata.ethereum.path,
+        bnb: derivationMetadata.bnb.path,
+        polygon: derivationMetadata.polygon.path,
+        solana: derivationMetadata.solana.path,
+      },
+      derivationMetadata, addresses, createdAt: Date.now(),
+    });
   }
   const next = withActive({ ...store, vaults: store.vaults.map((v) => v.id === vaultId ? { ...v, accounts: [...v.accounts, ...created] } : v) }, vaultId, created[created.length - 1].id);
   await persistStore(next);
