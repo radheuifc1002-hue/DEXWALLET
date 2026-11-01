@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   View,
   Text,
@@ -14,7 +14,6 @@ import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useWallet } from '../../context/WalletContext';
 import { SafeAreaView as SafeAreaContextView } from 'react-native-safe-area-context';
-import { isIndexedHistoryEnabled, setIndexedHistoryEnabled } from '../../mobile/services/indexedHistoryPreference';
 
 export default function Settings() {
   const router = useRouter();
@@ -27,52 +26,6 @@ export default function Settings() {
     setIsLocked,
   } = useWallet();
   const [bioToggling, setBioToggling] = useState(false);
-  const [indexedHistoryEnabled, setIndexedHistoryEnabledState] = useState(false);
-
-  useEffect(() => {
-    let mounted = true;
-    void isIndexedHistoryEnabled().then((enabled) => {
-      if (mounted) setIndexedHistoryEnabledState(enabled);
-    });
-    return () => { mounted = false; };
-  }, []);
-
-  const handleIndexedHistoryToggle = (value: boolean) => {
-    if (value) {
-      Alert.alert(
-        'Enable Indexed History?',
-        'XU Wallet will send the public wallet address for the selected network to its indexing service and store public transaction history to make history faster and reduce repeated provider requests. Your seed phrase, private keys and signing data never leave this device. Linking an address to this service can still affect your privacy.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Enable', onPress: async () => {
-            try {
-              await setIndexedHistoryEnabled(true);
-              setIndexedHistoryEnabledState(true);
-            } catch {
-              Alert.alert('Could not enable', 'The preference could not be saved on this device.');
-            }
-          } },
-        ]
-      );
-      return;
-    }
-    Alert.alert(
-      'Disable Indexed History?',
-      'XU Wallet will stop sending addresses for new indexing requests and will use direct history providers. Public blockchain records already indexed may remain in the shared cache.',
-      [
-        { text: 'Keep enabled', style: 'cancel' },
-        { text: 'Disable', style: 'destructive', onPress: async () => {
-          try {
-            await setIndexedHistoryEnabled(false);
-            setIndexedHistoryEnabledState(false);
-          } catch {
-            Alert.alert('Could not disable', 'The preference could not be saved on this device.');
-          }
-        } },
-      ]
-    );
-  };
-
   const handleBioToggle = async (val: boolean) => {
     setBioToggling(true);
     try {
@@ -219,25 +172,6 @@ export default function Settings() {
             </View>
             <Ionicons name="chevron-forward" size={18} color="#9B97B2" />
           </TouchableOpacity>
-        </View>
-
-        <Text style={styles.sectionLabel}>Privacy & Data</Text>
-        <View style={styles.card}>
-          <View style={styles.row}>
-            <View style={styles.rowLeft}>
-              <Ionicons name="cloud-download-outline" size={20} color="#6C4CF1" />
-              <Text style={styles.rowLabel}>Indexed Transaction History</Text>
-            </View>
-            <Switch
-              value={indexedHistoryEnabled}
-              onValueChange={handleIndexedHistoryToggle}
-              trackColor={{ false: '#24223A', true: '#6C4CF1' }}
-              thumbColor="#FFFFFF"
-            />
-          </View>
-          <Text style={styles.helperText}>
-            Optional. Shares public wallet addresses with XU's indexer to cache transaction history. Private keys and recovery phrases are never sent. Disabling stops future indexing requests; previously indexed public chain data may remain in the shared index.
-          </Text>
         </View>
 
         <Text style={styles.sectionLabel}>Danger Zone</Text>

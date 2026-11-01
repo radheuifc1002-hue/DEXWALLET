@@ -2,7 +2,7 @@ name: Mobile quality gates
 
 on:
   pull_request:
-    branches: [main, infra/phase-2-rpc-health-failover]
+    branches: [main, infra/phase-2-rpc-health-failover, infra/phase-2-generic-history]
     paths:
       - "app/**"
       - "context/**"
@@ -22,8 +22,6 @@ on:
       - "context/**"
       - "mobile/**"
       - "backend/api/**"
-      - "backend/database/**"
-      - "backend/indexer/**"
       - "components/**"
       - "package.json"
       - "package-lock.json"

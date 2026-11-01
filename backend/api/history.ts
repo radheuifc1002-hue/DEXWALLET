@@ -45,7 +45,11 @@ function rawAmount(raw:string|null|undefined, decimals:string|null|undefined):st
     return fraction?whole.toString()+'.'+fraction:whole.toString();
   } catch { return '0'; }
 }
-function formatTimestamp(value:string|undefined):number {
+function isZeroValue(value:string|null|undefined):boolean {
+  if(value===null||value===undefined||value==='') return true;
+  try { return BigInt(value)===0n; } catch { return false; }
+}
+function formatTimestamp(value:string|null|undefined):number {
   const n=value?Math.floor(Date.parse(value)/1000):0;
   return Number.isFinite(n)?n:0;
 }
@@ -82,7 +86,8 @@ export default async function handler(req:ApiRequest,res:ApiResponse) {
   const wallet=String(body.walletAddress||'');
   const isNative=body.isNative!==false;
   const contract=String(body.contractAddress||'').toLowerCase();
-  const limit=Math.min(MAX_ROWS,Math.max(1,Number(body.limit||MAX_ROWS)));
+  const requestedLimit=body.limit===undefined?MAX_ROWS:Number(body.limit);
+  const limit=Number.isInteger(requestedLimit)?Math.min(MAX_ROWS,Math.max(1,requestedLimit)):MAX_ROWS;
   const networkName=NETWORKS[chain]?.[network];
   if(!networkName){res.status(400).json({error:{code:'unsupported_chain_or_network',requestId}});return;}
   if(!/^0x[a-fA-F0-9]{40}$/.test(wallet)){res.status(400).json({error:{code:'invalid_wallet_address',requestId}});return;}
@@ -107,14 +112,14 @@ export default async function handler(req:ApiRequest,res:ApiResponse) {
     const interactionTransfers=successful.slice(2).flatMap(item=>item.value);
     const seen=new Set<string>();
     const rows=[...outgoing,...incoming,...interactionTransfers.filter(item=>
-      String(item.to||'').toLowerCase()===contract && BigInt(String(item.rawContract?.value||'0x0'))===0n
+      String(item.to||'').toLowerCase()===contract && isZeroValue(item.rawContract?.value)
     )].flatMap((item)=>{
       const hash=String(item.hash||'');
       const from=String(item.from||''),to=String(item.to||'');
       if(!/^0x[a-fA-F0-9]{64}$/.test(hash)||!from||!to)return [];
       const isIncoming=to.toLowerCase()===wallet.toLowerCase();
       const tokenAddress=String(item.rawContract?.address||'').toLowerCase();
-      const isInteraction=!isNative&&String(item.to||'').toLowerCase()===contract&&BigInt(String(item.value??0))===0n;
+      const isInteraction=!isNative&&String(item.to||'').toLowerCase()===contract&&Number(item.value??0)===0;
       if(!isNative&&!isInteraction&&tokenAddress!==contract)return [];
       const id=hash.toLowerCase()+':'+(isNative?'native':isInteraction?'interaction':contract)+':'+(isIncoming?'in':'out');
       if(seen.has(id))return [];
