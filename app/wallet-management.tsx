@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -26,7 +26,6 @@ export default function WalletManagement() {
   const [addresses,setAddresses]=useState<Record<Blockchain,string>>({ethereum:'',bnb:'',polygon:'',solana:''});
   const [busy,setBusy]=useState(false);
   const vaults=walletVaultStore?.vaults??[];
-  const selectedVault=useMemo(()=>vaults.find(v=>v.id===targetVault)??activeVault??vaults[0], [vaults,targetVault,activeVault]);
 
   const openMode=(next:Mode,vaultId?:string,accountId?:string)=>{
     setTargetVault(vaultId??activeVault?.id??vaults[0]?.id??'');
@@ -55,8 +54,12 @@ export default function WalletManagement() {
         for(const item of CHAINS)if(addresses[item].trim())input[item]=addresses[item].trim();
         await addWatchOnlyAccount(targetVault,input,name.trim()||'Watch Wallet');
       }else if(mode==='rename'){
-        if(!targetVault||!targetAccount)throw new Error('Wallet account not selected.');
-        await renameWalletAccount(targetVault,targetAccount,name);
+        if(!targetVault)throw new Error('Wallet or vault not selected.');
+        if(targetAccount==='__vault__') await renameWalletVault(targetVault,name);
+        else {
+          if(!targetAccount)throw new Error('Wallet account not selected.');
+          await renameWalletAccount(targetVault,targetAccount,name);
+        }
       }
       await finish();
     }catch(error){
@@ -99,11 +102,11 @@ export default function WalletManagement() {
       {vaults.map(vault=><View key={vault.id} style={styles.vaultCard}>
         <View style={styles.vaultHeader}>
           <View style={{flex:1}}><Text style={styles.vaultName}>{vault.name}</Text><Text style={styles.vaultMeta}>{vault.sources.length} recovery sources · {vault.accounts.length} accounts</Text></View>
-          <TouchableOpacity onPress={()=>{setTargetVault(vault.id);setTargetAccount('');setName(vault.name);setMode('rename');}}><Ionicons name="create-outline" size={19} color="#777286"/></TouchableOpacity>
+          <TouchableOpacity onPress={()=>{setTargetVault(vault.id);setTargetAccount('__vault__');setName(vault.name);setMode('rename');}}><Ionicons name="create-outline" size={19} color="#777286"/></TouchableOpacity>
         </View>
         {vault.accounts.map(account=>{
           const isActive=walletVaultStore?.activeAccountId===account.id;
-          const chainAddress=account.addresses.ethereum||account.addresses.bnb||account.addresses.polygon||account.addresses.solana;
+          const chainAddress=Object.values(account.addresses).find(Boolean);
           return <View key={account.id} style={[styles.accountRow,isActive&&styles.accountActive]}>
             <TouchableOpacity style={styles.accountMain} onPress={()=>activate(vault.id,account.id)} activeOpacity={0.75}>
               <View style={[styles.accountIcon,account.sourceType==='watch-only'&&styles.watchIcon]}><Ionicons name={account.sourceType==='watch-only'?'eye-outline':'wallet-outline'} size={19} color={account.sourceType==='watch-only'?'#0D9488':'#6C4CF1'}/></View>

@@ -125,7 +125,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         setBiometricEnabledState(bio);
         if (created && addresses) {
           setIsWalletCreated(true);
-          setWalletAddresses(addresses);
           if (mnemonic) setSeedPhrase(mnemonic.split(' '));
           const customTokens = storedCustomTokens ? JSON.parse(storedCustomTokens) as Token[] : [];
           setTokens([...NATIVE_TOKEN_DEFS.map((d) => ({ ...d, balance: 0, balanceUSD: 0 })), ...customTokens]);
@@ -133,6 +132,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           setIsLockedState(timer > 0 && lastBackgroundAt.current !== null && Number.isFinite(elapsedMs) && elapsedMs >= 0 && elapsedMs >= timer * 60 * 1000);
           lastBackgroundAt.current = null;
           await AsyncStorage.removeItem(BACKGROUND_AT_KEY).catch(() => {});
+        }
+        const activeAfterHydration = migratedVaultStore.vaults
+          .flatMap((vault) => vault.accounts.map((account) => ({ vault, account })))
+          .find(({ account }) => account.id === migratedVaultStore.activeAccountId);
+        if (activeAfterHydration) {
+          setWalletAddresses({
+            ethereum: activeAfterHydration.account.addresses.ethereum ?? '',
+            solana: activeAfterHydration.account.addresses.solana ?? '',
+            bnb: activeAfterHydration.account.addresses.bnb ?? '',
+            polygon: activeAfterHydration.account.addresses.polygon ?? '',
+          });
         }
       } finally {
         setIsLoading(false);
@@ -264,7 +274,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         bnb: active.account.addresses.bnb ?? '',
         polygon: active.account.addresses.polygon ?? '',
       });
+    } else {
+      setWalletAddresses(null);
     }
+    setTokens((current) => current.map((token) => ({ ...token, balance: 0, balanceUSD: 0 })));
   }, []);
 
   const selectWalletAccount = useCallback(async (vaultId: string, accountId: string) => {
