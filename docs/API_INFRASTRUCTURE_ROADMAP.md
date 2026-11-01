@@ -67,10 +67,12 @@ Known limitations to close before production:
 
 ## Phase 5 — Centralize remaining RPC access
 
-- Audit balances, token import, gas estimation, nonce lookup, transaction preparation and signed-transaction broadcast.
-- Route public data reads through the server RPC interface where appropriate.
-- Signing remains local.
-- Broadcast retries must reuse the exact signed payload and must not create a replacement transaction after an ambiguous timeout.
+**Started.** Initial mobile migration is committed; full-wallet coverage and end-to-end validation remain in progress.
+- Added a typed mobile JSON-RPC client targeting the server gateway, with bounded request timeout and normalized errors.
+- Migrated send-screen native balance reads, SOL transaction preparation, SOL signed-message broadcast/status lookup, EVM balance/fee/gas estimation, and EVM wallet-provider operations to the central gateway URL.
+- Migrated SPL mint/account lookup and EVM ERC-20 contract inspection/balance lookup to the central gateway.
+- Wallet signing remains on-device. The gateway accepts an explicit read-only method allowlist and only signed raw broadcast methods (`eth_sendRawTransaction`, Solana `sendTransaction`) as non-replayable writes; unknown methods are rejected. Signed broadcasts are never retried against a secondary provider.
+- Remaining audit: wallet home/portfolio balance refresh is currently a no-op; other web-app/legacy code and all provider URLs must be searched and migrated or explicitly classified. Nonce lookup, receipt polling, and send error/rebroadcast behavior need dedicated regression coverage.
 
 ## Phase 6 — Mobile history and provider migration
 

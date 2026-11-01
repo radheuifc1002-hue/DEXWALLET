@@ -30,6 +30,7 @@ const READ_ONLY_METHODS = new Set([
   'getSignaturesForAddress','getSlot','getTokenAccountBalance','getTokenAccountsByOwner',
   'getTransaction','getVersion',
 ]);
+const SIGNED_BROADCAST_METHODS = new Set(['eth_sendRawTransaction','sendTransaction']);
 const REQUEST_TIMEOUT_MS = 18_000;
 const MAX_FAILURES = 3;
 const BASE_COOLDOWN_MS = 5_000;
@@ -93,7 +94,10 @@ function parseBody(body: unknown) {
   if (!requests.length || requests.length > 100 || requests.some((x:any) =>
     !x || typeof x !== 'object' || x.jsonrpc !== '2.0' || typeof x.method !== 'string' ||
     x.method.length > 128 || (x.params !== undefined && !Array.isArray(x.params)))) return null;
-  return { serialized: JSON.stringify(value), readOnly: requests.every((x:RpcRequest) => READ_ONLY_METHODS.has(x.method)) };
+  const allRead = requests.every((x:RpcRequest) => READ_ONLY_METHODS.has(x.method));
+  const allSignedBroadcast = requests.every((x:RpcRequest) => SIGNED_BROADCAST_METHODS.has(x.method));
+  if (!allRead && !allSignedBroadcast) return null;
+  return { serialized: JSON.stringify(value), readOnly: allRead };
 }
 function sleep(ms: number) { return new Promise(resolve => setTimeout(resolve,ms)); }
 function jitter(attempt: number) { return Math.floor(Math.random() * Math.min(750,100 * (2 ** Math.max(0,attempt-1)))); }
