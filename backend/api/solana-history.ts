@@ -5,11 +5,25 @@ type RpcResult<T> = { result?: T; error?: { message?: string } };
 type SignatureInfo = { signature: string; slot: number; blockTime?: number | null; err?: unknown };
 type TokenBalance = { accountIndex: number; mint: string; owner?: string; uiTokenAmount?: { amount?: string; decimals?: number } };
 type AccountKey = string | { pubkey?: string };
+type SolanaHistoryRow = {
+  id: string;
+  hash: string;
+  title: string;
+  detail: string;
+  amount: string;
+  timestamp: number;
+  incoming: boolean;
+  failed: boolean;
+  explorerUrl: string;
+  assetType: 'native' | 'token';
+  mintAddress: string | null;
+};
 type Transaction = {
   slot?: number;
   blockTime?: number | null;
   meta?: {
     err?: unknown;
+    fee?: number;
     preBalances?: number[];
     postBalances?: number[];
     preTokenBalances?: TokenBalance[];
@@ -23,7 +37,6 @@ type ApiResponse = { setHeader(name:string,value:string):void; status(code:numbe
 const MAX_ROWS = 50;
 const MAX_SIGNATURES = 50;
 const TX_CONCURRENCY = 5;
-const SOL_LAMPORTS = 1_000_000_000;
 const EXPLORERS = {
   mainnet: 'https://solscan.io/tx/',
   testnet: 'https://solscan.io/tx/',
@@ -66,8 +79,12 @@ async function mapLimit<T, R>(items: T[], limit: number, mapper: (item: T) => Pr
   }));
   return output;
 }
+function parseRawAmount(value?: string): bigint {
+  if (!value || !/^-?\\d+$/.test(value)) return 0n;
+  try { return BigInt(value); } catch { return 0n; }
+}
 function amountDelta(pre?: string, post?: string): bigint {
-  try { return BigInt(post || '0') - BigInt(pre || '0'); } catch { return 0n; }
+  return parseRawAmount(post) - parseRawAmount(pre);
 }
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
@@ -102,7 +119,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const transactions = await mapLimit(signatures, TX_CONCURRENCY, item =>
       rpc<Transaction | null>(network, 'getTransaction', [item.signature, { encoding: 'jsonParsed', commitment: 'confirmed', maxSupportedTransactionVersion: 0 }])
     );
-    const rows = transactions.flatMap((tx, index) => {
+    const rows: SolanaHistoryRow[] = transactions.flatMap<SolanaHistoryRow>((tx, index): SolanaHistoryRow[] => {
       const signature = signatures[index];
       if (!tx || !signature) return [];
       const meta = tx.meta;
@@ -113,8 +130,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const timestamp = Number(tx.blockTime ?? signature.blockTime ?? 0);
       if (isNative) {
         if (walletIndex < 0) return [];
-        const delta = amountDelta(String(meta?.preBalances?.[walletIndex] ?? '0'), String(meta?.postBalances?.[walletIndex] ?? '0'));
-        if (delta === 0n) return [];
+        let delta = amountDelta(String(meta?.preBalances?.[walletIndex] ?? '0'), String(meta?.postBalances?.[walletIndex] ?? '0'));
+        // The first message account is the fee payer. Remove its network fee from
+        // the asset delta so a plain fee does not look like a SOL transfer.
+        if (walletIndex === 0 && !failed) delta += parseRawAmount(String(meta?.fee ?? '0'));
+        if (failed || delta === 0n) return [];
         const counterparty = keys.find(key => key && key !== wallet) || '';
         return [{
           id: signature.signature + ':sol', hash: signature.signature,
@@ -127,10 +147,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const pre = (meta?.preTokenBalances || []).filter(item => item.mint === mint && item.owner === wallet);
       const post = (meta?.postTokenBalances || []).filter(item => item.mint === mint && item.owner === wallet);
       const decimals = post[0]?.uiTokenAmount?.decimals ?? pre[0]?.uiTokenAmount?.decimals ?? 0;
-      const preAmount = pre.reduce((sum, item) => sum + BigInt(item.uiTokenAmount?.amount || '0'), 0n);
-      const postAmount = post.reduce((sum, item) => sum + BigInt(item.uiTokenAmount?.amount || '0'), 0n);
+      const preAmount = pre.reduce((sum, item) => sum + parseRawAmount(item.uiTokenAmount?.amount), 0n);
+      const postAmount = post.reduce((sum, item) => sum + parseRawAmount(item.uiTokenAmount?.amount), 0n);
       const delta = postAmount - preAmount;
-      if (delta === 0n) return [];
+      if (failed || delta === 0n) return [];
       const counterparty = keys.find(key => key && key !== wallet) || '';
       return [{
         id: signature.signature + ':' + mint, hash: signature.signature,
@@ -139,7 +159,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         amount: (delta > 0n ? '+' : '-') + formatUnits(delta > 0n ? delta : -delta, decimals),
         timestamp, incoming: delta > 0n, failed, explorerUrl, assetType: 'token', mintAddress: mint,
       }];
-    }).filter(Boolean).sort((a, b) => b.timestamp - a.timestamp);
+    }).sort((a, b) => b.timestamp - a.timestamp);
     const lastSignature = signatures.length ? signatures[signatures.length - 1].signature : null;
     res.status(200).json({
       chain: 'solana', network, walletAddress: wallet,
