@@ -95,7 +95,8 @@ function accountExists(vault: WalletVault, addresses: Partial<WalletAddresses>):
   return vault.accounts.some((account) =>
     Object.entries(addresses).some(([chain, address]) => {
       const existing = account.addresses[chain as Blockchain];
-      return Boolean(address && existing && address.toLowerCase() === existing.toLowerCase());
+      if (!address || !existing) return false;
+      return chain === 'solana' ? address === existing : address.toLowerCase() === existing.toLowerCase();
     })
   );
 }
@@ -255,7 +256,8 @@ export async function addMnemonicSource(
 
 async function deriveSolanaAccount(mnemonic: string, accountIndex: number): Promise<string> {
   const seed = bip39.mnemonicToSeedSync(mnemonic);
-  let digest = hmac(sha512, new TextEncoder().encode('ed25519 seed'), seed);
+  const slip10Key = Uint8Array.from([101, 100, 50, 53, 53, 49, 57, 32, 115, 101, 101, 100]);
+  let digest = hmac(sha512, slip10Key, seed);
   let key = digest.slice(0, 32);
   let chainCode = digest.slice(32);
 
@@ -336,7 +338,8 @@ export async function addPrivateKeyAccount(
     if (seed.length !== 32) throw new Error('Solana private key must be a 32-byte seed or 64-byte secret key.');
     addresses = { solana: bs58.encode(await ed.getPublicKeyAsync(seed)) };
   } else {
-    const wallet = new ethers.Wallet(privateKey);
+    const normalizedKey = privateKey.startsWith('0x') ? privateKey : `0x${privateKey}`;
+    const wallet = new ethers.Wallet(normalizedKey);
     addresses = { [blockchain]: wallet.address };
   }
 
