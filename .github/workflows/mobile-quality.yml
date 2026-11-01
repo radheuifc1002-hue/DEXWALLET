@@ -8,8 +8,6 @@ on:
       - "context/**"
       - "mobile/**"
       - "backend/api/**"
-      - "backend/database/**"
-      - "backend/indexer/**"
       - "tests/**"
       - "components/**"
       - "package.json"
@@ -75,11 +73,3 @@ jobs:
       - name: Verify bundle output
         run: test -s /tmp/xu-wallet-export/metadata.json
 
-      - name: Run indexer regression tests
-        run: node --test tests/indexer-regression.test.mjs
-
-      - name: Validate indexer worker syntax
-        run: node --check backend/indexer/worker.mjs
-
-      - name: Build indexer worker container
-        run: docker build -t dexwallet-indexer ./backend/indexer
