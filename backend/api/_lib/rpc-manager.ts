@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 export type RpcNetwork = 'mainnet' | 'testnet';
-export type RpcChain = 'ethereum' | 'bnb' | 'polygon' | 'arbitrum' | 'optimism' | 'base' | 'avalanche' | 'linea' | 'solana';
+export type RpcChain = 'ethereum' | 'bnb' | 'polygon' | 'solana';
 type Provider = { name: string; url: string; priority: number };
 type ProviderHealth = { failures: number; openUntil: number; latencyMs: number; lastFailure?: string };
 type RpcRequest = { jsonrpc: '2.0'; id: string | number | null; method: string; params?: unknown[] };
@@ -16,8 +16,7 @@ const NETWORKS: Record<RpcChain, Partial<Record<RpcNetwork,string>>> = {
 };
 const CHAIN_IDS: Partial<Record<RpcChain, Partial<Record<RpcNetwork,number>>>> = {
   ethereum: { mainnet: 1, testnet: 11155111 }, bnb: { mainnet: 56, testnet: 97 },
-  polygon: { mainnet: 137, testnet: 80002 }, arbitrum:{mainnet:42161}, optimism:{mainnet:10},
-  base:{mainnet:8453}, avalanche:{mainnet:43114}, linea:{mainnet:59144},
+  polygon: { mainnet: 137, testnet: 80002 },
 };
 const READ_ONLY_METHODS = new Set([
   'alchemy_getAssetTransfers','eth_chainId','eth_blockNumber','eth_call','eth_estimateGas','eth_gasPrice',
