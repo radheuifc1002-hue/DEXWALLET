@@ -51,16 +51,19 @@ Known limitations to close before production:
 
 ## Phase 4 — Non-EVM data adapters
 
-**Solana adapter implemented; production validation remains required.**
+**Solana adapter implemented; automated code gates are in place. Live provider validation remains an environment-dependent release gate.**
 - Separate `POST /api/solana-history` adapter, not mixed into EVM-specific logic.
 - Uses the central Solana RPC manager; no provider credential or direct provider URL in the mobile service.
-- Signature pagination with a `before` cursor.
+- Per-address signature pagination with an opaque versioned cursor; token history discovers wallet-owned SPL token accounts for the selected mint and merges their signature streams without sharing a single cursor across accounts.
+- Token account pubkeys are used as an attribution fallback when historical RPC token-balance owner metadata is absent; account discovery is bounded to 20 accounts per mint to avoid unbounded provider fan-out.
 - Fetches transaction details with bounded concurrency.
 - Native SOL activity derives from wallet lamport balance changes.
 - SPL-token activity derives from wallet-owned pre/post token-balance deltas for the selected mint.
 - Normalized rows include signature, direction, amount, timestamp, failure status and Solscan transaction URL.
 - Added a typed mobile service with cursor metadata.
-- Known constraints: the first adapter returns net wallet balance changes per transaction, not every instruction-level transfer; token accounts must be correctly attributed by RPC owner metadata; unsupported transaction versions or unavailable historical transaction data can result in skipped rows. Live mainnet/devnet fixtures and pagination tests remain release gates.
+- Known constraints: rows represent net wallet balance changes per transaction, not each instruction-level transfer. Token history is bounded to 20 associated token accounts per mint; larger sets return an explicit error instead of silently omitting activity. Unsupported transaction versions or pruned historical data may still be unavailable.
+- Mobile asset-detail history now uses the backend service for both native SOL and SPL tokens; it no longer calls a provider RPC endpoint directly.
+- Automated regression fixtures cover cursor validation/encoding, account pagination merging, token-account attribution, fee-only SOL changes, malformed raw amounts and failed transactions. Live mainnet/devnet and provider failover/quota checks remain release gates because they require configured live provider credentials.
 
 ## Phase 5 — Centralize remaining RPC access
 

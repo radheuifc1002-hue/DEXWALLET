@@ -31,3 +31,8 @@ For an SPL token, set `isNative` to `false` and provide `mintAddress`. To contin
 - No database, indexer, address-registration system or persistent transaction-history store is required.
 - The RPC manager's circuit-breaker state is process-local to each serverless function instance.
 - Configure a compatible fallback provider per chain/network before relying on failover.
+
+
+## Solana history behavior
+
+The Solana history API discovers SPL token accounts for the selected mint and merges wallet/token-account signature streams with an opaque per-address cursor. The endpoint caps associated token accounts at 20 and uses bounded concurrent RPC requests. Mobile asset-detail history uses the typed `mobile/services/solanaHistory.ts` client. See [Phase 4 documentation](../docs/PHASE_4_SOLANA_HISTORY.md) for pagination and release validation details.
