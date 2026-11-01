@@ -36,6 +36,7 @@ export default function Send() {
   const [sending, setSending] = useState(false);
   const [review, setReview] = useState<Review | null>(null);
   const [hash, setHash] = useState('');
+  const [pendingConfirmation, setPendingConfirmation] = useState(false);
   const [error, setError] = useState('');
   const address = walletAddresses?.[selectedBlockchain] || '';
   const symbol = SYMBOL[selectedBlockchain];
@@ -128,9 +129,15 @@ export default function Send() {
         const sig = await signSolanaMessage(review.solMessage);
         const raw = Uint8Array.from([...shortvec(1), ...sig, ...review.solMessage]);
         txHash = await solRpc<string>(network, 'sendTransaction', [Buffer.from(raw).toString('base64'), { encoding: 'base64', preflightCommitment: 'confirmed', skipPreflight: false }]);
-        const c=await solRpc<any>(network,'getSignatureStatuses',[[txHash],{searchTransactionHistory:true}]);
-        if(c.value?.[0]?.err)throw new Error('Solana transaction failed on chain.');
-        if(!c.value?.[0]?.confirmationStatus)throw new Error('Transaction submitted. Confirmation is pending; check the transaction hash before retrying.');
+        let confirmed=false;
+        for(let attempt=0;attempt<15;attempt++){
+          const status=await solRpc<any>(network,'getSignatureStatuses',[[txHash],{searchTransactionHistory:true}]);
+          const value=status.value?.[0];
+          if(value?.err)throw new Error('Solana transaction failed on chain.');
+          if(value?.confirmationStatus==='confirmed'||value?.confirmationStatus==='finalized'){confirmed=true;break;}
+          await new Promise(resolve=>setTimeout(resolve,1000));
+        }
+        setPendingConfirmation(!confirmed);
       } else {
         if (!rpc || !review.evmTx) throw new Error('Transaction review expired. Review again.');
         const p = createEvmProvider(rpc.rpc, rpc.chainId);
@@ -152,10 +159,10 @@ export default function Send() {
 
   if (hash) return <SafeAreaView style={s.container}><View style={s.success}>
     <View style={s.successIcon}><Ionicons name="checkmark" size={38} color="#FFFFFF" /></View>
-    <Text style={s.title}>Transaction confirmed</Text><Text style={s.sub}>The network has confirmed your transfer.</Text>
+    <Text style={s.title}>{pendingConfirmation ? 'Transaction submitted' : 'Transaction confirmed'}</Text><Text style={s.sub}>{pendingConfirmation ? 'Confirmation is still pending. Check this transaction hash before attempting another transfer.' : 'The network has confirmed your transfer.'}</Text>
     <Text selectable style={s.hash}>{hash}</Text>
     <TouchableOpacity style={s.primary} onPress={() => router.replace('/(tabs)/home')}><Text style={s.primaryText}>Back to wallet</Text></TouchableOpacity>
-    <TouchableOpacity style={s.secondary} onPress={() => { setHash(''); setTo(''); setAmount(''); }}><Text style={s.secondaryText}>Send another</Text></TouchableOpacity>
+    <TouchableOpacity style={s.secondary} onPress={() => { setHash(''); setPendingConfirmation(false); setTo(''); setAmount(''); }}><Text style={s.secondaryText}>Send another</Text></TouchableOpacity>
   </View></SafeAreaView>;
 
   return <SafeAreaView style={s.container}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
