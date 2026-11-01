@@ -67,3 +67,10 @@ test('RPC health route actively probes configured providers',()=>{
   assert.match(health,/await probeRpcProviders/);
   assert.match(health,/status:healthy\?'healthy'/);
 });
+
+test('native DApp browser uses the central EVM gateway and contains no public RPC endpoints',()=>{
+  const browser=readFileSync(new URL('../app/(tabs)/browser.tsx',import.meta.url),'utf8');
+  assert.match(browser,/getCentralRpcUrl/);
+  assert.match(browser,/getCentralEvmChainId/);
+  assert.doesNotMatch(browser,/publicnode\.com|bsc-dataseed|polygon-rpc\.com/);
+});
