@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { AppState, AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { refreshWalletTokenBalances } from '../mobile/services/balanceService';
-import { initializeWalletVaultStore, clearWalletVaultStore, type WalletVaultStore } from '../mobile/services/walletVaultService';
+import { initializeWalletVaultStore, clearWalletVaultStore, setActiveWalletAccount as persistActiveWalletAccount, type WalletVaultStore, type WalletAccount, type WalletVault } from '../mobile/services/walletVaultService';
 import {
   deriveAddresses,
   saveWalletToStorage,
@@ -58,6 +58,9 @@ interface WalletContextType {
   isLoading: boolean;
   walletVaultStore: WalletVaultStore | null;
   refreshWalletVaultStore: () => Promise<void>;
+  activeWallet: WalletAccount | null;
+  activeVault: WalletVault | null;
+  selectWalletAccount: (vaultId: string, accountId: string) => Promise<void>;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -102,6 +105,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         ]);
         const migratedVaultStore = await initializeWalletVaultStore();
         setWalletVaultStore(migratedVaultStore);
+        const migratedActive = migratedVaultStore.vaults
+          .flatMap((vault) => vault.accounts.map((account) => ({ vault, account })))
+          .find(({ account }) => account.id === migratedVaultStore.activeAccountId);
+        if (migratedActive) {
+          setWalletAddresses({
+            ethereum: migratedActive.account.addresses.ethereum ?? '',
+            solana: migratedActive.account.addresses.solana ?? '',
+            bnb: migratedActive.account.addresses.bnb ?? '',
+            polygon: migratedActive.account.addresses.polygon ?? '',
+          });
+        }
         const parsedTimer = storedTimer === null ? 5 : Number(storedTimer);
         const timer = [0, 1, 5, 15, 30].includes(parsedTimer) ? parsedTimer : 5;
         setAutoLockTimerState(timer);
@@ -238,7 +252,33 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const refreshWalletVaultStore = useCallback(async () => {
-    setWalletVaultStore(await initializeWalletVaultStore());
+    const store = await initializeWalletVaultStore();
+    setWalletVaultStore(store);
+    const active = store.vaults
+      .flatMap((vault) => vault.accounts.map((account) => ({ vault, account })))
+      .find(({ account }) => account.id === store.activeAccountId);
+    if (active) {
+      setWalletAddresses({
+        ethereum: active.account.addresses.ethereum ?? '',
+        solana: active.account.addresses.solana ?? '',
+        bnb: active.account.addresses.bnb ?? '',
+        polygon: active.account.addresses.polygon ?? '',
+      });
+    }
+  }, []);
+
+  const selectWalletAccount = useCallback(async (vaultId: string, accountId: string) => {
+    const store = await persistActiveWalletAccount(vaultId, accountId);
+    setWalletVaultStore(store);
+    const account = store.vaults.find((vault) => vault.id === vaultId)?.accounts.find((item) => item.id === accountId);
+    if (!account) throw new Error('Selected wallet could not be loaded.');
+    setWalletAddresses({
+      ethereum: account.addresses.ethereum ?? '',
+      solana: account.addresses.solana ?? '',
+      bnb: account.addresses.bnb ?? '',
+      polygon: account.addresses.polygon ?? '',
+    });
+    setTokens((current) => current.map((token) => ({ ...token, balance: 0, balanceUSD: 0 })));
   }, []);
 
   const resetWallet = useCallback(async () => {
@@ -285,6 +325,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         walletVaultStore,
         refreshWalletVaultStore,
+        activeWallet: walletVaultStore?.vaults.flatMap((vault) => vault.accounts).find((account) => account.id === walletVaultStore.activeAccountId) ?? null,
+        activeVault: walletVaultStore?.vaults.find((vault) => vault.id === walletVaultStore.activeVaultId) ?? null,
+        selectWalletAccount,
       }}
     >
       {children}

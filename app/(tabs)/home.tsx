@@ -46,6 +46,8 @@ export default function Home() {
     isLoadingBalances,
     refreshBalances,
     walletAddress,
+    activeWallet,
+    activeVault,
   } = useWallet();
 
   const [copied, setCopied] = useState(false);
@@ -94,7 +96,15 @@ export default function Home() {
         }
       >
         <View style={styles.headerRow}>
-          <Text style={styles.headerTitle}>XU Wallet</Text>
+          <View>
+            <Text style={styles.headerTitle}>XU Wallet</Text>
+            <TouchableOpacity style={styles.walletSelector} onPress={() => router.push('/wallet-management')} activeOpacity={0.75}>
+              <Ionicons name="wallet" size={15} color="#6C4CF1" />
+              <Text style={styles.walletSelectorName}>{activeWallet?.name || 'Manage wallets'}</Text>
+              <Text style={styles.walletSelectorVault}>{activeVault?.name || ''}</Text>
+              <Ionicons name="chevron-down" size={14} color="#6C4CF1" />
+            </TouchableOpacity>
+          </View>
           <TouchableOpacity
             style={styles.chainPicker}
             onPress={() => setChainPickerVisible(true)}
@@ -195,6 +205,10 @@ export default function Home() {
 
         <View style={styles.assetsHeader}>
           <Text style={styles.sectionTitle}>Assets</Text>
+          <TouchableOpacity style={styles.viewAllButton} onPress={() => router.push('/assets')} activeOpacity={0.75}>
+            <Text style={styles.viewAllText}>View all</Text>
+            <Ionicons name="chevron-forward" size={14} color="#6C4CF1" />
+          </TouchableOpacity>
           <TouchableOpacity style={styles.importButton} onPress={() => router.push('/import-token')} activeOpacity={0.8}>
             <Ionicons name="add" size={16} color="#FFFFFF" />
             <Text style={styles.importButtonText}>Import</Text>
@@ -273,6 +287,11 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#211B35',
   },
+  walletSelector: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 7, paddingVertical: 5, paddingHorizontal: 9, alignSelf: 'flex-start', backgroundColor: '#F3F0FF', borderRadius: 10 },
+  walletSelectorName: { color: '#211B35', fontSize: 12, fontWeight: '800', maxWidth: 115 },
+  walletSelectorVault: { color: '#777286', fontSize: 10, maxWidth: 80 },
+  viewAllButton: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingVertical: 6, paddingHorizontal: 8 },
+  viewAllText: { color: '#6C4CF1', fontSize: 12, fontWeight: '700' },
   chainPicker: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -184,7 +184,8 @@ export async function createWalletVault(name = 'New Vault'): Promise<WalletVault
     sources: [],
     accounts: [],
   };
-  const next = { ...store, vaults: [...store.vaults, vault], activeVaultId: vault.id, activeAccountId: null };
+  // Creating a new, empty vault must not switch away from the user's active wallet.
+  const next = { ...store, vaults: [...store.vaults, vault] };
   await persistStore(next);
   return next;
 }

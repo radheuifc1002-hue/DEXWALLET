@@ -104,6 +104,8 @@ function AppStack() {
         <Stack.Screen name="import-token" options={{ animation: 'slide_from_bottom' }} />
         <Stack.Screen name="transaction-history" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="asset-details" options={{ animation: "slide_from_right" }} />
+        <Stack.Screen name="wallet-management" options={{ animation: "slide_from_right" }} />
+        <Stack.Screen name="assets" options={{ animation: "slide_from_right" }} />
         <Stack.Screen name="receive" options={{ animation: 'slide_from_bottom' }} />
         <Stack.Screen name="export-seed" />
         <Stack.Screen name="change-pin" />
