@@ -284,44 +284,29 @@ async function deriveAccountAddresses(mnemonic: string, accountIndex: number): P
   return { ethereum: evmAddress, bnb: evmAddress, polygon: evmAddress, solana: solanaAddress };
 }
 
-export async function addDerivedAccount(
-  vaultId: string,
-  sourceId: string,
-  accountName?: string,
-): Promise<WalletVaultStore> {
+export async function addDerivedAccounts(vaultId: string, sourceId: string, count: number, namePrefix = 'Account'): Promise<WalletVaultStore> {
+  if (!Number.isInteger(count) || count < 1 || count > 20) throw new Error('Choose between 1 and 20 accounts.');
   const store = await getWalletVaultStore();
   const vault = findVault(store, vaultId);
   const source = vault.sources.find((item) => item.id === sourceId);
   if (!source || source.type !== 'mnemonic') throw new Error('Recovery phrase source not found.');
-  const mnemonic = await SecureStore.getItemAsync(secretKey(sourceId));
-  if (!mnemonic) throw new Error('Recovery phrase is unavailable. Restore this wallet.');
-  const indices = vault.accounts
-    .filter((account) => account.sourceId === sourceId && account.accountIndex !== null)
-    .map((account) => account.accountIndex as number);
-  const accountIndex = indices.length ? Math.max(...indices) + 1 : 0;
-  const addresses = await deriveAccountAddresses(mnemonic, accountIndex);
-  if (accountExists(vault, addresses)) throw new Error('The derived account already exists.');
-  const account: WalletAccount = {
-    id: makeId('account'),
-    sourceId,
-    sourceType: 'mnemonic',
-    name: accountName?.trim() || `Account ${accountIndex + 1}`,
-    accountIndex,
-    derivationPaths: {
-      ethereum: `m/44'/60'/0'/0/${accountIndex}`,
-      bnb: `m/44'/60'/0'/0/${accountIndex}`,
-      polygon: `m/44'/60'/0'/0/${accountIndex}`,
-      solana: accountIndex === 0 ? 'legacy:first-32-bytes-of-bip39-seed' : `m/44'/501'/${accountIndex}'/0'`,
-    },
-    addresses,
-    createdAt: Date.now(),
-  };
-  const next = withActive({
-    ...store,
-    vaults: store.vaults.map((item) => item.id === vaultId ? { ...vault, accounts: [...vault.accounts, account] } : item),
-  }, vaultId, account.id);
+  const phrase = await SecureStore.getItemAsync(secretKey(sourceId));
+  if (!phrase) throw new Error('Recovery phrase is unavailable. Restore this wallet.');
+  const used = vault.accounts.filter((a) => a.sourceId === sourceId && a.accountIndex !== null).map((a) => a.accountIndex as number);
+  const first = used.length ? Math.max(...used) + 1 : 0;
+  const created: WalletAccount[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const index = first + i;
+    const addresses = await deriveAccountAddresses(phrase, index);
+    if (accountExists({ ...vault, accounts: [...vault.accounts, ...created] }, addresses)) throw new Error('A derived account already exists. No accounts were added.');
+    created.push({ id: makeId('account'), sourceId, sourceType: 'mnemonic', name: `${namePrefix.trim() || 'Account'} ${index + 1}`, accountIndex: index, derivationPaths: { ethereum: `m/44'/60'/0'/0/${index}`, bnb: `m/44'/60'/0'/0/${index}`, polygon: `m/44'/60'/0'/0/${index}`, solana: index === 0 ? 'legacy:first-32-bytes-of-bip39-seed' : `m/44'/501'/${index}'/0'` }, addresses, createdAt: Date.now() });
+  }
+  const next = withActive({ ...store, vaults: store.vaults.map((v) => v.id === vaultId ? { ...v, accounts: [...v.accounts, ...created] } : v) }, vaultId, created[created.length - 1].id);
   await persistStore(next);
   return next;
+}
+export async function addDerivedAccount(vaultId: string, sourceId: string, accountName?: string): Promise<WalletVaultStore> {
+  return addDerivedAccounts(vaultId, sourceId, 1, accountName || 'Account');
 }
 
 export async function addPrivateKeyAccount(
