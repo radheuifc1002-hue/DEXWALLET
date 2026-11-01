@@ -1,3 +1,4 @@
+import { consumeRateLimit } from './_lib/rate-limit.js';
 import { randomUUID } from 'node:crypto';
 import { probeRpcProviders, type RpcChain, type RpcNetwork } from './_lib/rpc-manager.js';
 
@@ -14,6 +15,8 @@ export default async function handler(req: any, res: any) {
   res.setHeader('X-Request-Id',requestId);
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'GET') { res.setHeader('Allow','GET, OPTIONS'); return res.status(405).json({error:{code:'method_not_allowed',requestId}}); }
+  const rate=consumeRateLimit(req,'rpc-health',30);
+  if(!rate.allowed){res.setHeader('Retry-After',String(Math.max(1,Math.ceil((rate.resetAt-Date.now())/1000))));return res.status(429).json({error:{code:'rate_limit_exceeded',requestId}});}
   const chain = String(req.query?.chain || '').toLowerCase() as RpcChain;
   const network = String(req.query?.network || '').toLowerCase() as RpcNetwork;
   if (!CHAINS.has(chain) || !NETWORKS.has(network)) return res.status(400).json({error:{code:'unsupported_network',requestId}});
