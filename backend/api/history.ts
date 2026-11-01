@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { proxyRpc, type RpcChain, type RpcNetwork } from './_lib/rpc-manager.js';
 
-type Chain = RpcChain;
+type Chain = Exclude<RpcChain, 'solana'>;
 type Network = RpcNetwork;
 type Transfer = {
   hash?: string; from?: string; to?: string; value?: number | null; asset?: string | null;
@@ -37,7 +37,7 @@ function parseBody(value:unknown): Record<string,unknown>|null {
   if(!value||typeof value!=='object'||Array.isArray(value)||JSON.stringify(value).length>8192)return null;
   return value as Record<string,unknown>;
 }
-function rawAmount(raw:string|undefined, decimals:string|undefined):string {
+function rawAmount(raw:string|null|undefined, decimals:string|null|undefined):string {
   try {
     const n=BigInt(raw||'0'), d=Math.max(0,Math.min(36,Number(decimals||'18')));
     const unit=10n**BigInt(d), whole=n/unit;
