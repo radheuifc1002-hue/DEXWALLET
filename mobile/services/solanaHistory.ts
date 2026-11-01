@@ -1,4 +1,4 @@
-export type SolanaHistoryRow={id:string;hash:string;title:string;detail:string;amount:string;timestamp:number;incoming:boolean;failed:boolean;explorerUrl:string;assetType:'native'|'token';mintAddress:string|null};
+export type SolanaHistoryRow={id:string;hash:string;title:string;detail:string;amount:string;timestamp:number;incoming:boolean;failed:boolean;status:'success'|'failed';explorerUrl:string;assetType:'native'|'token';mintAddress:string|null};
 type Options={network:'mainnet'|'testnet';walletAddress:string;isNative:boolean;mintAddress?:string;before?:string;limit?:number};
 const HISTORY_API='https://dexwallet-api.vercel.app/api/solana-history';
 export async function fetchSolanaAssetHistory(options:Options):Promise<{rows:SolanaHistoryRow[];nextBefore:string|null;hasMore:boolean;complete:boolean}>{

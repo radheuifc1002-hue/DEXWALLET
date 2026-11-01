@@ -24,6 +24,7 @@ on:
       - "web-app/**"
       - "mobile/**"
       - "backend/api/**"
+      - "tests/**"
       - "components/**"
       - "package.json"
       - "package-lock.json"
@@ -63,3 +64,6 @@ jobs:
 
       - name: Type-check the backend API independently
         run: npx tsc --noEmit -p backend/tsconfig.json
+
+      - name: Run RPC and transaction-history regression tests
+        run: node --test tests/*.test.mjs

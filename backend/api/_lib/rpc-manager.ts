@@ -1,29 +1,27 @@
 import { randomUUID } from 'node:crypto';
 
 export type RpcNetwork = 'mainnet' | 'testnet';
-export type RpcChain = 'ethereum' | 'bnb' | 'polygon' | 'arbitrum' | 'optimism' | 'base' | 'avalanche' | 'linea' | 'solana';
+export type RpcChain = 'ethereum' | 'bnb' | 'polygon' | 'solana';
 type Provider = { name: string; url: string; priority: number };
-type ProviderHealth = { failures: number; openUntil: number; latencyMs: number; lastFailure?: string };
+type ProviderHealth = { failures: number; openUntil: number; latencyMs: number; lastFailure?: string; lastCheckedAt?: number };
 type RpcRequest = { jsonrpc: '2.0'; id: string | number | null; method: string; params?: unknown[] };
 
 const NETWORKS: Record<RpcChain, Partial<Record<RpcNetwork,string>>> = {
   ethereum: { mainnet: 'eth-mainnet', testnet: 'eth-sepolia' },
   bnb: { mainnet: 'bnb-mainnet', testnet: 'bnb-testnet' },
   polygon: { mainnet: 'polygon-mainnet', testnet: 'polygon-amoy' },
-  arbitrum: { mainnet:'arb-mainnet' }, optimism:{mainnet:'opt-mainnet'},
-  base:{mainnet:'base-mainnet'}, avalanche:{mainnet:'avax-mainnet'}, linea:{mainnet:'linea-mainnet'},
   solana: { mainnet: 'solana-mainnet', testnet: 'solana-devnet' },
 };
 const CHAIN_IDS: Partial<Record<RpcChain, Partial<Record<RpcNetwork,number>>>> = {
   ethereum: { mainnet: 1, testnet: 11155111 }, bnb: { mainnet: 56, testnet: 97 },
-  polygon: { mainnet: 137, testnet: 80002 }, arbitrum:{mainnet:42161}, optimism:{mainnet:10},
-  base:{mainnet:8453}, avalanche:{mainnet:43114}, linea:{mainnet:59144},
+  polygon: { mainnet: 137, testnet: 80002 },
 };
 const READ_ONLY_METHODS = new Set([
   'alchemy_getAssetTransfers','eth_chainId','eth_blockNumber','eth_call','eth_estimateGas','eth_gasPrice',
-  'eth_maxPriorityFeePerGas','eth_feeHistory','eth_getBalance','eth_getBlockByHash',
-  'eth_getBlockByNumber','eth_getCode','eth_getLogs','eth_getStorageAt',
-  'eth_getTransactionByHash','eth_getTransactionCount','eth_getTransactionReceipt',
+  'eth_maxPriorityFeePerGas','eth_feeHistory','eth_blobBaseFee','eth_getBalance','eth_getBlockByHash',
+  'eth_getBlockByNumber','eth_getBlockTransactionCountByHash','eth_getBlockTransactionCountByNumber',
+  'eth_getTransactionByBlockHashAndIndex','eth_getTransactionByBlockNumberAndIndex','eth_getCode','eth_getLogs','eth_getStorageAt','eth_getProof',
+  'eth_getTransactionByHash','eth_getTransactionCount','eth_getTransactionReceipt','eth_getBlockReceipts',
   'net_version','web3_clientVersion','getAccountInfo','getBalance','getBlock','getFeeForMessage',
   'getBlockHeight','getBlockTime','getEpochInfo','getHealth','getLatestBlockhash',
   'getMinimumBalanceForRentExemption','getMultipleAccounts','getProgramAccounts',
@@ -97,13 +95,13 @@ function retryableNetwork(error: unknown) {
   return e?.name === 'AbortError' || ['ECONNRESET','ECONNREFUSED','ETIMEDOUT','EAI_AGAIN','UND_ERR_CONNECT_TIMEOUT'].includes(code) ||
     /fetch failed|socket|connection reset|network error|timed out|provider_capacity_exceeded/.test(msg);
 }
-function markSuccess(key: string, latencyMs: number) { health.set(key, { failures: 0, openUntil: 0, latencyMs }); }
+function markSuccess(key: string, latencyMs: number) { health.set(key, { failures: 0, openUntil: 0, latencyMs, lastCheckedAt: Date.now() }); }
 function markFailure(key: string, error: unknown) {
   const old = health.get(key), failures = (old?.failures || 0) + 1;
   const cooldown = Math.min(MAX_COOLDOWN_MS, BASE_COOLDOWN_MS * (2 ** Math.min(failures - 1, 5)));
   health.set(key, { failures, openUntil: failures >= MAX_FAILURES ? Date.now() + cooldown : 0,
     latencyMs: old?.latencyMs ?? Number.MAX_SAFE_INTEGER,
-    lastFailure: error instanceof Error ? error.message.slice(0,160) : 'upstream failure' });
+    lastFailure: error instanceof Error ? error.message.slice(0,160) : 'upstream failure', lastCheckedAt: Date.now() });
 }
 function providerSupportsMethods(provider: Provider, methods: string[]): boolean {
   // Alchemy's Transfers API is an Alchemy-specific extension. Never send it
@@ -133,7 +131,7 @@ function parseBody(body: unknown) {
 function sleep(ms: number) { return new Promise(resolve => setTimeout(resolve,ms)); }
 function jitter(attempt: number) { return Math.floor(Math.random() * Math.min(750,100 * (2 ** Math.max(0,attempt-1)))); }
 export type RpcProxyResult = { status:number; body:string; provider:string; requestId:string; attempts:number };
-export type RpcProviderStatus = { name:string; configured:boolean; circuit:'closed'|'open'; cooldownMs:number; latencyMs:number|null; consecutiveFailures:number; lastFailure?:string };
+export type RpcProviderStatus = { name:string; configured:boolean; healthy:boolean; circuit:'closed'|'open'; cooldownMs:number; latencyMs:number|null; consecutiveFailures:number; lastCheckedAt:number|null; lastFailure?:string };
 export async function proxyRpc(chain: RpcChain, network: RpcNetwork, body: unknown): Promise<RpcProxyResult> {
   const requestId = randomUUID(), parsed = parseBody(body);
   if (!parsed || Buffer.byteLength(parsed.serialized,'utf8') > 1_000_000)
@@ -171,9 +169,37 @@ export async function proxyRpc(chain: RpcChain, network: RpcNetwork, body: unkno
 export function getRpcProviderStatus(chain: RpcChain, network: RpcNetwork): RpcProviderStatus[] {
   return getProviders(chain,network).map(provider => {
     const state = health.get(providerKey(chain,network,provider));
-    return { name:provider.name, configured:true, circuit:(state?.openUntil || 0)>Date.now()?'open':'closed',
+    const checkedRecently=Boolean(state?.lastCheckedAt && Date.now()-state.lastCheckedAt<60_000);
+    return { name:provider.name, configured:true, healthy:Boolean(checkedRecently&&state?.failures===0), circuit:(state?.openUntil || 0)>Date.now()?'open':'closed',
       cooldownMs:Math.max(0,(state?.openUntil || 0)-Date.now()),
-      latencyMs:state && Number.isFinite(state.latencyMs)?state.latencyMs:null, consecutiveFailures:state?.failures || 0, ...(state?.lastFailure ? {lastFailure:state.lastFailure} : {}) };
+      latencyMs:state && Number.isFinite(state.latencyMs)?state.latencyMs:null, consecutiveFailures:state?.failures || 0,
+      lastCheckedAt:state?.lastCheckedAt??null, ...(state?.lastFailure ? {lastFailure:state.lastFailure} : {}) };
   });
 }
 export function getRpcChainId(chain: RpcChain, network: RpcNetwork): number | undefined { return CHAIN_IDS[chain]?.[network]; }
+
+
+/** Actively probes every configured provider for this chain/network. */
+export async function probeRpcProviders(chain: RpcChain, network: RpcNetwork): Promise<RpcProviderStatus[]> {
+  const providers=getProviders(chain,network);
+  await Promise.all(providers.map(async provider=>{
+    const key=providerKey(chain,network,provider),controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),6_000),started=Date.now();
+    try{
+      const method=chain==='solana'?'getHealth':'eth_chainId';
+      const response=await fetch(provider.url,{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},
+        body:JSON.stringify({jsonrpc:'2.0',id:'dexwallet-health',method,params:[]}),signal:controller.signal});
+      if(!response.ok)throw new Error('HTTP '+response.status);
+      const payload=await response.json() as {result?:unknown;error?:unknown};
+      if(payload.error||payload.result===undefined)throw new Error('Invalid health response');
+      if(chain==='solana'&&payload.result!=='ok')throw new Error('Solana health response was not ok');
+      if(chain!=='solana'){
+        const expected=getRpcChainId(chain,network),actual=Number(BigInt(String(payload.result)));
+        if(expected!==undefined&&actual!==expected)throw new Error('Wrong chain ID '+actual+' (expected '+expected+')');
+      }
+      markSuccess(key,Date.now()-started);
+    }catch(error){markFailure(key,error);}
+    finally{clearTimeout(timeout);}
+  }));
+  return getRpcProviderStatus(chain,network);
+}
