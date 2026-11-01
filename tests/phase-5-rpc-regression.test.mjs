@@ -8,6 +8,6 @@ test('token import routes SPL and EVM reads through central RPC',()=>{assert.mat
 
 test('Solana fee estimation and signature confirmation reads are allowlisted',()=>{assert.match(manager,/'getFeeForMessage'/);assert.match(manager,/'getSignatureStatuses'/);});
 test('RPC manager retries primary HTTP authorization failures through configured read fallback',()=>{assert.match(manager,/status === 401 \\|\\| status === 403/);});
-test('send flow preserves submitted transaction hash before confirmation polling',()=>{assert.match(send,/submittedHash = txHash;/);assert.match(send,/setHash\\(txHash\\);/);assert.match(send,/setReview\\(null\\);/);assert.match(send,/Transaction was submitted, but confirmation could not be verified/);});
+test('send flow preserves submitted transaction hash before confirmation polling',()=>{assert.match(send,/submittedHash = txHash;/);assert.match(send,/setHash\(txHash\);/);assert.match(send,/setReview\(null\);/);assert.match(send,/Transaction was submitted, but confirmation could not be verified/);});
 test('wallet balances use central RPC for native and imported assets',()=>{assert.match(ctx,/refreshWalletTokenBalances/);assert.match(balanceService,/getCentralRpcUrl/);assert.match(balanceService,/getTokenAccountsByOwner/);});
 test('web balance service contains no direct public RPC URLs',()=>{assert.doesNotMatch(webBalance,/llamarpc|bsc-dataseed|polygon-rpc\\.com|mainnet-beta\\.solana\\.com/);});
