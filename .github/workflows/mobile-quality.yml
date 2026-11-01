@@ -65,6 +65,9 @@ jobs:
       - name: Type-check the application
         run: npx tsc --noEmit
 
+      - name: Type-check the backend API independently
+        run: npx tsc --noEmit -p backend/tsconfig.json
+
       - name: Export Android JavaScript bundle
         run: npx expo export --platform android --output-dir /tmp/xu-wallet-export
 
