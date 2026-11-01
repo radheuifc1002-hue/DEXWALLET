@@ -273,7 +273,7 @@ export default function AssetDetails() {
               <Text style={styles.rowDate}>{row.timestamp ? new Date(row.timestamp * 1000).toLocaleString() : 'Time unavailable'}</Text>
             </View>
             <View style={styles.rowRight}>
-              {row.amount ? <Text numberOfLines={1} style={styles.amount}>{row.incoming ? '+' : '−'}{row.amount}</Text> : null}
+              {row.amount ? <Text numberOfLines={1} style={styles.amount}>{row.amount}</Text> : null}
               <Text style={[styles.status, (row.status === 'unknown' || (!row.status && !row.failed)) && styles.statusUnknown, row.failed && styles.statusFailed]}>{row.status === 'unknown' ? 'Unverified' : row.failed ? 'Failed' : 'Confirmed'}</Text>
               <Ionicons name="open-outline" size={13} color="#9A95A8" style={{ marginTop: 5 }} />
             </View>
