@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { getRpcProviderStatus, type RpcChain, type RpcNetwork } from './_lib/rpc-manager.js';
 
-const CHAINS = new Set<RpcChain>(['ethereum','bnb','polygon','arbitrum','optimism','base','avalanche','linea','solana']);
+const CHAINS = new Set<RpcChain>(['ethereum','bnb','polygon','solana']);
 const NETWORKS = new Set<RpcNetwork>(['mainnet','testnet']);
 
 export default function handler(req: any, res: any) {
