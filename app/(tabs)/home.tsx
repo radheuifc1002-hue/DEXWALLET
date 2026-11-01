@@ -160,12 +160,13 @@ export default function Home() {
             <TouchableOpacity
               style={styles.actionBtn}
               onPress={() => router.push('/send')}
+              disabled={activeWallet?.sourceType === 'watch-only'}
               activeOpacity={0.8}
             >
-              <View style={styles.actionIcon}>
+              <View style={[styles.actionIcon, activeWallet?.sourceType === 'watch-only' && { opacity: 0.35 }]}>
                 <Ionicons name="arrow-up" size={20} color="#fff" />
               </View>
-              <Text style={styles.actionLabel}>Send</Text>
+              <Text style={[styles.actionLabel, activeWallet?.sourceType === 'watch-only' && { opacity: 0.4 }]}>Send</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
