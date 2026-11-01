@@ -34,6 +34,11 @@ const MAX_FAILURES = 3;
 const BASE_COOLDOWN_MS = 5_000;
 const MAX_COOLDOWN_MS = 120_000;
 const health = new Map<string, ProviderHealth>();
+type RpcCacheEntry={expiresAt:number;body:string};
+const rpcCache=new Map<string,RpcCacheEntry>();
+const rpcInflight=new Map<string,Promise<RpcProxyResult>>();
+const CACHE_TTL:Record<string,number>={'eth_chainId':60_000,'eth_gasPrice':3_000,'eth_getBalance':4_000,'eth_call':4_000,'eth_getCode':30_000,'getBalance':4_000,'getLatestBlockhash':1_000,'getHealth':2_000};
+const MAX_CACHE_ENTRIES=10_000;
 type ProviderLoad = { active: number; starts: number[] };
 const providerLoad = new Map<string, ProviderLoad>();
 const MAX_PROVIDER_CONCURRENCY = 24;
@@ -132,7 +137,7 @@ function sleep(ms: number) { return new Promise(resolve => setTimeout(resolve,ms
 function jitter(attempt: number) { return Math.floor(Math.random() * Math.min(750,100 * (2 ** Math.max(0,attempt-1)))); }
 export type RpcProxyResult = { status:number; body:string; provider:string; requestId:string; attempts:number };
 export type RpcProviderStatus = { name:string; configured:boolean; healthy:boolean; circuit:'closed'|'open'; cooldownMs:number; latencyMs:number|null; consecutiveFailures:number; lastCheckedAt:number|null; lastFailure?:string };
-export async function proxyRpc(chain: RpcChain, network: RpcNetwork, body: unknown): Promise<RpcProxyResult> {
+async function proxyRpcUncached(chain: RpcChain, network: RpcNetwork, body: unknown): Promise<RpcProxyResult> {
   const requestId = randomUUID(), parsed = parseBody(body);
   if (!parsed || Buffer.byteLength(parsed.serialized,'utf8') > 1_000_000)
     return { status:400, body:JSON.stringify({error:{code:'invalid_json_rpc_request',requestId}}), provider:'none', requestId, attempts:0 };
@@ -166,6 +171,53 @@ export async function proxyRpc(chain: RpcChain, network: RpcNetwork, body: unkno
   }
   return {status,body:responseBody,provider:'unavailable',requestId,attempts};
 }
+function rewriteRpcResponse(body:string,id:unknown,requestId:string):string {
+  try {
+    const parsed=JSON.parse(body);
+    if(parsed&&typeof parsed==='object'&&!Array.isArray(parsed)){
+      parsed.id=id??null;
+      if(parsed.error&&typeof parsed.error==='object')parsed.error.requestId=requestId;
+    }
+    return JSON.stringify(parsed);
+  } catch { return body; }
+}
+
+/**
+ * Bounded per-instance response cache and in-flight coalescing for safe,
+ * idempotent reads. Transaction submission, nonce, history and signature
+ * discovery are never cached. TTLs are deliberately short for changing state.
+ */
+export async function proxyRpc(chain:RpcChain,network:RpcNetwork,body:unknown):Promise<RpcProxyResult>{
+  const parsed=parseBody(body);
+  if(!parsed)return proxyRpcUncached(chain,network,body);
+  const request=Array.isArray(body)?null:body as RpcRequest;
+  const ttl=request&&parsed.readOnly?CACHE_TTL[request.method]||0:0;
+  if(!request||!ttl)return proxyRpcUncached(chain,network,body);
+  const id=request.id??null,cacheShape={jsonrpc:request.jsonrpc,method:request.method,params:request.params||[]};
+  const key=chain+':'+network+':'+JSON.stringify(cacheShape),now=Date.now(),requestId=randomUUID();
+  const cached=rpcCache.get(key);
+  if(cached&&cached.expiresAt>now)return{status:200,body:rewriteRpcResponse(cached.body,id,requestId),provider:'cache',requestId,attempts:0};
+  if(cached)rpcCache.delete(key);
+  let pending=rpcInflight.get(key);
+  if(!pending){
+    pending=proxyRpcUncached(chain,network,body);
+    rpcInflight.set(key,pending);
+  }
+  try{
+    const result=await pending;
+    if(result.status>=200&&result.status<300){
+      rpcCache.set(key,{expiresAt:Date.now()+ttl,body:result.body});
+      if(rpcCache.size>MAX_CACHE_ENTRIES){
+        const oldest=rpcCache.keys().next().value;
+        if(oldest)rpcCache.delete(oldest);
+      }
+    }
+    return{...result,body:rewriteRpcResponse(result.body,id,requestId),requestId};
+  }finally{
+    if(rpcInflight.get(key)===pending)rpcInflight.delete(key);
+  }
+}
+
 export function getRpcProviderStatus(chain: RpcChain, network: RpcNetwork): RpcProviderStatus[] {
   return getProviders(chain,network).map(provider => {
     const state = health.get(providerKey(chain,network,provider));
