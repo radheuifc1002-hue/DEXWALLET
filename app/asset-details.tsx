@@ -27,6 +27,7 @@ type HistoryRow = {
   timestamp: number;
   incoming: boolean;
   failed: boolean;
+  status?: 'success'|'failed'|'unknown';
   explorerUrl: string;
 };
 
@@ -85,6 +86,10 @@ export default function AssetDetails() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [nextBefore, setNextBefore] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [historyWarning, setHistoryWarning] = useState('');
 
   const chain = (['ethereum', 'bnb', 'polygon', 'solana'].includes(params.blockchain)
     ? params.blockchain
@@ -104,33 +109,43 @@ export default function AssetDetails() {
     setTimeout(() => setCopied(false), 1800);
   };
 
-  const loadHistory = useCallback(async () => {
+  const loadHistory = useCallback(async (append = false, cursor?: string | null) => {
     if (!walletAddress) {
-      setRows([]);
+      if (!append) setRows([]);
       setError('Wallet address is not available for this network.');
       setLoading(false);
+      setLoadingMore(false);
       setRefreshing(false);
       return;
     }
-    setLoading(true);
+    if (append) setLoadingMore(true);
+    else setLoading(true);
     setError('');
     try {
       let result: HistoryRow[] = [];
+      let more = false;
+      let next: string | null = null;
+      let complete = true;
+      let warning = '';
       if (chain === 'solana') {
         const history = await fetchSolanaAssetHistory({
           network: network === 'testnet' ? 'testnet' : 'mainnet',
           walletAddress,
           isNative,
           mintAddress: isNative ? undefined : contractAddress,
+          before: append ? cursor || undefined : undefined,
           limit: MAX_HISTORY,
         });
         result = history.rows.map((row) => ({
           id: row.id, hash: row.hash, title: row.title, detail: row.detail,
           amount: row.amount, timestamp: row.timestamp, incoming: row.incoming,
-          failed: row.failed, explorerUrl: row.explorerUrl,
+          failed: row.failed, status: row.status, explorerUrl: row.explorerUrl,
         }));
+        more = history.hasMore;
+        next = history.nextBefore;
+        complete = history.complete;
       } else {
-        result = await fetchEvmAssetHistory({
+        const history = await fetchEvmAssetHistory({
           chain,
           network,
           walletAddress,
@@ -140,30 +155,48 @@ export default function AssetDetails() {
           symbol,
           limit: MAX_HISTORY,
         });
+        result = history.rows.map((row) => ({ ...row }));
+        complete = history.complete;
+        warning = history.warning || '';
       }
       const seen = new Set<string>();
       result = result.filter((item) => {
         if (!item.hash || seen.has(item.id)) return false;
         seen.add(item.id);
         return true;
-      }).sort((a, b) => b.timestamp - a.timestamp).slice(0, MAX_HISTORY);
-      setRows(result);
+      }).sort((a, b) => b.timestamp - a.timestamp);
+      setRows((previous) => {
+        const combined = append ? [...previous, ...result] : result;
+        const unique = new Map<string, HistoryRow>();
+        for (const item of combined) if (!unique.has(item.id)) unique.set(item.id, item);
+        return [...unique.values()].sort((a, b) => b.timestamp - a.timestamp);
+      });
+      setHasMore(more);
+      setNextBefore(next);
+      setHistoryWarning(warning || (!complete && chain !== 'solana' ? 'Some transfers or transaction receipts could not be verified. Pull to refresh to retry.' : ''));
     } catch (e: any) {
-      setRows([]);
+      if (!append) setRows([]);
       setError(e?.message || 'Could not load this asset history. Please try again.');
     } finally {
       setLoading(false);
+      setLoadingMore(false);
       setRefreshing(false);
     }
   }, [walletAddress, chain, network, isNative, contractAddress, name, symbol]);
 
   useEffect(() => {
-    void loadHistory();
+    void loadHistory(false);
   }, [loadHistory]);
 
   const refresh = () => {
     setRefreshing(true);
-    void loadHistory();
+    setNextBefore(null);
+    setHasMore(false);
+    void loadHistory(false);
+  };
+
+  const loadOlder = () => {
+    if (!loadingMore && hasMore && nextBefore) void loadHistory(true, nextBefore);
   };
 
   return (
@@ -207,7 +240,7 @@ export default function AssetDetails() {
         <View style={styles.sectionHeader}>
           <View>
             <Text style={styles.sectionTitle}>Transaction history</Text>
-            <Text style={styles.sectionSubtitle}>Latest {MAX_HISTORY} {isNative ? symbol : name} transactions and contract interactions</Text>
+            <Text style={styles.sectionSubtitle}>Latest {MAX_HISTORY} {isNative ? symbol : name} transfers</Text>
           </View>
           <Text style={styles.count}>{rows.length}</Text>
         </View>
@@ -241,11 +274,17 @@ export default function AssetDetails() {
             </View>
             <View style={styles.rowRight}>
               {row.amount ? <Text numberOfLines={1} style={styles.amount}>{row.incoming ? '+' : '−'}{row.amount}</Text> : null}
-              <Text style={[styles.status, row.failed && styles.statusFailed]}>{row.failed ? 'Failed' : 'Confirmed'}</Text>
+              <Text style={[styles.status, (row.status === 'unknown' || (!row.status && !row.failed)) && styles.statusUnknown, row.failed && styles.statusFailed]}>{row.status === 'unknown' ? 'Unverified' : row.failed ? 'Failed' : 'Confirmed'}</Text>
               <Ionicons name="open-outline" size={13} color="#9A95A8" style={{ marginTop: 5 }} />
             </View>
           </TouchableOpacity>
         ))}
+        {historyWarning ? <Text style={styles.warningNote}>{historyWarning}</Text> : null}
+        {hasMore && !loading ? (
+          <TouchableOpacity style={styles.loadMoreButton} onPress={loadOlder} disabled={loadingMore}>
+            {loadingMore ? <ActivityIndicator color="#6C4CF1" /> : <Text style={styles.loadMoreText}>Load older transactions</Text>}
+          </TouchableOpacity>
+        ) : null}
         <Text style={styles.footerNote}>Tap a transaction to open its block explorer record.</Text>
       </ScrollView>
     </SafeAreaView>
@@ -281,6 +320,10 @@ const styles = StyleSheet.create({
   amount: { color: '#211B35', fontSize: 10, fontWeight: '800', marginBottom: 4 },
   status: { color: '#059669', fontSize: 9, fontWeight: '800' },
   statusFailed: { color: '#B42318' },
+  statusUnknown: { color: '#9A6700' },
+  warningNote: { color: '#9A6700', backgroundColor: '#FFF7E6', borderRadius: 10, padding: 11, fontSize: 10, lineHeight: 15, marginTop: 10 },
+  loadMoreButton: { minHeight: 44, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F1EDFF', borderRadius: 12, marginTop: 8 },
+  loadMoreText: { color: '#6C4CF1', fontSize: 12, fontWeight: '800' },
   stateCard: { minHeight: 220, borderRadius: 18, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#ECE8F4', alignItems: 'center', justifyContent: 'center', padding: 24, marginTop: 8 },
   stateTitle: { color: '#211B35', fontSize: 15, fontWeight: '900', marginTop: 12, marginBottom: 7 },
   stateMessage: { color: '#8A849B', fontSize: 11, textAlign: 'center', lineHeight: 17 },
