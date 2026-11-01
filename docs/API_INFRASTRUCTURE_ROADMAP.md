@@ -51,16 +51,19 @@ Known limitations to close before production:
 
 ## Phase 4 — Non-EVM data adapters
 
-**Solana adapter implemented; production validation remains required.**
+**Solana adapter implemented; automated code gates are in place. Live provider validation remains an environment-dependent release gate.**
 - Separate `POST /api/solana-history` adapter, not mixed into EVM-specific logic.
 - Uses the central Solana RPC manager; no provider credential or direct provider URL in the mobile service.
-- Signature pagination with a `before` cursor.
+- Per-address signature pagination with an opaque versioned cursor; SPL history discovers token accounts for the selected mint and merges wallet/token-account signature streams without sharing one cursor.
+- Token account pubkeys provide an attribution fallback when historical RPC owner metadata is absent. Discovery is bounded to 20 accounts per mint.
 - Fetches transaction details with bounded concurrency.
 - Native SOL activity derives from wallet lamport balance changes.
 - SPL-token activity derives from wallet-owned pre/post token-balance deltas for the selected mint.
 - Normalized rows include signature, direction, amount, timestamp, failure status and Solscan transaction URL.
 - Added a typed mobile service with cursor metadata.
-- Known constraints: the first adapter returns net wallet balance changes per transaction, not every instruction-level transfer; token accounts must be correctly attributed by RPC owner metadata; unsupported transaction versions or unavailable historical transaction data can result in skipped rows. Live mainnet/devnet fixtures and pagination tests remain release gates.
+- Rows represent net wallet balance changes per transaction, not each instruction-level transfer. More than 20 associated token accounts returns an explicit error rather than silently omitting accounts. Closed token accounts no longer returned by owner discovery may not be fully enumerable without an indexer.
+- Asset detail uses the backend client for native SOL and SPL; no direct RPC call remains in the screen.
+- CI includes regression checks for per-account pagination, unconsumed signature preservation, token-account attribution, amount safety, failure status and mobile routing. Live mainnet/devnet and provider failover/quota checks remain environment-dependent release checks.
 
 ## Phase 5 — Centralize remaining RPC access
 
