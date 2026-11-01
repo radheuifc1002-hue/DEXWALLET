@@ -36,6 +36,30 @@ const MAX_FAILURES = 3;
 const BASE_COOLDOWN_MS = 5_000;
 const MAX_COOLDOWN_MS = 120_000;
 const health = new Map<string, ProviderHealth>();
+type ProviderLoad = { active: number; starts: number[] };
+const providerLoad = new Map<string, ProviderLoad>();
+const MAX_PROVIDER_CONCURRENCY = 24;
+const MAX_PROVIDER_REQUESTS_PER_SECOND = 40;
+async function acquireProviderSlot(key: string): Promise<() => void> {
+  const deadline = Date.now() + 5_000;
+  while (true) {
+    const now = Date.now();
+    const state = providerLoad.get(key) || { active: 0, starts: [] };
+    state.starts = state.starts.filter(start => now - start < 1_000);
+    if (state.active < MAX_PROVIDER_CONCURRENCY && state.starts.length < MAX_PROVIDER_REQUESTS_PER_SECOND) {
+      state.active++;
+      state.starts.push(now);
+      providerLoad.set(key, state);
+      return () => {
+        const current = providerLoad.get(key);
+        if (current) current.active = Math.max(0, current.active - 1);
+      };
+    }
+    providerLoad.set(key, state);
+    if (now >= deadline) throw new Error('provider_capacity_exceeded');
+    await sleep(25);
+  }
+}
 
 function validHttpsUrl(value: string | undefined): value is string {
   if (!value || value.length > 2048) return false;
@@ -71,7 +95,7 @@ function retryableNetwork(error: unknown) {
   const e = error as { name?: string; code?: string; message?: string };
   const code = String(e?.code || '').toUpperCase(), msg = String(e?.message || '').toLowerCase();
   return e?.name === 'AbortError' || ['ECONNRESET','ECONNREFUSED','ETIMEDOUT','EAI_AGAIN','UND_ERR_CONNECT_TIMEOUT'].includes(code) ||
-    /fetch failed|socket|connection reset|network error|timed out/.test(msg);
+    /fetch failed|socket|connection reset|network error|timed out|provider_capacity_exceeded/.test(msg);
 }
 function markSuccess(key: string, latencyMs: number) { health.set(key, { failures: 0, openUntil: 0, latencyMs }); }
 function markFailure(key: string, error: unknown) {
@@ -124,7 +148,9 @@ export async function proxyRpc(chain: RpcChain, network: RpcNetwork, body: unkno
     attempts++;
     const key = providerKey(chain,network,provider), controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(),REQUEST_TIMEOUT_MS), started = Date.now();
+    let release: (() => void) | undefined;
     try {
+      release = await acquireProviderSlot(key);
       const response = await fetch(provider.url,{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:parsed.serialized,signal:controller.signal});
       responseBody = await response.text(); status = response.status;
       if (retryableHttp(status)) { markFailure(key,new Error('HTTP '+status)); if (!parsed.readOnly) break; continue; }
@@ -138,7 +164,7 @@ export async function proxyRpc(chain: RpcChain, network: RpcNetwork, body: unkno
       markFailure(key,error); status = (error as {name?:string})?.name === 'AbortError' ? 504 : 502;
       responseBody = JSON.stringify({error:{code:status===504?'upstream_timeout':'upstream_unavailable',requestId}});
       if (!parsed.readOnly) break;
-    } finally { clearTimeout(timeout); }
+    } finally { clearTimeout(timeout); release?.(); }
   }
   return {status,body:responseBody,provider:'unavailable',requestId,attempts};
 }
