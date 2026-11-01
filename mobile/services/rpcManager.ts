@@ -24,7 +24,7 @@ type EndpointHealth = {
 type RpcHealthStore = Record<string, EndpointHealth>;
 type RpcEndpoint = { url: string; chainId?: number };
 
-const CONFIG_URL = 'https://dexwallet-radheuifc1002-2100s-projects.vercel.app/api/rpc-config';
+const CONFIG_URL = 'https://dexwallet-api.vercel.app/api/rpc-config';
 const CACHE_KEY = '@xuwallet/rpc-config-v1';
 const HEALTH_KEY = '@xuwallet/rpc-health-v1';
 const REQUEST_TIMEOUT_MS = 4500;
@@ -43,20 +43,20 @@ const DEFAULT_CONFIG: RpcConfig = {
   version: 1,
   chains: {
     ethereum: {
-      mainnet: { chainId: 1, endpoints: ['https://dexwallet-radheuifc1002-2100s-projects.vercel.app/api/rpc?chain=ethereum&network=mainnet'] },
-      testnet: { chainId: 11155111, endpoints: ['https://dexwallet-radheuifc1002-2100s-projects.vercel.app/api/rpc?chain=ethereum&network=testnet'] },
+      mainnet: { chainId: 1, endpoints: ['https://dexwallet-api.vercel.app/api/rpc?chain=ethereum&network=mainnet'] },
+      testnet: { chainId: 11155111, endpoints: ['https://dexwallet-api.vercel.app/api/rpc?chain=ethereum&network=testnet'] },
     },
     bnb: {
-      mainnet: { chainId: 56, endpoints: ['https://dexwallet-radheuifc1002-2100s-projects.vercel.app/api/rpc?chain=bnb&network=mainnet'] },
-      testnet: { chainId: 97, endpoints: ['https://dexwallet-radheuifc1002-2100s-projects.vercel.app/api/rpc?chain=bnb&network=testnet'] }
+      mainnet: { chainId: 56, endpoints: ['https://dexwallet-api.vercel.app/api/rpc?chain=bnb&network=mainnet'] },
+      testnet: { chainId: 97, endpoints: ['https://dexwallet-api.vercel.app/api/rpc?chain=bnb&network=testnet'] }
     },
     polygon: {
-      mainnet: { chainId: 137, endpoints: ['https://dexwallet-radheuifc1002-2100s-projects.vercel.app/api/rpc?chain=polygon&network=mainnet'] },
-      testnet: { chainId: 80002, endpoints: ['https://dexwallet-radheuifc1002-2100s-projects.vercel.app/api/rpc?chain=polygon&network=testnet'] }
+      mainnet: { chainId: 137, endpoints: ['https://dexwallet-api.vercel.app/api/rpc?chain=polygon&network=mainnet'] },
+      testnet: { chainId: 80002, endpoints: ['https://dexwallet-api.vercel.app/api/rpc?chain=polygon&network=testnet'] }
     },
     solana: {
-      mainnet: { endpoints: ['https://dexwallet-radheuifc1002-2100s-projects.vercel.app/api/rpc?chain=solana&network=mainnet'] },
-      testnet: { endpoints: ['https://dexwallet-radheuifc1002-2100s-projects.vercel.app/api/rpc?chain=solana&network=testnet'] }
+      mainnet: { endpoints: ['https://dexwallet-api.vercel.app/api/rpc?chain=solana&network=mainnet'] },
+      testnet: { endpoints: ['https://dexwallet-api.vercel.app/api/rpc?chain=solana&network=testnet'] }
     },
   },
 };

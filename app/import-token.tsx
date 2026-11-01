@@ -7,7 +7,7 @@ import { ethers } from 'ethers';
 import bs58 from 'bs58';
 import { Buffer } from 'buffer';
 import { useWallet, Blockchain, Token } from '../context/WalletContext';
-import { getCentralEvmChainId, getCentralRpcUrl, serverRpcRequest } from '../mobile/services/serverRpc';
+import { getCentralEvmChainId, serverRpcRequest } from '../mobile/services/serverRpc';
 
 const ABI = ['function name() view returns (string)', 'function symbol() view returns (string)', 'function decimals() view returns (uint8)', 'function balanceOf(address) view returns (uint256)'];
 const TOKEN_PROGRAM = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
@@ -56,17 +56,25 @@ export default function ImportToken() {
         found = { id: `custom-${selectedBlockchain}-${value}`, name, symbol, balance, balanceUSD: 0, contractAddress: value, decimals, blockchain: selectedBlockchain };
       } else {
         const chainId=getCentralEvmChainId(selectedBlockchain,network);
-        const provider=new ethers.JsonRpcProvider(getCentralRpcUrl(selectedBlockchain,network),chainId);
-        const chain = await provider.getNetwork();
-        if (Number(chain.chainId) !== chainId) throw new Error('RPC network mismatch. Import cancelled.');
         if (!ethers.isAddress(value)) throw new Error('Enter a valid token contract address.');
         const checksumAddress = ethers.getAddress(value);
-        const bytecode = await provider.getCode(checksumAddress);
-        if (!bytecode || bytecode === '0x') throw new Error('Token not found. No smart contract exists at this address on the selected network.');
-        const contract = new ethers.Contract(checksumAddress, ABI, provider);
-        const [name, symbol, decimals, rawBalance] = await Promise.all([
-          contract.name(), contract.symbol(), contract.decimals(), contract.balanceOf(walletAddress),
+        const [actualChainId, bytecode] = await Promise.all([
+          serverRpcRequest<string>(selectedBlockchain,network,'eth_chainId',[]),
+          serverRpcRequest<string>(selectedBlockchain,network,'eth_getCode',[checksumAddress,'latest']),
         ]);
+        if (Number(BigInt(actualChainId)) !== chainId) throw new Error('RPC network mismatch. Import cancelled.');
+        if (!bytecode || bytecode === '0x') throw new Error('Token not found. No smart contract exists at this address on the selected network.');
+        const iface = new ethers.Interface(ABI);
+        const [nameRaw,symbolRaw,decimalsRaw,balanceRaw] = await Promise.all([
+          serverRpcRequest<string>(selectedBlockchain,network,'eth_call',[{to:checksumAddress,data:iface.encodeFunctionData('name',[])},'latest']),
+          serverRpcRequest<string>(selectedBlockchain,network,'eth_call',[{to:checksumAddress,data:iface.encodeFunctionData('symbol',[])},'latest']),
+          serverRpcRequest<string>(selectedBlockchain,network,'eth_call',[{to:checksumAddress,data:iface.encodeFunctionData('decimals',[])},'latest']),
+          serverRpcRequest<string>(selectedBlockchain,network,'eth_call',[{to:checksumAddress,data:iface.encodeFunctionData('balanceOf',[walletAddress])},'latest']),
+        ]);
+        const [name]=iface.decodeFunctionResult('name',nameRaw);
+        const [symbol]=iface.decodeFunctionResult('symbol',symbolRaw);
+        const [decimals]=iface.decodeFunctionResult('decimals',decimalsRaw);
+        const [rawBalance]=iface.decodeFunctionResult('balanceOf',balanceRaw);
         const d = Number(decimals);
         if (!Number.isInteger(d) || d < 0 || d > 255) throw new Error('Token returned invalid decimals.');
         found = { id: `custom-${selectedBlockchain}-${value.toLowerCase()}`, name: String(name), symbol: String(symbol), balance: Number(ethers.formatUnits(rawBalance, d)), balanceUSD: 0, contractAddress: ethers.getAddress(value), decimals: d, blockchain: selectedBlockchain };

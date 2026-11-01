@@ -34,6 +34,11 @@ const MAX_FAILURES = 3;
 const BASE_COOLDOWN_MS = 5_000;
 const MAX_COOLDOWN_MS = 120_000;
 const health = new Map<string, ProviderHealth>();
+type RpcCacheEntry={expiresAt:number;body:string};
+const rpcCache=new Map<string,RpcCacheEntry>();
+const rpcInflight=new Map<string,Promise<RpcProxyResult>>();
+const CACHE_TTL:Record<string,number>={'eth_chainId':60_000,'eth_gasPrice':3_000,'eth_getBalance':4_000,'eth_call':4_000,'eth_getCode':30_000,'getBalance':4_000,'getLatestBlockhash':1_000,'getHealth':2_000};
+const MAX_CACHE_ENTRIES=10_000;
 type ProviderLoad = { active: number; starts: number[] };
 const providerLoad = new Map<string, ProviderLoad>();
 const MAX_PROVIDER_CONCURRENCY = 24;
@@ -132,14 +137,14 @@ function sleep(ms: number) { return new Promise(resolve => setTimeout(resolve,ms
 function jitter(attempt: number) { return Math.floor(Math.random() * Math.min(750,100 * (2 ** Math.max(0,attempt-1)))); }
 export type RpcProxyResult = { status:number; body:string; provider:string; requestId:string; attempts:number };
 export type RpcProviderStatus = { name:string; configured:boolean; healthy:boolean; circuit:'closed'|'open'; cooldownMs:number; latencyMs:number|null; consecutiveFailures:number; lastCheckedAt:number|null; lastFailure?:string };
-export async function proxyRpc(chain: RpcChain, network: RpcNetwork, body: unknown): Promise<RpcProxyResult> {
+async function proxyRpcUncached(chain: RpcChain, network: RpcNetwork, body: unknown): Promise<RpcProxyResult> {
   const requestId = randomUUID(), parsed = parseBody(body);
   if (!parsed || Buffer.byteLength(parsed.serialized,'utf8') > 1_000_000)
     return { status:400, body:JSON.stringify({error:{code:'invalid_json_rpc_request',requestId}}), provider:'none', requestId, attempts:0 };
   const methods = (Array.isArray(body) ? body : [body]).map((item: any) => String(item.method));
   const compatible = getProviders(chain,network).filter(provider => providerSupportsMethods(provider,methods));
   const all = orderProviders(chain,network,compatible), providers = parsed.readOnly ? all : all.slice(0,1);
-  if (!providers.length) return { status:503, body:JSON.stringify({error:{code:'rpc_not_configured',requestId}}), provider:'none', requestId, attempts:0 };
+  if (!providers.length) { console.warn(JSON.stringify({event:'rpc_not_configured',requestId,chain,network,methods})); return { status:503, body:JSON.stringify({error:{code:'rpc_not_configured',requestId}}), provider:'none', requestId, attempts:0 }; }
   let status = 502, responseBody = JSON.stringify({error:{code:'upstream_unavailable',requestId}}), attempts = 0;
   for (const provider of providers) {
     if (attempts) await sleep(jitter(attempts));
@@ -151,21 +156,69 @@ export async function proxyRpc(chain: RpcChain, network: RpcNetwork, body: unkno
       release = await acquireProviderSlot(key);
       const response = await fetch(provider.url,{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:parsed.serialized,signal:controller.signal});
       responseBody = await response.text(); status = response.status;
-      if (retryableHttp(status)) { markFailure(key,new Error('HTTP '+status)); if (!parsed.readOnly) break; continue; }
+      if (retryableHttp(status)) { markFailure(key,new Error('HTTP '+status)); console.warn(JSON.stringify({event:'rpc_provider_retry',requestId,chain,network,provider:provider.name,attempt:attempts,status,methods})); if (!parsed.readOnly) break; continue; }
       let json: unknown;
       try { json = JSON.parse(responseBody); } catch { markFailure(key,new Error('Invalid JSON-RPC response')); if (!parsed.readOnly) break; continue; }
-      if (retryableJsonRpc(json)) { markFailure(key,new Error('Provider rate limit or capacity response')); if (!parsed.readOnly) break; continue; }
-      markSuccess(key,Date.now()-started);
+      if (retryableJsonRpc(json)) { markFailure(key,new Error('Provider rate limit or capacity response')); console.warn(JSON.stringify({event:'rpc_provider_retry',requestId,chain,network,provider:provider.name,attempt:attempts,status,methods,reason:'provider_capacity'})); if (!parsed.readOnly) break; continue; }
+      const latencyMs=Date.now()-started;markSuccess(key,latencyMs);
+      console.info(JSON.stringify({event:'rpc_provider_success',requestId,chain,network,provider:provider.name,attempt:attempts,status,latencyMs,methods}));
       return {status,body:responseBody,provider:provider.name,requestId,attempts};
     } catch (error) {
       if (!retryableNetwork(error)) throw error;
-      markFailure(key,error); status = (error as {name?:string})?.name === 'AbortError' ? 504 : 502;
+      markFailure(key,error); console.warn(JSON.stringify({event:'rpc_provider_failure',requestId,chain,network,provider:provider.name,attempt:attempts,errorType:(error as {name?:string})?.name||'Error',methods})); status = (error as {name?:string})?.name === 'AbortError' ? 504 : 502;
       responseBody = JSON.stringify({error:{code:status===504?'upstream_timeout':'upstream_unavailable',requestId}});
       if (!parsed.readOnly) break;
     } finally { clearTimeout(timeout); release?.(); }
   }
   return {status,body:responseBody,provider:'unavailable',requestId,attempts};
 }
+function rewriteRpcResponse(body:string,id:unknown,requestId:string):string {
+  try {
+    const parsed=JSON.parse(body);
+    if(parsed&&typeof parsed==='object'&&!Array.isArray(parsed)){
+      parsed.id=id??null;
+      if(parsed.error&&typeof parsed.error==='object')parsed.error.requestId=requestId;
+    }
+    return JSON.stringify(parsed);
+  } catch { return body; }
+}
+
+/**
+ * Bounded per-instance response cache and in-flight coalescing for safe,
+ * idempotent reads. Transaction submission, nonce, history and signature
+ * discovery are never cached. TTLs are deliberately short for changing state.
+ */
+export async function proxyRpc(chain:RpcChain,network:RpcNetwork,body:unknown):Promise<RpcProxyResult>{
+  const parsed=parseBody(body);
+  if(!parsed)return proxyRpcUncached(chain,network,body);
+  const request=Array.isArray(body)?null:body as RpcRequest;
+  const ttl=request&&parsed.readOnly?CACHE_TTL[request.method]||0:0;
+  if(!request||!ttl)return proxyRpcUncached(chain,network,body);
+  const id=request.id??null,cacheShape={jsonrpc:request.jsonrpc,method:request.method,params:request.params||[]};
+  const key=chain+':'+network+':'+JSON.stringify(cacheShape),now=Date.now(),requestId=randomUUID();
+  const cached=rpcCache.get(key);
+  if(cached&&cached.expiresAt>now)return{status:200,body:rewriteRpcResponse(cached.body,id,requestId),provider:'cache',requestId,attempts:0};
+  if(cached)rpcCache.delete(key);
+  let pending=rpcInflight.get(key);
+  if(!pending){
+    pending=proxyRpcUncached(chain,network,body);
+    rpcInflight.set(key,pending);
+  }
+  try{
+    const result=await pending;
+    if(result.status>=200&&result.status<300){
+      rpcCache.set(key,{expiresAt:Date.now()+ttl,body:result.body});
+      if(rpcCache.size>MAX_CACHE_ENTRIES){
+        const oldest=rpcCache.keys().next().value;
+        if(oldest)rpcCache.delete(oldest);
+      }
+    }
+    return{...result,body:rewriteRpcResponse(result.body,id,requestId),requestId};
+  }finally{
+    if(rpcInflight.get(key)===pending)rpcInflight.delete(key);
+  }
+}
+
 export function getRpcProviderStatus(chain: RpcChain, network: RpcNetwork): RpcProviderStatus[] {
   return getProviders(chain,network).map(provider => {
     const state = health.get(providerKey(chain,network,provider));

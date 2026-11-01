@@ -8,7 +8,7 @@ import bs58 from 'bs58';
 import { Buffer } from 'buffer';
 import { useWallet, Blockchain } from '../context/WalletContext';
 import { getMnemonic, signSolanaMessage } from '../mobile/services/walletService';
-import { getCentralEvmChainId, getCentralRpcUrl, serverRpcRequest } from '../mobile/services/serverRpc';
+import { getCentralEvmChainId, serverRpcRequest } from '../mobile/services/serverRpc';
 
 const SYMBOL: Record<Blockchain, string> = { ethereum: 'ETH', bnb: 'BNB', polygon: 'POL', solana: 'SOL' };
 const LABEL: Record<Blockchain, string> = { ethereum: 'Ethereum', bnb: 'BNB Chain', polygon: 'Polygon', solana: 'Solana' };
@@ -18,12 +18,6 @@ const u64 = (n: bigint) => { const a: number[] = []; for (let i = 0n; i < 8n; i+
 async function solRpc<T>(network:'mainnet'|'testnet',method:string,params:unknown[]=[]):Promise<T>{return serverRpcRequest<T>('solana',network,method,params);}
 
 type Review = { to: string; amount: string; fee: string; feeSymbol: string; network: string; evmTx?: ethers.TransactionRequest; solMessage?: Uint8Array; blockhash?: string; lastValidBlockHeight?: number };
-
-function createEvmProvider(endpoint: string, chainId: number) {
-  const request = new ethers.FetchRequest(endpoint);
-  request.timeout = 12000;
-  return new ethers.JsonRpcProvider(request, chainId, { staticNetwork: true });
-}
 
 export default function Send() {
   const router = useRouter();
@@ -41,7 +35,7 @@ export default function Send() {
   const address = walletAddresses?.[selectedBlockchain] || '';
   const symbol = SYMBOL[selectedBlockchain];
   const testnet = network === 'testnet';
-  const rpc = useMemo(() => selectedBlockchain === 'solana' ? null : { chainId:getCentralEvmChainId(selectedBlockchain,network),rpc:getCentralRpcUrl(selectedBlockchain,network) }, [selectedBlockchain,network]);
+  const rpc = useMemo(() => selectedBlockchain === 'solana' ? null : { chainId:getCentralEvmChainId(selectedBlockchain,network) }, [selectedBlockchain,network]);
 
   const loadBalance = useCallback(async () => {
     if (!address || isLocked) { setBalance(null); return; }
@@ -52,9 +46,8 @@ export default function Send() {
         const lamports=result.value;
         setBalance(ethers.formatUnits(BigInt(lamports), 9));
       } else {
-        const provider=createEvmProvider(rpc!.rpc,rpc!.chainId);
-        const balanceWei=await provider.getBalance(address);
-        setBalance(ethers.formatEther(balanceWei));
+        const balanceHex=await serverRpcRequest<string>(selectedBlockchain,network,'eth_getBalance',[address,'latest']);
+        setBalance(ethers.formatEther(BigInt(balanceHex)));
       }
     } catch (e: any) { setBalance(null); setError(e?.message || 'Unable to load balance.'); }
     finally { setLoadingBalance(false); }
@@ -96,17 +89,17 @@ export default function Send() {
         if (to.trim().toLowerCase() === address.toLowerCase()) throw new Error('Recipient must be different from your own address.');
         if (!rpc) throw new Error('Unsupported network.');
         const prepared = await (async () => {
-          const provider = new ethers.JsonRpcProvider(rpc!.rpc, rpc!.chainId);
-          const [balanceWei, fees] = await Promise.all([provider.getBalance(address), provider.getFeeData()]);
-          const value = ethers.parseEther(amount);
-          const recipient = ethers.getAddress(to.trim());
-          const gasLimit = await provider.estimateGas({ from: address, to: recipient, value });
-          const price = fees.maxFeePerGas ?? fees.gasPrice;
-          if (!price) throw new Error('Unable to estimate network fee.');
-          const fee = gasLimit * price;
-          if (value + fee > balanceWei) throw new Error('Insufficient balance for amount plus network fee.');
-          const tx: ethers.TransactionRequest = { to: recipient, value, gasLimit, chainId: rpc!.chainId,
-            ...(fees.maxFeePerGas && fees.maxPriorityFeePerGas ? { maxFeePerGas: fees.maxFeePerGas, maxPriorityFeePerGas: fees.maxPriorityFeePerGas } : { gasPrice: price }) };
+          const [balanceHex,gasPriceHex,nonceHex,gasEstimateHex] = await Promise.all([
+            serverRpcRequest<string>(selectedBlockchain,network,'eth_getBalance',[address,'latest']),
+            serverRpcRequest<string>(selectedBlockchain,network,'eth_gasPrice',[]),
+            serverRpcRequest<string>(selectedBlockchain,network,'eth_getTransactionCount',[address,'pending']),
+            serverRpcRequest<string>(selectedBlockchain,network,'eth_estimateGas',[{from:address,to:ethers.getAddress(to.trim()),value:'0x'+ethers.parseEther(amount).toString(16)}]),
+          ]);
+          const balanceWei=BigInt(balanceHex),value=ethers.parseEther(amount),price=BigInt(gasPriceHex),gasLimit=BigInt(gasEstimateHex);
+          const recipient=ethers.getAddress(to.trim());
+          const fee=gasLimit*price;
+          if(value+fee>balanceWei)throw new Error('Insufficient balance for amount plus network fee.');
+          const tx: ethers.TransactionRequest = {to:recipient,value,gasLimit,gasPrice:price,nonce:Number(BigInt(nonceHex)),chainId:rpc!.chainId};
           const netName = testnet ? (selectedBlockchain === 'ethereum' ? 'Sepolia' : selectedBlockchain === 'bnb' ? 'BNB Testnet' : 'Polygon Amoy') : LABEL[selectedBlockchain] + ' Mainnet';
           return { to: recipient, amount, fee: ethers.formatEther(fee), feeSymbol: symbol, network: netName, evmTx: tx };
         })();
@@ -144,17 +137,24 @@ export default function Send() {
         setPendingConfirmation(!confirmed);
       } else {
         if (!rpc || !review.evmTx) throw new Error('Transaction review expired. Review again.');
-        const p = createEvmProvider(rpc.rpc, rpc.chainId);
-        const n = await p.getNetwork();
-        if (Number(n.chainId) !== rpc.chainId) throw new Error('Network changed. Transaction cancelled.');
-        const w = ethers.HDNodeWallet.fromPhrase(mnemonic).connect(p);
-        if (w.address.toLowerCase() !== address.toLowerCase()) throw new Error('Signing account does not match selected wallet.');
-        const tx = await w.sendTransaction(review.evmTx);
-        txHash = tx.hash;
-        submittedHash = txHash;
-        setHash(txHash);
-        setReview(null);
-        await tx.wait(1);
+        const actualChainId=await serverRpcRequest<string>(selectedBlockchain,network,'eth_chainId',[]);
+        if(Number(BigInt(actualChainId))!==rpc.chainId)throw new Error('Network changed. Transaction cancelled.');
+        const w=ethers.HDNodeWallet.fromPhrase(mnemonic);
+        if(w.address.toLowerCase()!==address.toLowerCase())throw new Error('Signing account does not match selected wallet.');
+        const signed=await w.signTransaction(review.evmTx);
+        txHash=await serverRpcRequest<string>(selectedBlockchain,network,'eth_sendRawTransaction',[signed]);
+        if(!/^0x[a-fA-F0-9]{64}$/.test(txHash))throw new Error('RPC returned an invalid transaction hash.');
+        submittedHash=txHash;setHash(txHash);setReview(null);
+        let confirmed=false;
+        for(let attempt=0;attempt<30;attempt++){
+          const receipt=await serverRpcRequest<any>(selectedBlockchain,network,'eth_getTransactionReceipt',[txHash]);
+          if(receipt){
+            if(receipt.status==='0x0')throw new Error('EVM transaction reverted on chain.');
+            if(receipt.status==='0x1'){confirmed=true;break;}
+          }
+          await new Promise(resolve=>setTimeout(resolve,2000));
+        }
+        setPendingConfirmation(!confirmed);
       }
       setHash(txHash);
       setReview(null);
