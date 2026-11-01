@@ -236,8 +236,13 @@ export default function AssetDetails() {
       <View style={styles.assetActions}>
         <TouchableOpacity style={styles.assetActionPrimary} onPress={() => {
           setSelectedBlockchain(chain);
-          if (isNative) router.push('/send');
-          else Alert.alert('Token transfer', 'Token-specific sending is being implemented in Phase 3. The current Send screen only supports native coins.');
+          router.push({
+            pathname: '/send',
+            params: {
+              assetId: String(params.assetId || ''),
+              contractAddress,
+            },
+          });
         }}>
           <Ionicons name="arrow-up" size={17} color="#FFFFFF" />
           <Text style={styles.assetActionPrimaryText}>Send</Text>

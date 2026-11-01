@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { ethers } from 'ethers';
@@ -144,6 +144,7 @@ type Review = {
 
 export default function Send() {
   const router = useRouter();
+  const routeParams = useLocalSearchParams<{ assetId?: string; contractAddress?: string }>();
   const { selectedBlockchain, network, walletAddresses, isLocked, activeWallet, tokens } = useWallet();
   const address = walletAddresses?.[selectedBlockchain] || '';
   const symbol = SYMBOL[selectedBlockchain];
@@ -180,6 +181,18 @@ export default function Send() {
     setReview(null);
     setError('');
   }, [nativeAsset]);
+
+  useEffect(() => {
+    const requestedAsset = chainAssets.find((asset) =>
+      (routeParams.assetId && asset.id === routeParams.assetId) ||
+      (routeParams.contractAddress && asset.contractAddress?.toLowerCase() === routeParams.contractAddress.toLowerCase())
+    );
+    if (!requestedAsset) return;
+    setSelectedAsset(requestedAsset);
+    setAmount('');
+    setReview(null);
+    setError('');
+  }, [routeParams.assetId, routeParams.contractAddress, chainAssets]);
 
   const isNative = !selectedAsset.contractAddress;
   const decimals = isNative ? (selectedBlockchain === 'solana' ? 9 : 18) : (selectedAsset.decimals ?? 18);
