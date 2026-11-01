@@ -3,8 +3,8 @@ import * as SecureStore from 'expo-secure-store';
 import { ethers } from 'ethers';
 import * as bip39 from 'bip39';
 import * as ed from '@noble/ed25519';
-import { hmac } from '@noble/hashes/hmac';
-import { sha512 } from '@noble/hashes/sha2';
+import { hmac } from '@noble/hashes/hmac.js';
+import { sha512 } from '@noble/hashes/sha2.js';
 import bs58 from 'bs58';
 import {
   deriveAddresses,
