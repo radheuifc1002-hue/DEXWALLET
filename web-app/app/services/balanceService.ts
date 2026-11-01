@@ -1,5 +1,6 @@
 import { ethers } from "ethers";
-import { Blockchain } from "../context/WalletContext";
+import { Blockchain, Network } from "../context/WalletContext";
+import { getCentralEvmChainId, getCentralRpcUrl, serverRpcRequest } from "./serverRpc";
 
 const ERC20_ABI = [
   "function name() view returns (string)",
