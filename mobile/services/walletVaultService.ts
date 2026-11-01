@@ -72,35 +72,39 @@ async function persistStore(store: WalletVaultStore): Promise<void> {
 async function readStore(): Promise<WalletVaultStore | null> {
   const raw = await AsyncStorage.getItem(STORE_KEY);
   if (!raw) return null;
+  let parsed: WalletVaultStore;
   try {
-    const parsed = JSON.parse(raw) as WalletVaultStore;
-    if (![1, STORE_VERSION].includes(parsed.version) || !Array.isArray(parsed.vaults)) return null;
-    const upgraded: WalletVaultStore = {
-      ...parsed,
-      version: STORE_VERSION,
-      vaults: parsed.vaults.map((vault) => ({
-        ...vault,
-        accounts: vault.accounts.map((account) => {
-          if (account.sourceType !== 'mnemonic' || account.accountIndex === null || account.accountIndex === undefined) return account;
-          const metadata = getAccountDerivationMetadata(account.accountIndex);
-          return {
-            ...account,
-            derivationMetadata: account.derivationMetadata ?? metadata,
-            derivationPaths: {
-              ethereum: account.derivationPaths?.ethereum ?? metadata.ethereum.path,
-              bnb: account.derivationPaths?.bnb ?? metadata.bnb.path,
-              polygon: account.derivationPaths?.polygon ?? metadata.polygon.path,
-              solana: account.derivationPaths?.solana ?? metadata.solana.path,
-            },
-          };
-        }),
-      })),
-    };
-    if (parsed.version !== STORE_VERSION || JSON.stringify(parsed) !== JSON.stringify(upgraded)) await persistStore(upgraded);
-    return upgraded;
+    parsed = JSON.parse(raw) as WalletVaultStore;
   } catch {
     return null;
   }
+  if (![1, STORE_VERSION].includes(parsed.version) || !Array.isArray(parsed.vaults)) return null;
+
+  const upgraded: WalletVaultStore = {
+    ...parsed,
+    version: STORE_VERSION,
+    vaults: parsed.vaults.map((vault) => ({
+      ...vault,
+      accounts: vault.accounts.map((account) => {
+        if (account.sourceType !== 'mnemonic' || account.accountIndex === null || account.accountIndex === undefined) return account;
+        const metadata = getAccountDerivationMetadata(account.accountIndex);
+        return {
+          ...account,
+          derivationMetadata: account.derivationMetadata ?? metadata,
+          derivationPaths: {
+            ethereum: account.derivationPaths?.ethereum ?? metadata.ethereum.path,
+            bnb: account.derivationPaths?.bnb ?? metadata.bnb.path,
+            polygon: account.derivationPaths?.polygon ?? metadata.polygon.path,
+            solana: account.derivationPaths?.solana ?? metadata.solana.path,
+          },
+        };
+      }),
+    })),
+  };
+  if (parsed.version !== STORE_VERSION || JSON.stringify(parsed) !== JSON.stringify(upgraded)) {
+    await persistStore(upgraded);
+  }
+  return upgraded;
 }
 
 function withActive(store: WalletVaultStore, vaultId: string, accountId: string): WalletVaultStore {
