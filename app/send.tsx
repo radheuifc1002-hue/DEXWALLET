@@ -149,7 +149,7 @@ type Review = {
 export default function Send() {
   const router = useRouter();
   const routeParams = useLocalSearchParams<{ assetId?: string; contractAddress?: string }>();
-  const { selectedBlockchain, network, walletAddresses, isLocked, activeWallet, tokens } = useWallet();
+  const { selectedBlockchain, network, walletAddresses, isLocked, activeWallet, activeVault, tokens } = useWallet();
   const address = walletAddresses?.[selectedBlockchain] || '';
   const symbol = SYMBOL[selectedBlockchain];
   const testnet = network === 'testnet';
