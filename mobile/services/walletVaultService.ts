@@ -11,6 +11,7 @@ import {
 } from './walletService';
 import type { Blockchain } from '../../context/WalletContext';
 import { deriveWalletAddresses, getAccountDerivationMetadata } from './chainAdapterRegistry';
+import { consumeAuthorization, type AuthorizationGrant } from './walletSecurityService';
 import { assertWalletAuthorization, type WalletAuthorization } from './walletSecurityService';
 
 const STORE_KEY = 'xu_wallet_vault_store_v1';
@@ -209,6 +210,15 @@ export async function getMnemonicForSource(sourceId: string, authorization: Wall
 
 export async function getPrivateKeyForSource(sourceId: string, authorization: WalletAuthorization): Promise<string | null> {
   assertWalletAuthorization(authorization, 'export-secret');
+  const store = await getWalletVaultStore();
+  const source = store.vaults.flatMap((vault) => vault.sources).find((item) => item.id === sourceId);
+  if (!source || source.type !== 'private-key') throw new Error('Private-key source not found.');
+  return SecureStore.getItemAsync(secretKey(sourceId));
+}
+
+
+export async function getPrivateKeyForSource(sourceId: string, grant: AuthorizationGrant): Promise<string | null> {
+  consumeAuthorization(grant, 'export');
   const store = await getWalletVaultStore();
   const source = store.vaults.flatMap((vault) => vault.sources).find((item) => item.id === sourceId);
   if (!source || source.type !== 'private-key') throw new Error('Private-key source not found.');

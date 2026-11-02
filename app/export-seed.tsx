@@ -14,6 +14,7 @@ import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useWallet } from '../context/WalletContext';
 import { getMnemonicForSource } from '../mobile/services/walletVaultService';
+import { authorizeSensitiveAction } from '../mobile/services/walletSecurityService';
 import WalletAuthorizationModal from '../components/WalletAuthorizationModal';
 import type { WalletAuthorization } from '../mobile/services/walletSecurityService';
 

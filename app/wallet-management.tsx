@@ -3,6 +3,8 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal,
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import PinPad from '../components/PinPad';
+import { authorizeSensitiveAction, type AuthorizationGrant, type SensitiveScope } from '../mobile/services/walletSecurityService';
 import WalletAuthorizationModal from '../components/WalletAuthorizationModal';
 import type { WalletAuthorization, WalletSensitiveAction } from '../mobile/services/walletSecurityService';
 import { useWallet, type Blockchain } from '../context/WalletContext';
@@ -27,6 +29,10 @@ export default function WalletManagement() {
   const [chain,setChain]=useState<Blockchain>('ethereum');
   const [addresses,setAddresses]=useState<Record<Blockchain,string>>({ethereum:'',bnb:'',polygon:'',solana:''});
   const [busy,setBusy]=useState(false);
+  const [securityScope,setSecurityScope]=useState<SensitiveScope|null>(null);
+  const [securityPin,setSecurityPin]=useState('');
+  const [securityError,setSecurityError]=useState('');
+  const [pendingDelete,setPendingDelete]=useState<{vaultId:string;accountId:string}|null>(null);
   const [batchCount,setBatchCount]=useState('5');
   const [authorizationRequest,setAuthorizationRequest]=useState<{action:WalletSensitiveAction;title:string;run:(authorization:WalletAuthorization)=>Promise<void>}|null>(null);
   const vaults=walletVaultStore?.vaults??[];
@@ -88,6 +94,17 @@ export default function WalletManagement() {
       setBusy(false);
       Alert.alert('Unable to update wallets',error instanceof Error?error.message:'Please check the details and try again.');
     }
+  };
+  const confirmSecurity=async(pin:string)=>{
+    setSecurityPin(pin);
+    if(pin.length!==6||!securityScope)return;
+    const grant=await authorizeSensitiveAction(pin,securityScope);
+    if(!grant){setSecurityError('Incorrect PIN or temporary lock active.');setSecurityPin('');return;}
+    const scope=securityScope;setSecurityScope(null);setSecurityPin('');setSecurityError('');
+    if(scope==='delete'&&pendingDelete){
+      try{await removeWalletAccount(pendingDelete.vaultId,pendingDelete.accountId,grant);setPendingDelete(null);await refreshWalletVaultStore();}
+      catch(e){Alert.alert('Unable to remove wallet',e instanceof Error?e.message:'Please try again.');}
+    }else await submit(grant);
   };
   const activate=async(vaultId:string,accountId:string)=>{
     try{await selectWalletAccount(vaultId,accountId);router.replace('/(tabs)/home');}
@@ -156,6 +173,14 @@ export default function WalletManagement() {
           <TouchableOpacity style={[styles.submit,busy&&{opacity:0.6}]} onPress={submit} disabled={busy}><Text style={styles.submitText}>{busy?'Saving…':mode==='vault'?'Create vault':mode==='rename'?'Save name':mode==='derive'?'Create accounts':'Add wallet'}</Text></TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+    </Modal>
+    <Modal visible={securityScope!==null} transparent animationType="fade" onRequestClose={()=>{setSecurityScope(null);setPendingDelete(null);}}>
+      <View style={styles.modalOverlay}><View style={styles.modalCard}>
+        <Text style={styles.modalTitle}>Confirm with your PIN</Text>
+        <Text style={styles.helper}>{securityScope==='delete'?'Authorize removal of this account.':securityScope==='derive'?'Authorize deriving additional accounts.':'Authorize access to wallet secrets.'}</Text>
+        <PinPad value={securityPin} onChange={confirmSecurity} maxLength={6} errorMsg={securityError}/>
+        <TouchableOpacity onPress={()=>{setSecurityScope(null);setPendingDelete(null);setSecurityPin('');}}><Text style={styles.backText}>Cancel</Text></TouchableOpacity>
+      </View></View>
     </Modal>
   </SafeAreaView>;
 }
