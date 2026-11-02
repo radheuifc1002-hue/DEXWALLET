@@ -91,7 +91,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const init = async () => {
       try {
-        const [{ addresses, created, mnemonic }, bio, storedTimer, storedBackgroundAt, storedCustomTokens] = await Promise.all([
+        const [{ addresses, created }, bio, storedTimer, storedBackgroundAt, storedCustomTokens] = await Promise.all([
           loadWalletFromStorage(),
           getBiometricEnabled(),
           AsyncStorage.getItem(AUTO_LOCK_TIMER_KEY),

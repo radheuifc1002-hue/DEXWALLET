@@ -34,7 +34,8 @@ export default function GenerateSeed() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
+    await stagePendingMnemonic(words.join(' '));
     Alert.alert(
       'Did you save your seed phrase?',
       'Without it, you cannot recover your wallet if you lose access.',
