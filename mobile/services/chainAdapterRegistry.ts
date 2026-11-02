@@ -133,7 +133,7 @@ export function getRegisteredChainAdapters(): ReadonlyArray<Pick<ChainAdapter, '
 
 /** Derive a single chain address without coupling callers to a concrete chain implementation. */
 export async function deriveAddressForChain(chain: ChainAdapterId, mnemonic: string, accountIndex: number): Promise<string> {
-  if (!Number.isInteger(accountIndex) || accountIndex < 0) throw new Error('Account index must be a non-negative integer.');
+  assertAccountIndex(accountIndex);
   if (!mnemonic || !bip39.validateMnemonic(mnemonic.trim())) throw new Error('Invalid recovery phrase.');
   return getChainAdapter(chain).deriveAddress(mnemonic.trim(), accountIndex);
 }
