@@ -20,6 +20,7 @@ This implementation is limited to the Android/mobile application. No website or 
 - Successful PIN verification issues an in-memory, action-scoped authorization capability.
 - Capabilities expire after 45 seconds and can be consumed only once.
 - The vault service checks authorization before importing recovery phrases/private keys, deriving additional accounts, exporting secrets, deleting accounts, or clearing the wallet.
+- Native Send transactions and browser DApp transaction/message signing now require a separate PIN authorization after the transaction/signature review approval.
 - The authorization capability is not persisted and is not placed in React context or navigation parameters.
 
 ### 3. Secret storage and state isolation
@@ -79,9 +80,12 @@ This implementation is limited to the Android/mobile application. No website or 
 12. Delete the final account using that source; verify its secret is no longer available.
 13. Use Settings → Remove Wallet; verify a PIN is required before the wallet is cleared.
 14. Confirm wallet balances, transaction history, Send/Receive screens, browser, and lock/unlock behavior remain unchanged.
+15. Confirm Send and DApp signing both request a PIN after transaction/signature review; cancel the PIN prompt and verify nothing is signed or broadcast.
 
 ## Security notes
 
 Expo SecureStore relies on the platform secure-storage implementation (Android Keystore-backed encrypted storage on Android). This change does not add a custom encryption layer or use the six-digit PIN as a key-derivation secret. The authorization layer protects application code paths; it is not a defense against a compromised/rooted device, runtime instrumentation, malicious accessibility services, or a user who exposes their recovery phrase/private key.
+
+Signing is still limited to the existing account-zero/original recovery-phrase signing path. Supporting independently derived accounts and imported private-key signing is Phase 3 work; this phase adds PIN authorization to the currently implemented signing paths.
 
 This is an engineering implementation awaiting manual device testing and an independent security review. Do not treat the test APK as audited or use it as a guarantee of production security.
