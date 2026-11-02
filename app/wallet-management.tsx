@@ -148,7 +148,7 @@ export default function WalletManagement() {
               {isActive?<Ionicons name="checkmark-circle" size={21} color="#6C4CF1"/>:<Ionicons name="chevron-forward" size={18} color="#9B97B2"/>}
             </TouchableOpacity>
             <View style={styles.accountActions}>
-              <TouchableOpacity onPress={()=>openMode('rename',vault.id,account.id)}><Ionicons name="pencil-outline" size={16} color="#777286"/></TouchableOpacity>
+              {account.sourceType==='private-key'?<TouchableOpacity onPress={()=>{void activate(vault.id,account.id).then(()=>router.push('/export-private-key'));}}><Ionicons name="download-outline" size={16} color="#6C4CF1"/></TouchableOpacity>:null}<TouchableOpacity onPress={()=>openMode('rename',vault.id,account.id)}><Ionicons name="pencil-outline" size={16} color="#777286"/></TouchableOpacity>
               <TouchableOpacity onPress={()=>remove(vault.id,account.id,account.name)}><Ionicons name="trash-outline" size={16} color="#DC6262"/></TouchableOpacity>
             </View>
           </View>;
