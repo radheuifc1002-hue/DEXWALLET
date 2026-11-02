@@ -80,16 +80,13 @@ export const loadWalletFromStorage = async (): Promise<{
   return { addresses, created, mnemonic };
 };
 
-export const getMnemonic = async (): Promise<string | null> =>
+const getMnemonic = async (): Promise<string | null> =>
   SecureStore.getItemAsync(MNEMONIC_KEY);
 
 export const savePin = async (pin: string): Promise<void> => {
   await SecureStore.setItemAsync(PIN_KEY, pin);
   await Promise.all([SecureStore.deleteItemAsync(PIN_FAILURES_KEY).catch(() => {}), SecureStore.deleteItemAsync(PIN_LOCK_UNTIL_KEY).catch(() => {})]);
 };
-
-export const getPin = async (): Promise<string | null> =>
-  SecureStore.getItemAsync(PIN_KEY);
 
 /** Persistent PIN verification throttle; attempts survive app restarts. */
 export const verifyPin = async (candidate: string): Promise<boolean> => {
