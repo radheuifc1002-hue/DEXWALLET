@@ -196,6 +196,7 @@ export default function Browser() {
   };
   const getAuthorizedMnemonic = async (authorization: WalletAuthorization) => {
     if (!activeWallet?.sourceId || activeWallet.sourceType !== 'mnemonic') throw new Error('The selected account does not contain a recovery phrase.');
+    if (activeWallet.accountIndex !== 0) throw new Error('DApp signing for derived accounts is not enabled yet. Select the original account until Phase 3 is complete.');
     const phrase = await getMnemonicForSource(activeWallet.sourceId, authorization, 'sign-transaction');
     if (!phrase) throw new Error('Wallet secret unavailable. Restore this wallet.');
     return phrase;
