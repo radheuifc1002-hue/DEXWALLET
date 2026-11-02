@@ -8,7 +8,10 @@ import bs58 from 'bs58';
 import { Buffer } from 'buffer';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { useWallet, Blockchain, Token } from '../context/WalletContext';
-import { getMnemonic, signSolanaMessage, deriveAddresses } from '../mobile/services/walletService';
+import { signSolanaMessage, deriveAddresses } from '../mobile/services/walletService';
+import { getMnemonicForSource } from '../mobile/services/walletVaultService';
+import WalletAuthorizationModal from '../components/WalletAuthorizationModal';
+import type { WalletAuthorization } from '../mobile/services/walletSecurityService';
 import { getCentralEvmChainId, serverRpcRequest } from '../mobile/services/serverRpc';
 
 const SYMBOL: Record<Blockchain, string> = { ethereum: 'ETH', bnb: 'BNB', polygon: 'POL', solana: 'SOL' };
@@ -174,6 +177,7 @@ export default function Send() {
   const [hash, setHash] = useState('');
   const [pendingConfirmation, setPendingConfirmation] = useState(false);
   const [error, setError] = useState('');
+  const [authorizationVisible, setAuthorizationVisible] = useState(false);
 
   useEffect(() => {
     setSelectedAsset(nativeAsset);
@@ -198,11 +202,11 @@ export default function Send() {
   const decimals = isNative ? (selectedBlockchain === 'solana' ? 9 : 18) : (selectedAsset.decimals ?? 18);
   const assetSymbol = selectedAsset.symbol;
 
-  const getMnemonicForOriginalWallet = async () => {
-    if (!activeWallet || activeWallet.sourceType !== 'mnemonic') {
-      throw new Error('Sending is currently enabled for the original recovery-phrase wallet only. Watch-only and imported-key wallets cannot sign yet.');
+  const getMnemonicForOriginalWallet = async (authorization: WalletAuthorization) => {
+    if (!activeWallet?.sourceId || activeWallet.sourceType !== 'mnemonic') {
+      throw new Error('Sending is currently enabled for recovery-phrase wallets only. Watch-only and imported-key wallets cannot sign.');
     }
-    const mnemonic = await getMnemonic();
+    const mnemonic = await getMnemonicForSource(activeWallet.sourceId, authorization, 'sign-transaction');
     if (!mnemonic) throw new Error('Wallet secret unavailable. Restore your original wallet.');
     const derived = await deriveAddresses(mnemonic);
     const activeAddress = activeWallet.addresses[selectedBlockchain];
@@ -300,7 +304,8 @@ export default function Send() {
     if (!cleanAmount(amount)) { setError('Enter a valid amount greater than zero.'); return; }
     setPreparing(true);
     try {
-      await getMnemonicForOriginalWallet();
+      if (!activeWallet || activeWallet.sourceType !== 'mnemonic' || !activeWallet.sourceId) throw new Error('Select a recovery-phrase wallet before sending.');
+      if (activeWallet.addresses[selectedBlockchain]?.toLowerCase() !== address.toLowerCase()) throw new Error('Selected wallet address does not match the active address.');
       if (selectedBlockchain === 'solana') {
         const recipientBytes = bs58.decode(to.trim());
         if (recipientBytes.length !== 32) throw new Error('Enter a valid Solana address.');
@@ -502,11 +507,18 @@ export default function Send() {
 
   const send = async () => {
     if (!review || sending) return;
+    if (!activeWallet?.sourceId || activeWallet.sourceType !== 'mnemonic') { setError('Select a recovery-phrase wallet before sending.'); return; }
+    setAuthorizationVisible(true);
+  };
+
+  const performSend = async (authorization: WalletAuthorization) => {
+    if (!review || sending) return;
+    setAuthorizationVisible(false);
     setSending(true);
     setError('');
     let submittedHash = '';
     try {
-      const mnemonic = await getMnemonicForOriginalWallet();
+      const mnemonic = await getMnemonicForOriginalWallet(authorization);
       let txHash = '';
       if (selectedBlockchain === 'solana') {
         if (!review.solMessage || !review.blockhash || review.lastValidBlockHeight === undefined) throw new Error('Transaction review expired. Review again.');
@@ -516,7 +528,7 @@ export default function Send() {
         ]);
         if (actualWalletAddress !== address) throw new Error('Signing account does not match the active Solana address.');
         if (currentBlockHeight > review.lastValidBlockHeight) throw new Error('Solana transaction review expired. Please review the transfer again.');
-        const signature = await signSolanaMessage(review.solMessage);
+        const signature = await signSolanaMessage(review.solMessage, mnemonic);
         if (signature.length !== 64) throw new Error('The wallet returned an invalid Solana signature.');
         const expectedSignature = bs58.encode(Uint8Array.from(signature));
         const raw = Uint8Array.from([...shortvec(1), ...signature, ...review.solMessage]);
@@ -712,6 +724,7 @@ export default function Send() {
             </View>
           </View>
         </Modal>
+        <WalletAuthorizationModal visible={authorizationVisible} action="sign-transaction" title="Verify PIN to send transaction" onAuthorized={performSend} onCancel={() => setAuthorizationVisible(false)} />
       </KeyboardAvoidingView>
     </SafeAreaView>
   );

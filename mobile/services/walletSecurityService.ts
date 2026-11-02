@@ -1,6 +1,6 @@
 import { verifyPin } from './walletService';
 
-export type WalletSensitiveAction = 'import-secret' | 'derive-account' | 'export-secret' | 'delete-account';
+export type WalletSensitiveAction = 'import-secret' | 'derive-account' | 'export-secret' | 'delete-account' | 'sign-transaction';
 declare const authorizationBrand: unique symbol;
 export type WalletAuthorization = { readonly [authorizationBrand]: true };
 const authorizations = new WeakMap<object, { action: WalletSensitiveAction; expiresAt: number }>();

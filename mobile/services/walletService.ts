@@ -140,9 +140,8 @@ export const clearWalletFromStorage = async (): Promise<void> => {
  * Signs an already-reviewed Solana message with the wallet's derived Ed25519
  * key. The mnemonic never leaves native secure storage.
  */
-export const signSolanaMessage = async (message: Uint8Array): Promise<number[]> => {
-  const mnemonic = await getMnemonic();
-  if (!mnemonic) throw new Error('Wallet secret unavailable. Restore wallet.');
+export const signSolanaMessage = async (message: Uint8Array, mnemonic: string): Promise<number[]> => {
+  if (!validateMnemonic(mnemonic)) throw new Error('Wallet secret unavailable. Restore wallet.');
   const seed = bip39.mnemonicToSeedSync(mnemonic.trim()).slice(0, 32);
   const signature = await ed.signAsync(message, seed);
   return Array.from(signature);

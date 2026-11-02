@@ -199,8 +199,8 @@ export async function initializeWalletVaultStore(): Promise<WalletVaultStore> {
   return store;
 }
 
-export async function getMnemonicForSource(sourceId: string, authorization: WalletAuthorization): Promise<string | null> {
-  assertWalletAuthorization(authorization, 'export-secret');
+export async function getMnemonicForSource(sourceId: string, authorization: WalletAuthorization, action: 'export-secret' | 'sign-transaction' = 'export-secret'): Promise<string | null> {
+  assertWalletAuthorization(authorization, action);
   const store = await getWalletVaultStore();
   const source = store.vaults.flatMap((vault) => vault.sources).find((item) => item.id === sourceId);
   if (!source || source.type !== 'mnemonic') throw new Error('Recovery phrase source not found.');

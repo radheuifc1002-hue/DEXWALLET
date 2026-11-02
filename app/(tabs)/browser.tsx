@@ -18,7 +18,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { ethers } from 'ethers';
 import { useWallet, type Blockchain } from '../../context/WalletContext';
 import { getCentralEvmChainId, getCentralRpcUrl } from '../../mobile/services/serverRpc';
-import { getMnemonic, signSolanaMessage } from '../../mobile/services/walletService';
+import { signSolanaMessage } from '../../mobile/services/walletService';
+import { getMnemonicForSource } from '../../mobile/services/walletVaultService';
+import WalletAuthorizationModal from '../../components/WalletAuthorizationModal';
+import type { WalletAuthorization, WalletSensitiveAction } from '../../mobile/services/walletSecurityService';
 
 type DAppShortcut = {
   name: string;
@@ -113,9 +116,11 @@ window.solana=provider;window.phantom=window.phantom||{};window.phantom.solana=p
 })(); true;`;
 
 export default function Browser() {
-  const { selectedBlockchain, setSelectedBlockchain, network, setNetwork, walletAddresses, isLocked } = useWallet();
+  const { selectedBlockchain, setSelectedBlockchain, network, setNetwork, walletAddresses, isLocked, activeWallet } = useWallet();
   const [connectedOrigin, setConnectedOrigin] = useState<string | null>(null);
   const [pendingApproval, setPendingApproval] = useState<any>(null);
+  const [walletAuthAction, setWalletAuthAction] = useState<WalletSensitiveAction | null>(null);
+  const walletAuthResolverRef = useRef<{resolve:(authorization:WalletAuthorization)=>void;reject:(error:Error)=>void}|null>(null);
   const approvalResolver = useRef<((approved: boolean) => void) | null>(null);
   const connectedEvmOriginRef = useRef<string | null>(null);
   const connectedSolanaOriginRef = useRef<string | null>(null);
@@ -176,6 +181,25 @@ export default function Browser() {
       JSON.stringify(hex) + ');}true;'
     );
   }, [selectedBlockchain, network]);
+
+  const requestWalletAuthorization = (action: WalletSensitiveAction) => new Promise<WalletAuthorization>((resolve,reject) => {
+    if (walletAuthResolverRef.current) { reject(new Error('Another wallet authorization is already pending.')); return; }
+    walletAuthResolverRef.current = { resolve, reject };
+    setWalletAuthAction(action);
+  });
+  const resolveWalletAuthorization = (authorization: WalletAuthorization) => {
+    const pending = walletAuthResolverRef.current; walletAuthResolverRef.current = null; setWalletAuthAction(null); pending?.resolve(authorization);
+  };
+  const cancelWalletAuthorization = () => {
+    const pending = walletAuthResolverRef.current; walletAuthResolverRef.current = null; setWalletAuthAction(null);
+    pending?.reject(Object.assign(new Error('User cancelled PIN authorization.'), { code: 4001 }));
+  };
+  const getAuthorizedMnemonic = async (authorization: WalletAuthorization) => {
+    if (!activeWallet?.sourceId || activeWallet.sourceType !== 'mnemonic') throw new Error('The selected account does not contain a recovery phrase.');
+    const phrase = await getMnemonicForSource(activeWallet.sourceId, authorization, 'sign-transaction');
+    if (!phrase) throw new Error('Wallet secret unavailable. Restore this wallet.');
+    return phrase;
+  };
 
   const askApproval = (request: any) => new Promise<boolean>((resolve) => {
     if (approvalResolver.current) { resolve(false); return; }
@@ -262,7 +286,9 @@ export default function Browser() {
         const preview = messages.map((bytes:number[],i:number)=>'Message '+(i+1)+': '+bytes.length+' bytes · '+bytes.slice(0,48).map((b:number)=>b.toString(16).padStart(2,'0')).join('')+(bytes.length>48?'…':''));
         const ok = await askApproval({kind,title:m.type==='xu_solana_sign_message'?'Review Solana message signature':messages.length>1?'Review Solana transactions':'Review Solana transaction',origin,chainName:'Solana',details:['Account: '+address,'Origin: '+origin,...preview,'Signing does not broadcast the transaction. Verify the DApp and transaction details before approving.']});
         if (!ok) throw Object.assign(new Error('User rejected signature.'),{code:4001});
-        const signatures = await Promise.all(messages.map((bytes:number[])=>signSolanaMessage(Uint8Array.from(bytes))));
+        const authorization = await requestWalletAuthorization('sign-transaction');
+        const mnemonic = await getAuthorizedMnemonic(authorization);
+        const signatures = await Promise.all(messages.map((bytes:number[])=>signSolanaMessage(Uint8Array.from(bytes), mnemonic)));
         respondSolana(m.type==='xu_solana_sign_all_transactions'?{signatures}:{signature:signatures[0]});
       } catch(e:any) {
         respondSolana(undefined,{code:typeof e?.code==='number'?e.code:-32603,message:String(e?.message||'Solana request failed')});
@@ -410,8 +436,8 @@ export default function Browser() {
           if (balance < maxCost) throw Object.assign(new Error('Insufficient native-token balance for value and estimated fee.'), {code:-32000});
           const ok = await askApproval({kind:'transaction',title:'Review transaction',origin,chainName:cfg.name,details});
           if (!ok) throw Object.assign(new Error('User rejected transaction.'), {code:4001});
-          const mnemonic = await getMnemonic();
-          if (!mnemonic) throw Object.assign(new Error('Wallet secret unavailable. Restore wallet.'), {code:4100});
+          const authorization = await requestWalletAuthorization('sign-transaction');
+          const mnemonic = await getAuthorizedMnemonic(authorization);
           const signer = ethers.Wallet.fromPhrase(mnemonic);
           if (signer.address.toLowerCase() !== address.toLowerCase()) {
             throw Object.assign(new Error('Derived signing account does not match the displayed wallet address. Transaction blocked.'), {code:4100});
@@ -443,8 +469,8 @@ export default function Browser() {
           }
           const ok = await askApproval({kind:'signature',title:rawSign?'Sign raw data':typed?'Review typed-data signature':'Sign message',origin,chainName:cfg.name,details:['Account: '+address,typed?'Typed data: '+preview:(rawSign?'Raw hash/data: ':'Message: ')+preview,'A signature can authorize off-chain actions. Only approve if you understand the request.']});
           if (!ok) throw Object.assign(new Error('User rejected signature.'), {code:4001});
-          const mnemonic = await getMnemonic();
-          if (!mnemonic) throw Object.assign(new Error('Wallet secret unavailable.'), {code:4100});
+          const authorization = await requestWalletAuthorization('sign-transaction');
+          const mnemonic = await getAuthorizedMnemonic(authorization);
           const signer = ethers.Wallet.fromPhrase(mnemonic);
           if (signer.address.toLowerCase() !== address.toLowerCase()) {
             throw Object.assign(new Error('Derived signing account does not match the connected wallet. Signature blocked.'), {code:4100});
@@ -760,6 +786,7 @@ export default function Browser() {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+      <WalletAuthorizationModal visible={walletAuthAction!==null} action={walletAuthAction??'sign-transaction'} title="Verify PIN to approve DApp signing" onAuthorized={resolveWalletAuthorization} onCancel={cancelWalletAuthorization}/>
     </SafeAreaContextView>
   );
 }
