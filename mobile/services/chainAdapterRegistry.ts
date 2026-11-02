@@ -144,8 +144,8 @@ export async function deriveWalletAddresses(mnemonic: string, accountIndex: numb
     throw new Error('Account index must be a non-negative integer.');
   }
   const [ethereum, solana] = await Promise.all([
-    adapters.ethereum.deriveAddress(mnemonic, accountIndex),
-    adapters.solana.deriveAddress(mnemonic, accountIndex),
+    getChainAdapter('ethereum').deriveAddress(mnemonic, accountIndex),
+    getChainAdapter('solana').deriveAddress(mnemonic, accountIndex),
   ]);
   return { ethereum, bnb: ethereum, polygon: ethereum, solana };
 }
