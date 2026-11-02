@@ -124,7 +124,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           const customTokens = storedCustomTokens ? JSON.parse(storedCustomTokens) as Token[] : [];
           setTokens([...NATIVE_TOKEN_DEFS.map((d) => ({ ...d, balance: 0, balanceUSD: 0 })), ...customTokens]);
           const elapsedMs = lastBackgroundAt.current === null ? Number.POSITIVE_INFINITY : Date.now() - lastBackgroundAt.current;
-          setIsLockedState(timer > 0 && lastBackgroundAt.current !== null && Number.isFinite(elapsedMs) && elapsedMs >= 0 && elapsedMs >= timer * 60 * 1000);
+          const shouldLock = timer > 0 && lastBackgroundAt.current !== null && Number.isFinite(elapsedMs) && elapsedMs >= 0 && elapsedMs >= timer * 60 * 1000;
+          setIsLockedState(shouldLock);
+          if (shouldLock) closeWalletSession(); else openWalletSession();
           lastBackgroundAt.current = null;
           await AsyncStorage.removeItem(BACKGROUND_AT_KEY).catch(() => {});
         }

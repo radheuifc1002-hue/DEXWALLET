@@ -20,6 +20,7 @@ This phase changes Android/Expo app code and mobile CI workflows only. No webapp
 
 ### Recovery phrase and private-key handling
 - Removed the recovery phrase from global WalletContext state.
+- Added an in-memory wallet session for legacy signing flows. PIN or biometric unlock opens it; app lock and auto-lock revoke it. Direct mnemonic reads used by the send and dapp-browser signing paths now fail while the wallet is locked.
 - New and imported recovery phrases are handed between setup screens through Expo SecureStore rather than route parameters.
 - Recovery phrase and private-key export are available only for the selected account and require fresh PIN authorization.
 - Secret material remains in Expo SecureStore. Wallet names, derivation metadata, and public addresses remain in AsyncStorage.
