@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import * as SecureStore from 'expo-secure-store';
 import * as Haptics from 'expo-haptics';
 import { useWallet } from '../context/WalletContext';
 import PinPad from '../components/PinPad';
@@ -16,7 +15,7 @@ type Step = 'current' | 'new' | 'confirm';
 
 export default function ChangePin() {
   const router = useRouter();
-  const { setPin } = useWallet();
+  const { setPin, verifyPin } = useWallet();
   const [step, setStep] = useState<Step>('current');
   const [currentPin, setCurrentPin] = useState('');
   const [newPin, setNewPin] = useState('');
@@ -45,8 +44,7 @@ export default function ChangePin() {
   }, [confirmPin]);
 
   const verifyCurrent = async () => {
-    const stored = await SecureStore.getItemAsync('xu_wallet_pin');
-    if (currentPin === stored) {
+    if (await verifyPin(currentPin)) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       setError('');
       setStep('new');

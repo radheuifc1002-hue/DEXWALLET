@@ -9,7 +9,7 @@ import {
   loadWalletFromStorage,
   clearWalletFromStorage,
   savePin,
-  getPin,
+  verifyPin,
   getBiometricEnabled,
   saveBiometricEnabled,
   WalletAddresses,
@@ -33,7 +33,7 @@ export interface Token {
 interface WalletContextType {
   isWalletCreated: boolean;
   setIsWalletCreated: (value: boolean) => void;
-  pin: string | null;
+  verifyPin: (candidate: string) => Promise<boolean>;
   setPin: (value: string) => Promise<void>;
   seedPhrase: string[];
   setSeedPhrase: (value: string[]) => void;
@@ -78,7 +78,6 @@ const NATIVE_TOKEN_DEFS: { blockchain: Blockchain; id: string; name: string; sym
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [isWalletCreated, setIsWalletCreated] = useState(false);
-  const [pin, setPinState] = useState<string | null>(null);
   const [seedPhrase, setSeedPhrase] = useState<string[]>([]);
   const [selectedBlockchain, setSelectedBlockchain] = useState<Blockchain>('ethereum');
   const [network, setNetwork] = useState<Network>('mainnet');
@@ -95,8 +94,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const init = async () => {
       try {
-        const [storedPin, { addresses, created, mnemonic }, bio, storedTimer, storedBackgroundAt, storedCustomTokens] = await Promise.all([
-          getPin(),
+        const [{ addresses, created, mnemonic }, bio, storedTimer, storedBackgroundAt, storedCustomTokens] = await Promise.all([
           loadWalletFromStorage(),
           getBiometricEnabled(),
           AsyncStorage.getItem(AUTO_LOCK_TIMER_KEY),
@@ -121,7 +119,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         setAutoLockTimerState(timer);
         const backgroundAt = storedBackgroundAt ? Number(storedBackgroundAt) : null;
         lastBackgroundAt.current = Number.isFinite(backgroundAt) ? backgroundAt : null;
-        setPinState(storedPin);
         setBiometricEnabledState(bio);
         if (created && addresses) {
           setIsWalletCreated(true);
@@ -210,7 +207,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const setPin = useCallback(async (value: string) => {
     await savePin(value);
-    setPinState(value);
   }, []);
 
   const setBiometricEnabled = useCallback(async (value: boolean) => {
@@ -299,7 +295,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     await clearWalletVaultStore();
     setWalletVaultStore(null);
     await AsyncStorage.removeItem(CUSTOM_TOKENS_KEY);
-    setPinState(null);
     setSeedPhrase([]);
     setWalletAddresses(null);
     setTokens([]);
@@ -313,7 +308,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       value={{
         isWalletCreated,
         setIsWalletCreated,
-        pin,
+        verifyPin,
         setPin,
         seedPhrase,
         setSeedPhrase,

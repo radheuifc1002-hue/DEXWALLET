@@ -39,6 +39,10 @@ const WALLET_CREATED_KEY = 'xu_wallet_created';
 const PIN_KEY = 'xu_wallet_pin';
 const BIOMETRIC_KEY = 'xu_biometric_enabled';
 const MNEMONIC_KEY = 'xu_wallet_mnemonic';
+const PIN_FAILURES_KEY = 'xu_wallet_pin_failures';
+const PIN_LOCK_UNTIL_KEY = 'xu_wallet_pin_lock_until';
+const PIN_MAX_FAILURES = 5;
+const PIN_LOCK_MS = 30_000;
 
 export const saveWalletToStorage = async (
   addresses: WalletAddresses,
@@ -66,10 +70,33 @@ export const getMnemonic = async (): Promise<string | null> =>
 
 export const savePin = async (pin: string): Promise<void> => {
   await SecureStore.setItemAsync(PIN_KEY, pin);
+  await Promise.all([SecureStore.deleteItemAsync(PIN_FAILURES_KEY).catch(() => {}), SecureStore.deleteItemAsync(PIN_LOCK_UNTIL_KEY).catch(() => {})]);
 };
 
 export const getPin = async (): Promise<string | null> =>
   SecureStore.getItemAsync(PIN_KEY);
+
+/** Persistent PIN verification throttle; attempts survive app restarts. */
+export const verifyPin = async (candidate: string): Promise<boolean> => {
+  if (!/^\d{6}$/.test(candidate)) return false;
+  const lockRaw = await SecureStore.getItemAsync(PIN_LOCK_UNTIL_KEY);
+  const lockUntil = lockRaw ? Number(lockRaw) : 0;
+  if (Number.isFinite(lockUntil) && lockUntil > Date.now()) return false;
+  const stored = await SecureStore.getItemAsync(PIN_KEY);
+  if (!stored) return false;
+  if (candidate === stored) {
+    await Promise.all([SecureStore.deleteItemAsync(PIN_FAILURES_KEY).catch(() => {}), SecureStore.deleteItemAsync(PIN_LOCK_UNTIL_KEY).catch(() => {})]);
+    return true;
+  }
+  const raw = await SecureStore.getItemAsync(PIN_FAILURES_KEY);
+  const failures = Math.max(0, Number(raw) || 0) + 1;
+  if (failures >= PIN_MAX_FAILURES) {
+    await Promise.all([SecureStore.setItemAsync(PIN_FAILURES_KEY, '0'), SecureStore.setItemAsync(PIN_LOCK_UNTIL_KEY, String(Date.now() + PIN_LOCK_MS))]);
+  } else {
+    await SecureStore.setItemAsync(PIN_FAILURES_KEY, String(failures));
+  }
+  return false;
+};
 
 export const getBiometricEnabled = async (): Promise<boolean> => {
   const val = await SecureStore.getItemAsync(BIOMETRIC_KEY);
@@ -85,6 +112,8 @@ export const clearWalletFromStorage = async (): Promise<void> => {
     AsyncStorage.removeItem(WALLET_ADDRESSES_KEY),
     AsyncStorage.removeItem(WALLET_CREATED_KEY),
     SecureStore.deleteItemAsync(PIN_KEY).catch(() => {}),
+    SecureStore.deleteItemAsync(PIN_FAILURES_KEY).catch(() => {}),
+    SecureStore.deleteItemAsync(PIN_LOCK_UNTIL_KEY).catch(() => {}),
     SecureStore.deleteItemAsync(BIOMETRIC_KEY).catch(() => {}),
     SecureStore.deleteItemAsync(MNEMONIC_KEY).catch(() => {}),
   ]);

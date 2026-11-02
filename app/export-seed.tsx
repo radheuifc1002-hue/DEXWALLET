@@ -11,14 +11,13 @@ import {
 import { useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
-import * as SecureStore from 'expo-secure-store';
 import { Ionicons } from '@expo/vector-icons';
 import { useWallet } from '../context/WalletContext';
 import PinPad from '../components/PinPad';
 
 export default function ExportSeed() {
   const router = useRouter();
-  const { seedPhrase, pin } = useWallet();
+  const { seedPhrase, verifyPin } = useWallet();
   const [step, setStep] = useState<'pin' | 'reveal'>('pin');
   const [enteredPin, setEnteredPin] = useState('');
   const [error, setError] = useState('');
@@ -30,8 +29,7 @@ export default function ExportSeed() {
   const handlePin = async (p: string) => {
     setEnteredPin(p);
     if (p.length !== PIN_LENGTH) return;
-    const storedPin = await SecureStore.getItemAsync('xu_wallet_pin');
-    if (p === storedPin) {
+    if (await verifyPin(p)) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setStep('reveal');
     } else {
