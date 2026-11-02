@@ -25,7 +25,9 @@ test('Phase 6: wallet reads and token validation use the server RPC gateway',()=
 
 test('Phase 6: private keys and mnemonic remain local; only signed bytes are broadcast',()=>{
   assert.match(send,/getMnemonicForSource\(/);
-  assert.match(send,/getMnemonicForOriginalWallet\(authorization\)/);
+  assert.match(send,/getSigningMaterial\(authorization\)/);
+  assert.match(send,/getPrivateKeyForSource\(/);
+  assert.match(send,/accountIndex/);
   assert.match(send,/action="sign-transaction"/);
   assert.doesNotMatch(send,/getMnemonic\(\)/);
   assert.match(send,/eth_sendRawTransaction/);
