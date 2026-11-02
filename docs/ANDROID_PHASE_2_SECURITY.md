@@ -20,6 +20,7 @@ This implementation is limited to the Android/mobile application. No website or 
 - Successful PIN verification issues an in-memory, action-scoped authorization capability.
 - Capabilities expire after 45 seconds and can be consumed only once.
 - The vault service checks authorization before importing recovery phrases/private keys, deriving additional accounts, exporting secrets, deleting accounts, or clearing the wallet.
+- Sending transactions and signing DApp requests require a fresh, one-use PIN authorization before the selected mnemonic source is read. The transaction/message review prompt is shown before the PIN prompt.
 - Native Send transactions and browser DApp transaction/message signing now require a separate PIN authorization after the transaction/signature review approval.
 - The authorization capability is not persisted and is not placed in React context or navigation parameters.
 
