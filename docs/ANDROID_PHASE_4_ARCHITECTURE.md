@@ -56,6 +56,6 @@ Added tests/phase-4-chain-adapter.test.mjs to check:
 
 ## Validation and release status
 
-Mobile quality-gate validation is being run on this phase. A successful TypeScript and test run is required before treating the phase as engineering-complete. This document does not replace Android device testing, cryptographic vector tests, or an independent security review.
+Mobile quality gates passed on the Phase 4 implementation and the final index-validation hardening commit: workflow #223 and workflow #224 (push) / #225 (pull request). Application TypeScript, independent backend type-check, and the full repository regression suite passed. The standalone Android APK build is run #193 and is in progress for commit `eb741a60dc73944e3e581a85a1c84b8c2a8edd01`. This does not replace Android device testing, cryptographic vector tests, or an independent security review.
 
 No merge to main is included. The Phase 4 work remains on feature/phase-1-universal-hd-engine.
