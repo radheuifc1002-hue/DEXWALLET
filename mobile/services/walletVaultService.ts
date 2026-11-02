@@ -207,8 +207,8 @@ export async function getMnemonicForSource(sourceId: string, authorization: Wall
   return SecureStore.getItemAsync(secretKey(sourceId));
 }
 
-export async function getPrivateKeyForSource(sourceId: string, authorization: WalletAuthorization): Promise<string | null> {
-  assertWalletAuthorization(authorization, 'export-secret');
+export async function getPrivateKeyForSource(sourceId: string, authorization: WalletAuthorization, action: 'export-secret' | 'sign-transaction' = 'export-secret'): Promise<string | null> {
+  assertWalletAuthorization(authorization, action);
   const store = await getWalletVaultStore();
   const source = store.vaults.flatMap((vault) => vault.sources).find((item) => item.id === sourceId);
   if (!source || source.type !== 'private-key') throw new Error('Private-key source not found.');
