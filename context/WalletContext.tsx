@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { AppState, AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { refreshWalletTokenBalances } from '../mobile/services/balanceService';
+import { assertWalletAuthorization, type WalletAuthorization } from '../mobile/services/walletSecurityService';
 import { initializeWalletVaultStore, clearWalletVaultStore, setActiveWalletAccount as persistActiveWalletAccount, type WalletVaultStore, type WalletAccount, type WalletVault } from '../mobile/services/walletVaultService';
 import {
   deriveAddresses,
@@ -52,7 +53,7 @@ interface WalletContextType {
   setAutoLockTimer: (value: number) => void;
   isLocked: boolean;
   setIsLocked: (value: boolean) => void;
-  resetWallet: () => Promise<void>;
+  resetWallet: (authorization: WalletAuthorization) => Promise<void>;
   isLoading: boolean;
   walletVaultStore: WalletVaultStore | null;
   refreshWalletVaultStore: () => Promise<void>;
@@ -285,7 +286,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setTokens((current) => current.map((token) => ({ ...token, balance: 0, balanceUSD: 0 })));
   }, []);
 
-  const resetWallet = useCallback(async () => {
+  const resetWallet = useCallback(async (authorization: WalletAuthorization) => {
+    assertWalletAuthorization(authorization, 'delete-account');
     await clearWalletFromStorage();
     await clearWalletVaultStore();
     setWalletVaultStore(null);

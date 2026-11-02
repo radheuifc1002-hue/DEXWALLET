@@ -14,6 +14,8 @@ import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useWallet } from '../../context/WalletContext';
 import { SafeAreaView as SafeAreaContextView } from 'react-native-safe-area-context';
+import WalletAuthorizationModal from '../../components/WalletAuthorizationModal';
+import type { WalletAuthorization } from '../../mobile/services/walletSecurityService';
 
 export default function Settings() {
   const router = useRouter();
@@ -26,6 +28,7 @@ export default function Settings() {
     setIsLocked,
   } = useWallet();
   const [bioToggling, setBioToggling] = useState(false);
+  const [removeAuthorizationVisible, setRemoveAuthorizationVisible] = useState(false);
   const handleBioToggle = async (val: boolean) => {
     setBioToggling(true);
     try {
@@ -68,12 +71,17 @@ export default function Settings() {
           text: 'Remove Wallet',
           style: 'destructive',
           onPress: async () => {
-            await resetWallet();
-            router.replace('/onboarding');
+            setRemoveAuthorizationVisible(true);
           },
         },
       ]
     );
+  };
+
+  const confirmRemoveWallet = async (authorization: WalletAuthorization) => {
+    await resetWallet(authorization);
+    setRemoveAuthorizationVisible(false);
+    router.replace('/onboarding');
   };
 
   const LOCK_OPTIONS = [1, 5, 15, 30, 0];
@@ -193,6 +201,7 @@ export default function Settings() {
 
         <Text style={styles.version}>XU Wallet v1.0.0</Text>
       </ScrollView>
+      <WalletAuthorizationModal visible={removeAuthorizationVisible} action="delete-account" title="Verify PIN to remove wallet" onAuthorized={confirmRemoveWallet} onCancel={() => setRemoveAuthorizationVisible(false)} />
     </SafeAreaContextView>
   );
 }

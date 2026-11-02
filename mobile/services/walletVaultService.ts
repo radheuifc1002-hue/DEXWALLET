@@ -502,7 +502,8 @@ export async function removeWalletAccount(vaultId: string, accountId: string, au
   return next;
 }
 
-export async function clearWalletVaultStore(): Promise<void> {
+export async function clearWalletVaultStore(authorization: WalletAuthorization): Promise<void> {
+  assertWalletAuthorization(authorization, 'delete-account');
   const store = await readStore();
   await AsyncStorage.removeItem(STORE_KEY);
   if (!store) return;
