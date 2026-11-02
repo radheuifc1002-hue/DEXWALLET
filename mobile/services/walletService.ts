@@ -47,7 +47,7 @@ const PENDING_MNEMONIC_KEY = 'xu_wallet_pending_mnemonic';
 
 /** Temporary setup hand-off kept in platform secure storage, never global React state or route params. */
 export const stagePendingMnemonic = async (mnemonic: string): Promise<void> => {
-  await SecureStore.setItemAsync(PENDING_MNEMONIC_KEY, mnemonic.trim().toLowerCase().replace(/\\s+/g, ' '));
+  await SecureStore.setItemAsync(PENDING_MNEMONIC_KEY, mnemonic.trim().toLowerCase().replace(/\s+/g, ' '));
 };
 
 export const getPendingMnemonic = async (): Promise<string | null> =>

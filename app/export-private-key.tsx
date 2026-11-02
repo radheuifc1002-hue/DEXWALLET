@@ -7,7 +7,6 @@ import { Ionicons } from '@expo/vector-icons';
 import WalletAuthorizationModal from '../components/WalletAuthorizationModal';
 import type { WalletAuthorization } from '../mobile/services/walletSecurityService';
 import { useWallet } from '../context/WalletContext';
-import { authorizeWalletAction } from '../mobile/services/walletSecurityService';
 import { getPrivateKeyForSource } from '../mobile/services/walletVaultService';
 
 export default function ExportPrivateKey() {
