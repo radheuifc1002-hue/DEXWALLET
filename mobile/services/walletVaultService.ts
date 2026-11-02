@@ -11,7 +11,6 @@ import {
 } from './walletService';
 import type { Blockchain } from '../../context/WalletContext';
 import { deriveWalletAddresses, getAccountDerivationMetadata } from './chainAdapterRegistry';
-import { consumeAuthorization, type AuthorizationGrant } from './walletSecurityService';
 import { assertWalletAuthorization, type WalletAuthorization } from './walletSecurityService';
 
 const STORE_KEY = 'xu_wallet_vault_store_v1';
@@ -217,14 +216,6 @@ export async function getPrivateKeyForSource(sourceId: string, authorization: Wa
 }
 
 
-export async function getPrivateKeyForSource(sourceId: string, grant: AuthorizationGrant): Promise<string | null> {
-  consumeAuthorization(grant, 'export');
-  const store = await getWalletVaultStore();
-  const source = store.vaults.flatMap((vault) => vault.sources).find((item) => item.id === sourceId);
-  if (!source || source.type !== 'private-key') throw new Error('Private-key source not found.');
-  return SecureStore.getItemAsync(secretKey(sourceId));
-}
-
 export async function getWalletVaultStore(): Promise<WalletVaultStore> {
   return (await readStore()) ?? initializeWalletVaultStore();
 }
@@ -260,9 +251,9 @@ export async function renameWalletVault(vaultId: string, name: string): Promise<
 export async function addMnemonicSource(
   vaultId: string,
   mnemonicInput: string,
+  authorization: WalletAuthorization,
   sourceName = 'Recovery Phrase',
   accountName = 'Main Wallet',
-  authorization: WalletAuthorization,
 ): Promise<WalletVaultStore> {
   assertWalletAuthorization(authorization, 'import-secret');
   const mnemonic = mnemonicInput.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -316,7 +307,7 @@ async function deriveAccountAddresses(mnemonic: string, accountIndex: number): P
   return deriveWalletAddresses(mnemonic, accountIndex);
 }
 
-export async function addDerivedAccounts(vaultId: string, sourceId: string, count: number, namePrefix = 'Account', authorization: WalletAuthorization): Promise<WalletVaultStore> {
+export async function addDerivedAccounts(vaultId: string, sourceId: string, count: number, authorization: WalletAuthorization, namePrefix = 'Account'): Promise<WalletVaultStore> {
   assertWalletAuthorization(authorization, 'derive-account');
   if (!Number.isInteger(count) || count < 1 || count > 20) throw new Error('Choose between 1 and 20 accounts.');
   const store = await getWalletVaultStore();
@@ -350,15 +341,15 @@ export async function addDerivedAccounts(vaultId: string, sourceId: string, coun
   return next;
 }
 export async function addDerivedAccount(vaultId: string, sourceId: string, authorization: WalletAuthorization, accountName?: string): Promise<WalletVaultStore> {
-  return addDerivedAccounts(vaultId, sourceId, 1, accountName || 'Account', authorization);
+  return addDerivedAccounts(vaultId, sourceId, 1, authorization, accountName || 'Account');
 }
 
 export async function addPrivateKeyAccount(
   vaultId: string,
   blockchain: Blockchain,
   privateKeyInput: string,
-  accountName = 'Imported Key',
   authorization: WalletAuthorization,
+  accountName = 'Imported Key',
 ): Promise<WalletVaultStore> {
   assertWalletAuthorization(authorization, 'import-secret');
   const privateKey = privateKeyInput.trim();
