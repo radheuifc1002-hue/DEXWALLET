@@ -6,6 +6,10 @@ import { sha512 } from '@noble/hashes/sha2.js';
 import bs58 from 'bs58';
 
 export type WalletChainId = 'ethereum' | 'bnb' | 'polygon' | 'solana';
+export type ChainAdapterId = string;
+
+/** Coin types reserved for later adapter implementations; these chains are not enabled yet. */
+export const FUTURE_CHAIN_COIN_TYPES = Object.freeze({ bitcoin: 0, tron: 195 } as const);
 export type DerivationCurve = 'secp256k1' | 'ed25519';
 
 export interface ChainDerivationMetadata {
@@ -19,7 +23,7 @@ export interface ChainDerivationMetadata {
 }
 
 export interface ChainAdapter {
-  chain: WalletChainId;
+  chain: ChainAdapterId;
   coinType: number;
   curve: DerivationCurve;
   derivationStandard: 'BIP-44' | 'SLIP-0010';
@@ -64,7 +68,7 @@ const evmAdapter = (chain: 'ethereum' | 'bnb' | 'polygon'): ChainAdapter => ({
   },
 });
 
-const adapters = new Map<WalletChainId, ChainAdapter>(Object.entries({
+const adapters = new Map<ChainAdapterId, ChainAdapter>(Object.entries({
   ethereum: evmAdapter('ethereum'),
   bnb: evmAdapter('bnb'),
   polygon: evmAdapter('polygon'),
@@ -90,17 +94,37 @@ const adapters = new Map<WalletChainId, ChainAdapter>(Object.entries({
 
 /** Register a chain implementation without coupling it to vault persistence. */
 export function registerChainAdapter(adapter: ChainAdapter): void {
-  if (!adapter.chain || !Number.isInteger(adapter.coinType) || adapter.coinType < 0) {
+  if (typeof adapter.chain !== 'string' || !/^[a-z][a-z0-9-]{1,31}$/.test(adapter.chain)
+    || !Number.isInteger(adapter.coinType) || adapter.coinType < 0 || adapter.coinType > 0x7fffffff
+    || !adapter.getPath || typeof adapter.deriveAddress !== 'function'
+    || !['secp256k1', 'ed25519'].includes(adapter.curve)
+    || !['BIP-44', 'SLIP-0010'].includes(adapter.derivationStandard)
+    || !['BIP-32', 'SLIP-0010'].includes(adapter.derivationAlgorithm)
+    || !['EVM-hex', 'Solana-base58'].includes(adapter.addressFormat)) {
     throw new Error('Invalid chain adapter registration.');
   }
   if (adapters.has(adapter.chain)) throw new Error(`A chain adapter is already registered for ${adapter.chain}.`);
-  adapters.set(adapter.chain, adapter);
+  adapters.set(adapter.chain, Object.freeze(adapter));
 }
 
-export function getChainAdapter(chain: WalletChainId): ChainAdapter {
+export function getChainAdapter(chain: ChainAdapterId): ChainAdapter {
   const adapter = adapters.get(chain);
   if (!adapter) throw new Error(`No derivation adapter is registered for ${chain}.`);
   return adapter;
+}
+
+/** Public, secret-free registry view for diagnostics and chain capability discovery. */
+export function getRegisteredChainAdapters(): ReadonlyArray<Pick<ChainAdapter, 'chain' | 'coinType' | 'curve' | 'derivationStandard' | 'derivationAlgorithm' | 'addressFormat'>> {
+  return Array.from(adapters.values(), ({ chain, coinType, curve, derivationStandard, derivationAlgorithm, addressFormat }) =>
+    Object.freeze({ chain, coinType, curve, derivationStandard, derivationAlgorithm, addressFormat })
+  );
+}
+
+/** Derive a single chain address without coupling callers to a concrete chain implementation. */
+export async function deriveAddressForChain(chain: ChainAdapterId, mnemonic: string, accountIndex: number): Promise<string> {
+  if (!Number.isInteger(accountIndex) || accountIndex < 0) throw new Error('Account index must be a non-negative integer.');
+  if (!mnemonic || !bip39.validateMnemonic(mnemonic.trim())) throw new Error('Invalid recovery phrase.');
+  return getChainAdapter(chain).deriveAddress(mnemonic.trim(), accountIndex);
 }
 
 export function getDerivationMetadata(chain: WalletChainId, accountIndex: number): ChainDerivationMetadata {
