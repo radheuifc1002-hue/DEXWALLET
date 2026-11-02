@@ -3,7 +3,7 @@ name: Build standalone Android APK
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/phase-1-universal-hd-engine]
     paths:
       - "app/**"
       - "assets/**"

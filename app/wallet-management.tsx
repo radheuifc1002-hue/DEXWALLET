@@ -3,6 +3,8 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal,
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import WalletAuthorizationModal from '../components/WalletAuthorizationModal';
+import type { WalletAuthorization, WalletSensitiveAction } from '../mobile/services/walletSecurityService';
 import { useWallet, type Blockchain } from '../context/WalletContext';
 import {
   createWalletVault, renameWalletVault, addMnemonicSource, addDerivedAccounts,
@@ -26,6 +28,7 @@ export default function WalletManagement() {
   const [addresses,setAddresses]=useState<Record<Blockchain,string>>({ethereum:'',bnb:'',polygon:'',solana:''});
   const [busy,setBusy]=useState(false);
   const [batchCount,setBatchCount]=useState('5');
+  const [authorizationRequest,setAuthorizationRequest]=useState<{action:WalletSensitiveAction;title:string;run:(authorization:WalletAuthorization)=>Promise<void>}|null>(null);
   const vaults=walletVaultStore?.vaults??[];
 
   const openMode=(next:Mode,vaultId?:string,accountId?:string)=>{
@@ -40,16 +43,27 @@ export default function WalletManagement() {
   const finish=async()=>{await refreshWalletVaultStore();setMode(null);setBusy(false);setSecret('');};
   const submit=async()=>{
     if(busy)return;
+    if(mode==='mnemonic'||mode==='private'||mode==='derive'){
+      const action:WalletSensitiveAction=mode==='derive'?'derive-account':'import-secret';
+      setAuthorizationRequest({action,title:mode==='derive'?'Authorize account derivation':'Authorize secret import',run:async(auth)=>{await performSubmit(auth);setAuthorizationRequest(null);}});
+      return;
+    }
+    await performSubmit();
+  };
+  const performSubmit=async(authorization?:WalletAuthorization)=>{
+    if(busy)return;
     setBusy(true);
     try{
       if(mode==='vault'){
         await createWalletVault(name.trim()||'New Vault');
       }else if(mode==='mnemonic'){
         if(!targetVault)throw new Error('Create or select a vault first.');
-        await addMnemonicSource(targetVault,secret,name.trim()||'Recovery Phrase',name.trim()||'Main Wallet');
+        if(!authorization)throw new Error('PIN authorization required.');
+        await addMnemonicSource(targetVault,secret,name.trim()||'Recovery Phrase',name.trim()||'Main Wallet',authorization);
       }else if(mode==='private'){
         if(!targetVault)throw new Error('Create or select a vault first.');
-        await addPrivateKeyAccount(targetVault,chain,secret,name.trim()||'Imported Key');
+        if(!authorization)throw new Error('PIN authorization required.');
+        await addPrivateKeyAccount(targetVault,chain,secret,name.trim()||'Imported Key',authorization);
       }else if(mode==='watch'){
         if(!targetVault)throw new Error('Create or select a vault first.');
         const input:Partial<Record<Blockchain,string>>={};
@@ -59,7 +73,8 @@ export default function WalletManagement() {
         if(!targetVault||!targetAccount)throw new Error('Recovery phrase source not selected.');
         const count=Number(batchCount);
         if(!Number.isInteger(count)||count<1||count>20)throw new Error('Choose between 1 and 20 accounts.');
-        await addDerivedAccounts(targetVault,targetAccount,count,name.trim()||'Account');
+        if(!authorization)throw new Error('PIN authorization required.');
+        await addDerivedAccounts(targetVault,targetAccount,count,name.trim()||'Account',authorization);
       }else if(mode==='rename'){
         if(!targetVault)throw new Error('Wallet or vault not selected.');
         if(targetAccount==='__vault__') await renameWalletVault(targetVault,name);
@@ -81,7 +96,7 @@ export default function WalletManagement() {
   const remove= (vaultId:string,accountId:string,label:string)=>{
     Alert.alert('Remove '+label+'?', 'This removes this account from this device. It does not move or delete funds on-chain. Make sure its recovery information is safely backed up.',[
       {text:'Cancel',style:'cancel'},
-      {text:'Remove',style:'destructive',onPress:async()=>{try{await removeWalletAccount(vaultId,accountId);await refreshWalletVaultStore();}catch(e){Alert.alert('Unable to remove wallet',e instanceof Error?e.message:'Please try again.');}}}
+      {text:'Continue',style:'destructive',onPress:()=>setAuthorizationRequest({action:'delete-account',title:'Authorize wallet removal',run:async(auth)=>{await removeWalletAccount(vaultId,accountId,auth);await refreshWalletVaultStore();setAuthorizationRequest(null);}})}
     ]);
   };
   return <SafeAreaView style={styles.container} edges={['top']}>
@@ -127,6 +142,7 @@ export default function WalletManagement() {
       {vaults.length===0?<View style={styles.empty}><Ionicons name="wallet-outline" size={38} color="#9B97B2"/><Text style={styles.emptyTitle}>No vaults found</Text><Text style={styles.emptyText}>Create a vault or add a wallet to get started.</Text></View>:null}
       <View style={styles.footerNote}><Ionicons name="shield-checkmark-outline" size={16} color="#0D9488"/><Text style={styles.footerText}>Recovery phrases and private keys remain in device secure storage. Watch wallets are read-only.</Text></View>
     </ScrollView>
+    <WalletAuthorizationModal visible={authorizationRequest!==null} action={authorizationRequest?.action??'import-secret'} title={authorizationRequest?.title??'Authorize'} onCancel={()=>setAuthorizationRequest(null)} onAuthorized={async(auth)=>{if(authorizationRequest)await authorizationRequest.run(auth);}} />
     <Modal visible={mode!==null} transparent animationType="slide" onRequestClose={()=>setMode(null)}>
       <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS==='ios'?'padding':undefined}>
         <View style={styles.modalCard}>

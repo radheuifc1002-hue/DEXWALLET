@@ -11,6 +11,7 @@ import {
 } from './walletService';
 import type { Blockchain } from '../../context/WalletContext';
 import { deriveWalletAddresses, getAccountDerivationMetadata } from './chainAdapterRegistry';
+import { assertWalletAuthorization, type WalletAuthorization } from './walletSecurityService';
 
 const STORE_KEY = 'xu_wallet_vault_store_v1';
 const STORE_VERSION = 2;
@@ -198,10 +199,19 @@ export async function initializeWalletVaultStore(): Promise<WalletVaultStore> {
   return store;
 }
 
-export async function getMnemonicForSource(sourceId: string): Promise<string | null> {
+export async function getMnemonicForSource(sourceId: string, authorization: WalletAuthorization): Promise<string | null> {
+  assertWalletAuthorization(authorization, 'export-secret');
   const store = await getWalletVaultStore();
   const source = store.vaults.flatMap((vault) => vault.sources).find((item) => item.id === sourceId);
   if (!source || source.type !== 'mnemonic') throw new Error('Recovery phrase source not found.');
+  return SecureStore.getItemAsync(secretKey(sourceId));
+}
+
+export async function getPrivateKeyForSource(sourceId: string, authorization: WalletAuthorization): Promise<string | null> {
+  assertWalletAuthorization(authorization, 'export-secret');
+  const store = await getWalletVaultStore();
+  const source = store.vaults.flatMap((vault) => vault.sources).find((item) => item.id === sourceId);
+  if (!source || source.type !== 'private-key') throw new Error('Private-key source not found.');
   return SecureStore.getItemAsync(secretKey(sourceId));
 }
 
@@ -242,7 +252,9 @@ export async function addMnemonicSource(
   mnemonicInput: string,
   sourceName = 'Recovery Phrase',
   accountName = 'Main Wallet',
+  authorization: WalletAuthorization,
 ): Promise<WalletVaultStore> {
+  assertWalletAuthorization(authorization, 'import-secret');
   const mnemonic = mnemonicInput.trim().toLowerCase().replace(/\s+/g, ' ');
   if (!validateMnemonic(mnemonic)) throw new Error('Invalid recovery phrase.');
   const addresses = await deriveAddresses(mnemonic);
@@ -294,7 +306,8 @@ async function deriveAccountAddresses(mnemonic: string, accountIndex: number): P
   return deriveWalletAddresses(mnemonic, accountIndex);
 }
 
-export async function addDerivedAccounts(vaultId: string, sourceId: string, count: number, namePrefix = 'Account'): Promise<WalletVaultStore> {
+export async function addDerivedAccounts(vaultId: string, sourceId: string, count: number, namePrefix = 'Account', authorization: WalletAuthorization): Promise<WalletVaultStore> {
+  assertWalletAuthorization(authorization, 'derive-account');
   if (!Number.isInteger(count) || count < 1 || count > 20) throw new Error('Choose between 1 and 20 accounts.');
   const store = await getWalletVaultStore();
   const vault = findVault(store, vaultId);
@@ -326,8 +339,8 @@ export async function addDerivedAccounts(vaultId: string, sourceId: string, coun
   await persistStore(next);
   return next;
 }
-export async function addDerivedAccount(vaultId: string, sourceId: string, accountName?: string): Promise<WalletVaultStore> {
-  return addDerivedAccounts(vaultId, sourceId, 1, accountName || 'Account');
+export async function addDerivedAccount(vaultId: string, sourceId: string, authorization: WalletAuthorization, accountName?: string): Promise<WalletVaultStore> {
+  return addDerivedAccounts(vaultId, sourceId, 1, accountName || 'Account', authorization);
 }
 
 export async function addPrivateKeyAccount(
@@ -335,7 +348,9 @@ export async function addPrivateKeyAccount(
   blockchain: Blockchain,
   privateKeyInput: string,
   accountName = 'Imported Key',
+  authorization: WalletAuthorization,
 ): Promise<WalletVaultStore> {
+  assertWalletAuthorization(authorization, 'import-secret');
   const privateKey = privateKeyInput.trim();
   if (!privateKey) throw new Error('Private key is required.');
   let addresses: Partial<WalletAddresses>;
@@ -458,7 +473,8 @@ export async function setActiveWalletAccount(vaultId: string, accountId: string)
   return next;
 }
 
-export async function removeWalletAccount(vaultId: string, accountId: string): Promise<WalletVaultStore> {
+export async function removeWalletAccount(vaultId: string, accountId: string, authorization: WalletAuthorization): Promise<WalletVaultStore> {
+  assertWalletAuthorization(authorization, 'delete-account');
   const store = await getWalletVaultStore();
   const vault = findVault(store, vaultId);
   const account = vault.accounts.find((item) => item.id === accountId);
