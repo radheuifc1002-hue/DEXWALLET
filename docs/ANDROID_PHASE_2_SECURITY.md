@@ -20,8 +20,7 @@ This implementation is limited to the Android/mobile application. No website or 
 - Successful PIN verification issues an in-memory, action-scoped authorization capability.
 - Capabilities expire after 45 seconds and can be consumed only once.
 - The vault service checks authorization before importing recovery phrases/private keys, deriving additional accounts, exporting secrets, deleting accounts, or clearing the wallet.
-- Sending transactions and signing DApp requests require a fresh, one-use PIN authorization before the selected mnemonic source is read. The transaction/message review prompt is shown before the PIN prompt.
-- Native Send transactions and browser DApp transaction/message signing now require a separate PIN authorization after the transaction/signature review approval.
+- Native Send transactions and browser DApp transaction/message signing require a fresh, one-use PIN authorization after transaction/signature review and before the selected mnemonic source is read.
 - The authorization capability is not persisted and is not placed in React context or navigation parameters.
 
 ### 3. Secret storage and state isolation
@@ -63,7 +62,9 @@ This implementation is limited to the Android/mobile application. No website or 
 - TypeScript application validation: passed.
 - Backend API type-check: passed (run as an existing repository quality gate; no backend files were changed).
 - Existing RPC and transaction-history regression tests: passed.
-- Android standalone APK workflow: initiated for the feature branch. Add the final workflow result and APK artifact reference after the build completes.
+- Mobile quality gates passed on commit `fc66b4839e7a24657223efa10f7f9890a188405c` (application TypeScript, backend TypeScript, and all 42 existing regression tests).
+- Standalone Android release APK build passed: workflow run #186 (`41391228182`). The workflow verified that the APK contains a bundled native application and uploaded the artifact.
+- Test APK: `app-release.apk`, 49,571,664 bytes. Release tag: `android-release-test-186`.
 
 ## Manual Android test checklist
 
@@ -89,4 +90,4 @@ Expo SecureStore relies on the platform secure-storage implementation (Android K
 
 Signing is still limited to the existing account-zero/original recovery-phrase signing path. Supporting independently derived accounts and imported private-key signing is Phase 3 work; this phase adds PIN authorization to the currently implemented signing paths.
 
-This is an engineering implementation awaiting manual device testing and an independent security review. Do not treat the test APK as audited or use it as a guarantee of production security.
+This is an engineering implementation awaiting manual device testing and an independent security review. The APK is a manual-testing build, not an audited production release.
