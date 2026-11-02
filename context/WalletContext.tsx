@@ -287,9 +287,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const resetWallet = useCallback(async (authorization: WalletAuthorization) => {
-    assertWalletAuthorization(authorization, 'delete-account');
+    await clearWalletVaultStore(authorization);
     await clearWalletFromStorage();
-    await clearWalletVaultStore();
     setWalletVaultStore(null);
     await AsyncStorage.removeItem(CUSTOM_TOKENS_KEY);
     setWalletAddresses(null);
