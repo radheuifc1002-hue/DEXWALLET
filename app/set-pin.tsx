@@ -7,15 +7,17 @@ import {
   TouchableOpacity,
   Alert,
 } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useWallet } from '../context/WalletContext';
 import PinPad from '../components/PinPad';
+import { consumePendingMnemonic } from '../mobile/services/walletService';
 
 export default function SetPin() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ mnemonic?: string }>();
-  const { setPin, initWallet, seedPhrase } = useWallet();
+  const { setPin, initWallet } = useWallet();
+  const [pendingMnemonic, setPendingMnemonic] = useState<string | null>(null);
+  useEffect(() => { void consumePendingMnemonic().then(setPendingMnemonic); }, []);
 
   const [step, setStep] = useState<'enter' | 'confirm'>('enter');
   const [firstPin, setFirstPin] = useState('');
@@ -45,7 +47,7 @@ export default function SetPin() {
       return;
     }
 
-    const mnemonic = params.mnemonic || (seedPhrase.length > 0 ? seedPhrase.join(' ') : null);
+    const mnemonic = pendingMnemonic;
     if (!mnemonic) {
       Alert.alert('Error', 'No wallet seed found. Please restart the setup.');
       return;

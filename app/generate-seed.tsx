@@ -12,12 +12,10 @@ import { useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
-import { generateMnemonic } from '../mobile/services/walletService';
-import { useWallet } from '../context/WalletContext';
+import { generateMnemonic, stagePendingMnemonic } from '../mobile/services/walletService';
 
 export default function GenerateSeed() {
   const router = useRouter();
-  const { setSeedPhrase } = useWallet();
   const [words, setWords] = useState<string[]>([]);
   const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -26,7 +24,7 @@ export default function GenerateSeed() {
     const mnemonic = generateMnemonic();
     const w = mnemonic.split(' ');
     setWords(w);
-    setSeedPhrase(w);
+    void stagePendingMnemonic(mnemonic);
   }, []);
 
   const handleCopy = async () => {

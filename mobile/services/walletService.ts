@@ -43,6 +43,18 @@ const PIN_FAILURES_KEY = 'xu_wallet_pin_failures';
 const PIN_LOCK_UNTIL_KEY = 'xu_wallet_pin_lock_until';
 const PIN_MAX_FAILURES = 5;
 const PIN_LOCK_MS = 30_000;
+const PENDING_MNEMONIC_KEY = 'xu_wallet_pending_mnemonic';
+
+/** Temporary setup hand-off kept in platform secure storage, never global React state or route params. */
+export const stagePendingMnemonic = async (mnemonic: string): Promise<void> => {
+  await SecureStore.setItemAsync(PENDING_MNEMONIC_KEY, mnemonic.trim().toLowerCase().replace(/\\s+/g, ' '));
+};
+
+export const consumePendingMnemonic = async (): Promise<string | null> => {
+  const mnemonic = await SecureStore.getItemAsync(PENDING_MNEMONIC_KEY);
+  await SecureStore.deleteItemAsync(PENDING_MNEMONIC_KEY).catch(() => {});
+  return mnemonic;
+};
 
 export const saveWalletToStorage = async (
   addresses: WalletAddresses,
@@ -116,6 +128,7 @@ export const clearWalletFromStorage = async (): Promise<void> => {
     SecureStore.deleteItemAsync(PIN_LOCK_UNTIL_KEY).catch(() => {}),
     SecureStore.deleteItemAsync(BIOMETRIC_KEY).catch(() => {}),
     SecureStore.deleteItemAsync(MNEMONIC_KEY).catch(() => {}),
+    SecureStore.deleteItemAsync(PENDING_MNEMONIC_KEY).catch(() => {}),
   ]);
 };
 

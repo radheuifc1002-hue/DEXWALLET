@@ -35,8 +35,6 @@ interface WalletContextType {
   setIsWalletCreated: (value: boolean) => void;
   verifyPin: (candidate: string) => Promise<boolean>;
   setPin: (value: string) => Promise<void>;
-  seedPhrase: string[];
-  setSeedPhrase: (value: string[]) => void;
   selectedBlockchain: Blockchain;
   setSelectedBlockchain: (value: Blockchain) => void;
   network: Network;
@@ -78,7 +76,6 @@ const NATIVE_TOKEN_DEFS: { blockchain: Blockchain; id: string; name: string; sym
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [isWalletCreated, setIsWalletCreated] = useState(false);
-  const [seedPhrase, setSeedPhrase] = useState<string[]>([]);
   const [selectedBlockchain, setSelectedBlockchain] = useState<Blockchain>('ethereum');
   const [network, setNetwork] = useState<Network>('mainnet');
   const [tokens, setTokens] = useState<Token[]>([]);
@@ -122,7 +119,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         setBiometricEnabledState(bio);
         if (created && addresses) {
           setIsWalletCreated(true);
-          if (mnemonic) setSeedPhrase(mnemonic.split(' '));
           const customTokens = storedCustomTokens ? JSON.parse(storedCustomTokens) as Token[] : [];
           setTokens([...NATIVE_TOKEN_DEFS.map((d) => ({ ...d, balance: 0, balanceUSD: 0 })), ...customTokens]);
           const elapsedMs = lastBackgroundAt.current === null ? Number.POSITIVE_INFINITY : Date.now() - lastBackgroundAt.current;
@@ -222,7 +218,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     await saveWalletToStorage(addresses, mnemonic);
     const vaultStore = await initializeWalletVaultStore();
     setWalletVaultStore(vaultStore);
-    setSeedPhrase(mnemonic.split(' '));
     const native = NATIVE_TOKEN_DEFS.map((d) => ({ ...d, balance: 0, balanceUSD: 0 }));
     const storedCustom = await AsyncStorage.getItem(CUSTOM_TOKENS_KEY);
     const custom = storedCustom ? JSON.parse(storedCustom) as Token[] : [];
@@ -295,7 +290,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     await clearWalletVaultStore();
     setWalletVaultStore(null);
     await AsyncStorage.removeItem(CUSTOM_TOKENS_KEY);
-    setSeedPhrase([]);
     setWalletAddresses(null);
     setTokens([]);
     setIsWalletCreated(false);
@@ -310,8 +304,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         setIsWalletCreated,
         verifyPin,
         setPin,
-        seedPhrase,
-        setSeedPhrase,
         selectedBlockchain,
         setSelectedBlockchain,
         network,

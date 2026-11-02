@@ -15,7 +15,7 @@ import { useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
-import { validateMnemonic } from '../mobile/services/walletService';
+import { validateMnemonic, stagePendingMnemonic } from '../mobile/services/walletService';
 
 export default function ImportWallet() {
   const router = useRouter();
@@ -35,7 +35,7 @@ export default function ImportWallet() {
       setError('Invalid seed phrase. Check for typos and try again.');
       return;
     }
-    router.push({ pathname: '/set-pin', params: { mnemonic: cleaned } });
+    void stagePendingMnemonic(cleaned).then(() => router.push('/set-pin')).catch(() => setError('Unable to securely prepare wallet import. Please try again.'));
   };
 
   const wordCount = mnemonic.trim() ? mnemonic.trim().split(/\s+/).length : 0;

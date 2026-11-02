@@ -13,11 +13,13 @@ import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useWallet } from '../context/WalletContext';
+import { getMnemonicForSource } from '../mobile/services/walletVaultService';
 import PinPad from '../components/PinPad';
 
 export default function ExportSeed() {
   const router = useRouter();
-  const { seedPhrase, verifyPin } = useWallet();
+  const { verifyPin, activeWallet } = useWallet();
+  const [seedPhrase, setSeedPhrase] = useState<string[]>([]);
   const [step, setStep] = useState<'pin' | 'reveal'>('pin');
   const [enteredPin, setEnteredPin] = useState('');
   const [error, setError] = useState('');
@@ -30,8 +32,16 @@ export default function ExportSeed() {
     setEnteredPin(p);
     if (p.length !== PIN_LENGTH) return;
     if (await verifyPin(p)) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setStep('reveal');
+      try {
+        if (!activeWallet?.sourceId || activeWallet.sourceType !== 'mnemonic') throw new Error('The selected account does not have a recovery phrase.');
+        const phrase = await getMnemonicForSource(activeWallet.sourceId);
+        if (!phrase) throw new Error('Recovery phrase is unavailable.');
+        setSeedPhrase(phrase.split(' '));
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        setStep('reveal');
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'Unable to load recovery phrase.');
+      }
     } else {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       setError('Incorrect PIN. Try again.');
