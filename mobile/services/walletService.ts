@@ -1,6 +1,8 @@
 import * as bip39 from 'bip39';
 import { ethers } from 'ethers';
 import * as ed from '@noble/ed25519';
+import { hmac } from '@noble/hashes/hmac.js';
+import { sha512 } from '@noble/hashes/sha2.js';
 import bs58 from 'bs58';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
@@ -140,9 +142,36 @@ export const clearWalletFromStorage = async (): Promise<void> => {
  * Signs an already-reviewed Solana message with the wallet's derived Ed25519
  * key. The mnemonic never leaves native secure storage.
  */
-export const signSolanaMessage = async (message: Uint8Array, mnemonic: string): Promise<number[]> => {
+const deriveSolanaSigningSeed = (mnemonic: string, accountIndex: number): Uint8Array => {
+  if (!Number.isInteger(accountIndex) || accountIndex < 0) throw new Error('Invalid Solana account index.');
+  const bip39Seed = bip39.mnemonicToSeedSync(mnemonic.trim());
+  if (accountIndex === 0) return bip39Seed.slice(0, 32); // Preserve the legacy XU account-zero key.
+  const key = new Uint8Array([101, 100, 50, 53, 53, 49, 57, 32, 115, 101, 101, 100]);
+  let digest = hmac(sha512, key, bip39Seed);
+  let childKey = digest.slice(0, 32);
+  let chainCode = digest.slice(32);
+  for (const component of [44, 501, accountIndex, 0]) {
+    const data = new Uint8Array(37);
+    data[0] = 0;
+    data.set(childKey, 1);
+    new DataView(data.buffer).setUint32(33, (component + 0x80000000) >>> 0, false);
+    digest = hmac(sha512, chainCode, data);
+    childKey = digest.slice(0, 32);
+    chainCode = digest.slice(32);
+  }
+  return childKey;
+};
+
+export const signSolanaMessage = async (message: Uint8Array, mnemonic: string, accountIndex = 0): Promise<number[]> => {
   if (!validateMnemonic(mnemonic)) throw new Error('Wallet secret unavailable. Restore wallet.');
-  const seed = bip39.mnemonicToSeedSync(mnemonic.trim()).slice(0, 32);
-  const signature = await ed.signAsync(message, seed);
+  const signature = await ed.signAsync(message, deriveSolanaSigningSeed(mnemonic, accountIndex));
   return Array.from(signature);
+};
+
+export const signSolanaMessageWithPrivateKey = async (message: Uint8Array, privateKey: string): Promise<number[]> => {
+  let decoded: Uint8Array;
+  try { decoded = bs58.decode(privateKey.trim()); } catch { throw new Error('Stored Solana private key is invalid.'); }
+  const seed = decoded.length === 64 ? decoded.slice(0, 32) : decoded;
+  if (seed.length !== 32) throw new Error('Stored Solana private key has an unsupported length.');
+  return Array.from(await ed.signAsync(message, seed));
 };
