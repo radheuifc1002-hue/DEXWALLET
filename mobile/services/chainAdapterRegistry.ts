@@ -33,9 +33,19 @@ export interface ChainAdapter {
   deriveAddress(mnemonic: string, accountIndex: number): Promise<string>;
 }
 
-const evmPath = (accountIndex: number) => `m/44'/60'/0'/0/${accountIndex}`;
+const assertAccountIndex = (accountIndex: number): void => {
+  if (!Number.isSafeInteger(accountIndex) || accountIndex < 0 || accountIndex > 0x7fffffff) {
+    throw new Error('Account index must be a safe non-negative integer.');
+  }
+};
+
+const evmPath = (accountIndex: number) => {
+  assertAccountIndex(accountIndex);
+  return `m/44'/60'/0'/0/${accountIndex}`;
+};
 
 async function deriveSolanaSlip10(mnemonic: string, accountIndex: number): Promise<string> {
+  assertAccountIndex(accountIndex);
   const seed = bip39.mnemonicToSeedSync(mnemonic);
   const slip10Key = new Uint8Array([101, 100, 50, 53, 53, 49, 57, 32, 115, 101, 101, 100]);
   let digest = hmac(sha512, slip10Key, seed);
@@ -79,8 +89,9 @@ const adapters = new Map<ChainAdapterId, ChainAdapter>(Object.entries({
     derivationStandard: 'SLIP-0010',
     derivationAlgorithm: 'SLIP-0010',
     addressFormat: 'Solana-base58',
-    getPath: (accountIndex) => `m/44'/501'/${accountIndex}'/0'`,
+    getPath: (accountIndex) => { assertAccountIndex(accountIndex); return `m/44'/501'/${accountIndex}'/0'`; },
     async deriveAddress(mnemonic, accountIndex) {
+      assertAccountIndex(accountIndex);
       // The original XU Solana account used the first 32 bytes of the BIP-39
       // seed directly. Keep that address stable; later accounts use SLIP-0010.
       if (accountIndex === 0) {
@@ -128,9 +139,7 @@ export async function deriveAddressForChain(chain: ChainAdapterId, mnemonic: str
 }
 
 export function getDerivationMetadata(chain: WalletChainId, accountIndex: number): ChainDerivationMetadata {
-  if (!Number.isInteger(accountIndex) || accountIndex < 0) {
-    throw new Error('Account index must be a non-negative integer.');
-  }
+  assertAccountIndex(accountIndex);
   const adapter = getChainAdapter(chain);
   if (chain === 'solana' && accountIndex === 0) {
     return {
@@ -164,9 +173,7 @@ export function getAccountDerivationMetadata(accountIndex: number): Record<Walle
 }
 
 export async function deriveWalletAddresses(mnemonic: string, accountIndex: number): Promise<Record<WalletChainId, string>> {
-  if (!Number.isInteger(accountIndex) || accountIndex < 0) {
-    throw new Error('Account index must be a non-negative integer.');
-  }
+  assertAccountIndex(accountIndex);
   const [ethereum, solana] = await Promise.all([
     getChainAdapter('ethereum').deriveAddress(mnemonic, accountIndex),
     getChainAdapter('solana').deriveAddress(mnemonic, accountIndex),
