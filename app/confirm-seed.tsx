@@ -10,7 +10,7 @@ import {
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
-import { consumePendingMnemonic } from '../mobile/services/walletService';
+import { getPendingMnemonic } from '../mobile/services/walletService';
 
 export default function ConfirmSeed() {
   const router = useRouter();
@@ -22,7 +22,7 @@ export default function ConfirmSeed() {
 
   useEffect(() => {
     let mounted = true;
-    void consumePendingMnemonic().then((phrase) => { if (mounted && phrase) setSeedPhrase(phrase.split(' ')); });
+    void getPendingMnemonic().then((phrase) => { if (mounted && phrase) setSeedPhrase(phrase.split(' ')); });
     return () => { mounted = false; };
   }, []);
 

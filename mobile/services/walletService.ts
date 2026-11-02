@@ -50,6 +50,9 @@ export const stagePendingMnemonic = async (mnemonic: string): Promise<void> => {
   await SecureStore.setItemAsync(PENDING_MNEMONIC_KEY, mnemonic.trim().toLowerCase().replace(/\\s+/g, ' '));
 };
 
+export const getPendingMnemonic = async (): Promise<string | null> =>
+  SecureStore.getItemAsync(PENDING_MNEMONIC_KEY);
+
 export const consumePendingMnemonic = async (): Promise<string | null> => {
   const mnemonic = await SecureStore.getItemAsync(PENDING_MNEMONIC_KEY);
   await SecureStore.deleteItemAsync(PENDING_MNEMONIC_KEY).catch(() => {});
