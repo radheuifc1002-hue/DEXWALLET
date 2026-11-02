@@ -4,6 +4,7 @@ import * as ed from '@noble/ed25519';
 import bs58 from 'bs58';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
+import { assertWalletSession } from './walletSessionService';
 
 export interface WalletAddresses {
   ethereum: string;
@@ -80,8 +81,10 @@ export const loadWalletFromStorage = async (): Promise<{
   return { addresses, created, mnemonic };
 };
 
-const getMnemonic = async (): Promise<string | null> =>
-  SecureStore.getItemAsync(MNEMONIC_KEY);
+export const getMnemonic = async (): Promise<string | null> => {
+  assertWalletSession();
+  return SecureStore.getItemAsync(MNEMONIC_KEY);
+};
 
 export const savePin = async (pin: string): Promise<void> => {
   await SecureStore.setItemAsync(PIN_KEY, pin);

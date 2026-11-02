@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { AppState, AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { refreshWalletTokenBalances } from '../mobile/services/balanceService';
+import { openWalletSession, closeWalletSession } from '../mobile/services/walletSessionService';
 import { assertWalletAuthorization, type WalletAuthorization } from '../mobile/services/walletSecurityService';
 import { initializeWalletVaultStore, clearWalletVaultStore, setActiveWalletAccount as persistActiveWalletAccount, type WalletVaultStore, type WalletAccount, type WalletVault } from '../mobile/services/walletVaultService';
 import {
@@ -176,6 +177,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         elapsedMs >= autoLockTimer * 60 * 1000
       ) {
         setIsLockedState(true);
+        closeWalletSession();
       }
 
       lastBackgroundAt.current = null;
@@ -186,6 +188,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const setIsLocked = useCallback((value: boolean) => {
     setIsLockedState(value);
+    if (value) closeWalletSession(); else openWalletSession();
     if (!value) {
       lastBackgroundAt.current = null;
       void AsyncStorage.removeItem(BACKGROUND_AT_KEY).catch(() => {});
@@ -200,6 +203,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       AsyncStorage.setItem(AUTO_LOCK_TIMER_KEY, String(safeValue)),
       AsyncStorage.removeItem(BACKGROUND_AT_KEY),
     ]);
+  }, []);
+
+  const verifyPinAndOpenSession = useCallback(async (candidate: string) => {
+    const valid = await verifyPin(candidate);
+    if (valid) openWalletSession();
+    return valid;
   }, []);
 
   const setPin = useCallback(async (value: string) => {
@@ -289,13 +298,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const resetWallet = useCallback(async (authorization: WalletAuthorization) => {
     await clearWalletVaultStore(authorization);
     await clearWalletFromStorage();
+    closeWalletSession();
     setWalletVaultStore(null);
     await AsyncStorage.removeItem(CUSTOM_TOKENS_KEY);
     setWalletAddresses(null);
     setTokens([]);
     setIsWalletCreated(false);
     setBiometricEnabledState(false);
-    setIsLocked(false);
+    setIsLockedState(false);
+    closeWalletSession();
   }, []);
 
   return (
@@ -303,7 +314,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       value={{
         isWalletCreated,
         setIsWalletCreated,
-        verifyPin,
+        verifyPin: verifyPinAndOpenSession,
         setPin,
         selectedBlockchain,
         setSelectedBlockchain,
