@@ -28,7 +28,7 @@ Android application only. This phase extends transaction signing to the selected
 
 ## Validation
 
-Automated validation is being run by the repository's Mobile quality gates workflow on the Phase 3 branch commit. Do not treat this document as a substitute for manual device testing or an independent security review.
+Automated validation passed in Mobile quality gates workflow run #211 on implementation commit `92b16f43f690b00bed33ca5ac769ae5212433c97`: application TypeScript validation, backend API type-check (existing repository gate; no backend files changed), and all 43 regression tests passed. Do not treat this as a substitute for manual device testing or an independent security review. An Android release APK has not yet been built for this Phase 3 change.
 
 ## Manual Android test checklist
 
