@@ -11,6 +11,7 @@ const limiter=read('backend/api/_lib/rate-limit.ts');
 const history=read('backend/api/history.ts');
 const solHistory=read('backend/api/solana-history.ts');
 const assetScreen=read('app/asset-details.tsx');
+const browser=read('app/(tabs)/browser.tsx');
 
 test('Phase 6: wallet reads and token validation use the server RPC gateway',()=>{
   for(const source of [send,balances,tokenImport]) assert.match(source,/serverRpcRequest/);
@@ -23,10 +24,20 @@ test('Phase 6: wallet reads and token validation use the server RPC gateway',()=
 });
 
 test('Phase 6: private keys and mnemonic remain local; only signed bytes are broadcast',()=>{
-  assert.match(send,/getMnemonic\(\)/);
+  assert.match(send,/getMnemonicForSource\(/);
+  assert.match(send,/getMnemonicForOriginalWallet\(authorization\)/);
+  assert.match(send,/action="sign-transaction"/);
+  assert.doesNotMatch(send,/getMnemonic\(\)/);
   assert.match(send,/eth_sendRawTransaction/);
   assert.match(send,/sendTransaction/);
   assert.doesNotMatch(send,/JSON\.stringify\([^)]*mnemonic/i);
+});
+
+test('Phase 6: DApp signing requires PIN authorization and selected vault secret access',()=>{
+  assert.match(browser,/requestWalletAuthorization\('sign-transaction'\)/);
+  assert.match(browser,/getMnemonicForSource\(/);
+  assert.match(browser,/WalletAuthorizationModal/);
+  assert.doesNotMatch(browser,/getMnemonic\(\)/);
 });
 
 test('Phase 7: per-asset history has a hard 50-row cap and explorer navigation',()=>{
