@@ -26,7 +26,7 @@ export const validateMnemonic = (mnemonic: string): boolean =>
 
 export const deriveAddresses = async (mnemonic: string): Promise<WalletAddresses> => {
   const addresses = await deriveWalletAddresses(mnemonic.trim(), 0);
-  return addresses;
+  return { ...addresses, bitcoinTestnet: await deriveBitcoinAddress(mnemonic.trim(), 0, 'testnet') };
 };
 
 const WALLET_ADDRESSES_KEY = 'xu_wallet_addresses';
