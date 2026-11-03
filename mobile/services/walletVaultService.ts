@@ -4,13 +4,12 @@ import { ethers } from 'ethers';
 import * as ed from '@noble/ed25519';
 import bs58 from 'bs58';
 import {
-  deriveAddresses,
   loadWalletFromStorage,
   validateMnemonic,
   type WalletAddresses,
 } from './walletService';
 import type { Blockchain } from '../../context/WalletContext';
-import { deriveWalletAddresses, getAccountDerivationMetadata } from './chainAdapterRegistry';
+import { deriveAddressForChain, getDerivationMetadata, getAccountDerivationMetadata } from './chainAdapterRegistry';
 import { assertWalletAuthorization, type WalletAuthorization } from './walletSecurityService';
 
 const STORE_KEY = 'xu_wallet_vault_store_v1';
@@ -24,6 +23,8 @@ export interface WalletKeySource {
   name: string;
   createdAt: number;
   blockchain?: Blockchain;
+  /** Explicitly enabled chains; absent on legacy multi-chain sources. */
+  blockchains?: Blockchain[];
 }
 
 export interface WalletAccount {
@@ -93,10 +94,10 @@ async function readStore(): Promise<WalletVaultStore | null> {
           ...account,
           derivationMetadata: account.derivationMetadata ?? metadata,
           derivationPaths: {
-            ethereum: account.derivationPaths?.ethereum ?? metadata.ethereum.path,
-            bnb: account.derivationPaths?.bnb ?? metadata.bnb.path,
-            polygon: account.derivationPaths?.polygon ?? metadata.polygon.path,
-            solana: account.derivationPaths?.solana ?? metadata.solana.path,
+            ...(account.addresses.ethereum ? { ethereum: account.derivationPaths?.ethereum ?? metadata.ethereum.path } : {}),
+            ...(account.addresses.bnb ? { bnb: account.derivationPaths?.bnb ?? metadata.bnb.path } : {}),
+            ...(account.addresses.polygon ? { polygon: account.derivationPaths?.polygon ?? metadata.polygon.path } : {}),
+            ...(account.addresses.solana ? { solana: account.derivationPaths?.solana ?? metadata.solana.path } : {}),
           },
         };
       }),
@@ -254,11 +255,15 @@ export async function addMnemonicSource(
   authorization: WalletAuthorization,
   sourceName = 'Recovery Phrase',
   accountName = 'Main Wallet',
+  blockchains: Blockchain[] = ['ethereum', 'bnb', 'polygon', 'solana'],
 ): Promise<WalletVaultStore> {
   assertWalletAuthorization(authorization, 'import-secret');
   const mnemonic = mnemonicInput.trim().toLowerCase().replace(/\s+/g, ' ');
   if (!validateMnemonic(mnemonic)) throw new Error('Invalid recovery phrase.');
-  const addresses = await deriveAddresses(mnemonic);
+  const selectedChains = Array.from(new Set(blockchains));
+  if (!selectedChains.length || selectedChains.some((chain) => !['ethereum', 'bnb', 'polygon', 'solana'].includes(chain))) throw new Error('Select at least one supported blockchain.');
+  const addressEntries = await Promise.all(selectedChains.map(async (chain) => [chain, await deriveAddressForChain(chain, mnemonic, 0)] as const));
+  const addresses: Partial<WalletAddresses> = Object.fromEntries(addressEntries);
   const store = await getWalletVaultStore();
   const vault = findVault(store, vaultId);
   if (accountExists(vault, addresses)) throw new Error('This wallet is already present in this vault.');
@@ -270,21 +275,19 @@ export async function addMnemonicSource(
     type: 'mnemonic',
     name: sourceName.trim() || 'Recovery Phrase',
     createdAt: Date.now(),
+    blockchains: selectedChains,
   };
+  const metadata = Object.fromEntries(selectedChains.map((chain) => [chain, getDerivationMetadata(chain, 0)]));
+  const paths = Object.fromEntries(selectedChains.map((chain) => [chain, getDerivationMetadata(chain, 0).path]));
   const account: WalletAccount = {
     id: makeId('account'),
     sourceId,
     sourceType: 'mnemonic',
     name: accountName.trim() || 'Main Wallet',
     accountIndex: 0,
-    derivationPaths: {
-      ethereum: "m/44'/60'/0'/0/0",
-      bnb: "m/44'/60'/0'/0/0",
-      polygon: "m/44'/60'/0'/0/0",
-      solana: 'legacy:first-32-bytes-of-bip39-seed',
-    },
+    derivationPaths: paths,
     addresses,
-    derivationMetadata: getAccountDerivationMetadata(0),
+    derivationMetadata: metadata,
     createdAt: Date.now(),
   };
   const nextVault = { ...vault, sources: [...vault.sources, source], accounts: [...vault.accounts, account] };
@@ -303,8 +306,9 @@ export async function addMnemonicSource(
   return next;
 }
 
-async function deriveAccountAddresses(mnemonic: string, accountIndex: number): Promise<WalletAddresses> {
-  return deriveWalletAddresses(mnemonic, accountIndex);
+async function deriveAccountAddresses(mnemonic: string, accountIndex: number, chains: Blockchain[]): Promise<Partial<WalletAddresses>> {
+  const entries = await Promise.all(chains.map(async (chain) => [chain, await deriveAddressForChain(chain, mnemonic, accountIndex)] as const));
+  return Object.fromEntries(entries);
 }
 
 export async function addDerivedAccounts(vaultId: string, sourceId: string, count: number, authorization: WalletAuthorization, namePrefix = 'Account'): Promise<WalletVaultStore> {
@@ -316,23 +320,21 @@ export async function addDerivedAccounts(vaultId: string, sourceId: string, coun
   if (!source || source.type !== 'mnemonic') throw new Error('Recovery phrase source not found.');
   const phrase = await SecureStore.getItemAsync(secretKey(sourceId));
   if (!phrase) throw new Error('Recovery phrase is unavailable. Restore this wallet.');
+  const sourceChains = source.blockchains?.length ? source.blockchains : (['ethereum', 'bnb', 'polygon', 'solana'] as Blockchain[]);
   const used = vault.accounts.filter((a) => a.sourceId === sourceId && a.accountIndex !== null).map((a) => a.accountIndex as number);
   const first = used.length ? Math.max(...used) + 1 : 0;
   const created: WalletAccount[] = [];
   for (let i = 0; i < count; i += 1) {
     const index = first + i;
-    const addresses = await deriveAccountAddresses(phrase, index);
+    const addresses = await deriveAccountAddresses(phrase, index, sourceChains);
     if (accountExists({ ...vault, accounts: [...vault.accounts, ...created] }, addresses)) throw new Error('A derived account already exists. No accounts were added.');
-    const derivationMetadata = getAccountDerivationMetadata(index);
+    const fullMetadata = getAccountDerivationMetadata(index);
+    const derivationMetadata = Object.fromEntries(sourceChains.map((chain) => [chain, fullMetadata[chain]]));
+    const derivationPaths = Object.fromEntries(sourceChains.map((chain) => [chain, fullMetadata[chain].path]));
     created.push({
       id: makeId('account'), sourceId, sourceType: 'mnemonic',
       name: `${namePrefix.trim() || 'Account'} ${index + 1}`, accountIndex: index,
-      derivationPaths: {
-        ethereum: derivationMetadata.ethereum.path,
-        bnb: derivationMetadata.bnb.path,
-        polygon: derivationMetadata.polygon.path,
-        solana: derivationMetadata.solana.path,
-      },
+      derivationPaths,
       derivationMetadata, addresses, createdAt: Date.now(),
     });
   }
