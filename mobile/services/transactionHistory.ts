@@ -7,7 +7,7 @@ export type EvmHistoryRow = {
 export type EvmHistoryResult = { rows:EvmHistoryRow[]; complete:boolean; warning?:string };
 
 type Options = {
-  chain: Exclude<Blockchain, 'solana'>;
+  chain: Exclude<Blockchain, 'solana'|'bitcoin'|'tron'>;
   network: 'mainnet' | 'testnet';
   walletAddress: string;
   contractAddress: string;
