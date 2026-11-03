@@ -231,12 +231,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setBiometricEnabledState(value);
   }, []);
 
-  const walletAddress = walletAddresses ? walletAddresses[selectedBlockchain] ?? '' : '';
+  const walletAddress = walletAddresses ? (selectedBlockchain === 'bitcoin' && network === 'testnet' ? walletAddresses.bitcoinTestnet ?? '' : walletAddresses[selectedBlockchain] ?? '') : '';
 
   const initWallet = useCallback(async (mnemonic: string, config?: { name?: string; blockchains?: Blockchain[] }) => {
     const allAddresses = await deriveAddresses(mnemonic);
     const selectedChains: Blockchain[] = Array.from(new Set<Blockchain>(config?.blockchains?.length ? config.blockchains : ['ethereum', 'bnb', 'polygon', 'arbitrum', 'solana', 'bitcoin', 'tron']));
-    const addresses = { ethereum: selectedChains.includes('ethereum') ? allAddresses.ethereum : '', bnb: selectedChains.includes('bnb') ? allAddresses.bnb : '', polygon: selectedChains.includes('polygon') ? allAddresses.polygon : '', arbitrum: selectedChains.includes('arbitrum') ? allAddresses.arbitrum : '', solana: selectedChains.includes('solana') ? allAddresses.solana : '', bitcoin: selectedChains.includes('bitcoin') ? allAddresses.bitcoin : '', tron: selectedChains.includes('tron') ? allAddresses.tron : '' };
+    const addresses = { ethereum: selectedChains.includes('ethereum') ? allAddresses.ethereum : '', bnb: selectedChains.includes('bnb') ? allAddresses.bnb : '', polygon: selectedChains.includes('polygon') ? allAddresses.polygon : '', arbitrum: selectedChains.includes('arbitrum') ? allAddresses.arbitrum : '', solana: selectedChains.includes('solana') ? allAddresses.solana : '', bitcoin: selectedChains.includes('bitcoin') ? allAddresses.bitcoin : '', bitcoinTestnet: selectedChains.includes('bitcoin') ? allAddresses.bitcoinTestnet : '', tron: selectedChains.includes('tron') ? allAddresses.tron : '' };
     setSelectedBlockchain(selectedChains[0]);
     setWalletAddresses(addresses);
     await saveWalletToStorage(addresses, mnemonic);
@@ -262,7 +262,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     if (!walletAddresses || isLocked || !isWalletCreated) return;
     setIsLoadingBalances(true);
     try {
-      const refreshed = await refreshWalletTokenBalances(walletAddresses, tokens, network);
+      const addressesForNetwork = selectedBlockchain === 'bitcoin' && network === 'testnet' ? { ...walletAddresses, bitcoin: walletAddresses.bitcoinTestnet ?? '' } : walletAddresses;\n      const refreshed = await refreshWalletTokenBalances(addressesForNetwork, tokens, network);
       setTokens((current) => current.map((token) => refreshed.find((item) => item.id === token.id) || token));
     } finally {
       setIsLoadingBalances(false);
