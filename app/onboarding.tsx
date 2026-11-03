@@ -12,13 +12,12 @@ export default function Onboarding() {
         <View style={styles.brandMark}><Ionicons name="layers" size={36} color="#FFFFFF" /></View>
         <Text style={styles.logo}>XU</Text>
         <Text style={styles.brandCaption}>YOUR KEYS. YOUR COINS.</Text>
-        <Text style={styles.chains}>Solana  ·  Ethereum  ·  BNB  ·  Polygon</Text>
-        <Text style={styles.chains}>Arbitrum  ·  Bitcoin  ·  TRON</Text>
-        <Text style={styles.descriptor}>A wallet that stays yours.</Text>
-        <TouchableOpacity style={styles.continueBtn} onPress={() => setShowActions(true)} activeOpacity={0.86}>
-          <Text style={styles.continueText}>Continue</Text>
-          <Ionicons name="arrow-forward" size={19} color="#FFFFFF" />
-        </TouchableOpacity>
+        {!showActions ? (
+          <TouchableOpacity style={styles.continueBtn} onPress={() => setShowActions(true)} activeOpacity={0.86}>
+            <Text style={styles.continueText}>Continue</Text>
+            <Ionicons name="arrow-forward" size={19} color="#FFFFFF" />
+          </TouchableOpacity>
+        ) : null}
       </View>
       {showActions ? (
         <View style={styles.actions}>
@@ -47,8 +46,6 @@ const styles = StyleSheet.create({
   brandMark:{width:76,height:76,borderRadius:25,backgroundColor:'#6C4CF1',alignItems:'center',justifyContent:'center',marginBottom:18,shadowColor:'#6C4CF1',shadowOpacity:0.2,shadowRadius:16,shadowOffset:{width:0,height:8},elevation:5},
   logo:{fontSize:76,fontWeight:'900',color:'#211B35',letterSpacing:5,lineHeight:88},
   brandCaption:{fontSize:11,fontWeight:'900',letterSpacing:2.4,color:'#6C4CF1',marginTop:5,marginBottom:22},
-  chains:{fontSize:13,color:'#777286',fontWeight:'600',textAlign:'center',lineHeight:22},
-  descriptor:{fontSize:15,color:'#211B35',fontWeight:'600',marginTop:20,marginBottom:26},
   continueBtn:{width:'100%',height:58,borderRadius:17,backgroundColor:'#6C4CF1',flexDirection:'row',alignItems:'center',justifyContent:'center',gap:12,shadowColor:'#6C4CF1',shadowOpacity:0.18,shadowRadius:12,shadowOffset:{width:0,height:5},elevation:4},
   continueText:{color:'#FFFFFF',fontSize:17,fontWeight:'800'},
   actions:{gap:12,paddingBottom:10},
