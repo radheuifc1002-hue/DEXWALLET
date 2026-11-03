@@ -60,7 +60,7 @@ export default function Home() {
   const [walletPickerVisible, setWalletPickerVisible] = useState(false);
   const [switchingWalletId, setSwitchingWalletId] = useState<string | null>(null);
 
-  const visibleTokens = tokens.filter((token) => token.blockchain === selectedBlockchain).sort((a, b) => Number(!a.contractAddress) - Number(!b.contractAddress) || (b.balanceUSD || 0) - (a.balanceUSD || 0));
+  const visibleTokens = tokens.filter((token) => token.blockchain === selectedBlockchain).sort((a, b) => Number(Boolean(a.contractAddress)) - Number(Boolean(b.contractAddress)) || (b.balanceUSD || 0) - (a.balanceUSD || 0));
   const totalUSD = visibleTokens.reduce((s, t) => s + (!t.contractAddress ? (t.balanceUSD || 0) : 0), 0);
 
   const handleWalletSelect = async (vaultId: string, accountId: string) => {
