@@ -74,6 +74,7 @@ export default function ImportWallet() {
           {!hdWallet?<View style={styles.chainRow}>{chains.map(item=><TouchableOpacity key={item.id} style={[styles.chainChip,chain===item.id&&styles.chainChipActive]} onPress={()=>setChain(item.id)}><Text style={[styles.chainText,chain===item.id&&styles.chainTextActive]}>{item.label}</Text></TouchableOpacity>)}</View>:null}</>:<><Text style={styles.chainHeading}>Private-key blockchain</Text><View style={styles.chainRow}>{chains.map(item=><TouchableOpacity key={item.id} style={[styles.chainChip,chain===item.id&&styles.chainChipActive]} onPress={()=>setChain(item.id)}><Text style={[styles.chainText,chain===item.id&&styles.chainTextActive]}>{item.label}</Text></TouchableOpacity>)}</View><TextInput style={styles.input} value={privateKey} onChangeText={setPrivateKey} placeholder="Enter private key" placeholderTextColor="#9B97B2" autoCapitalize="none" autoCorrect={false} secureTextEntry/></>}
           <Text style={styles.subtitle}>{method==='phrase'?'Enter your 12- or 24-word recovery phrase separated by spaces.':'Import one chain-specific private key. EVM keys work across Ethereum, BNB and Polygon; Solana keys are separate.'}</Text>
 
+          {method==='phrase'?<>
           <View style={[styles.inputCard, error ? styles.inputCardError : null]}>
             <TextInput
               style={styles.input}
@@ -99,6 +100,7 @@ export default function ImportWallet() {
               <Text style={styles.pasteBtnText}>Paste</Text>
             </TouchableOpacity>
           </View>
+          </>:null}
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
