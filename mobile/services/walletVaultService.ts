@@ -9,7 +9,7 @@ import {
   type WalletAddresses,
 } from './walletService';
 import type { Blockchain } from '../../context/WalletContext';
-import { deriveAddressForChain, getDerivationMetadata, getAccountDerivationMetadata } from './chainAdapterRegistry';
+import { deriveAddressForChain, deriveAddressFromPrivateKey, getDerivationMetadata, getAccountDerivationMetadata } from './chainAdapterRegistry';
 import { assertWalletAuthorization, type WalletAuthorization } from './walletSecurityService';
 
 const STORE_KEY = 'xu_wallet_vault_store_v1';
@@ -446,8 +446,7 @@ export async function addPrivateKeyAccount(
     addresses = { solana: bs58.encode(await ed.getPublicKeyAsync(seed)) };
   } else {
     const normalizedKey = privateKey.startsWith('0x') ? privateKey : `0x${privateKey}`;
-    const wallet = new ethers.Wallet(normalizedKey);
-    addresses = { [blockchain]: wallet.address };
+    addresses = { [blockchain]: deriveAddressFromPrivateKey(blockchain, normalizedKey) };
   }
 
   const store = await getWalletVaultStore();
