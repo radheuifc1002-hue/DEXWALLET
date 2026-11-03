@@ -65,7 +65,7 @@ export async function proxyChainRpc(chain:Chain,network:RpcNetwork,body:unknown)
   return result(id,response);
  }catch(error){return failure(id,error instanceof Error?error.message:'Upstream provider unavailable',-32000,502);}
 }
-export async function probeChainRpc(chain:Chain,network:RpcNetwork):Promise<{name:string;configured:boolean;healthy:boolean;latencyMs:number|null;lastFailure?:string}>{
+export async function probeChainRpc(chain:Chain,network:RpcNetwork):Promise<{name:string;configured:boolean;healthy:boolean;circuit:'closed'|'open';cooldownMs:number;latencyMs:number|null;consecutiveFailures:number;lastCheckedAt:number;lastFailure?:string}>{
  const started=Date.now();
  try{
   if(chain==='bitcoin'){const height=await request(BTC[network]+'/blocks/tip/height');if(!Number.isFinite(Number(height)))throw new Error('Invalid Bitcoin tip height');}
