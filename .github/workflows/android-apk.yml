@@ -12,7 +12,7 @@ on:
       - "hooks/**"
       - "services/**"
       - "mobile/**"
-      - "backend/api/**"
+      - "backend/api/**"\n      - "tests/**"
       - "index.js"
       - "package.json"
       - "package-lock.json"
