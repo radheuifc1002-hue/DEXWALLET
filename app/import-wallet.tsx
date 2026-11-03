@@ -60,7 +60,7 @@ export default function ImportWallet() {
 
           <Text style={styles.title}>Import Wallet</Text>
           <Text style={styles.subtitle}>
-            Enter your 12-word seed phrase separated by spaces.
+            Enter your 12- or 24-word recovery phrase separated by spaces.
           </Text>
 
           <View style={[styles.inputCard, error ? styles.inputCardError : null]}>
@@ -82,7 +82,7 @@ export default function ImportWallet() {
           </View>
 
           <View style={styles.meta}>
-            <Text style={styles.metaText}>{wordCount} / 12 words</Text>
+            <Text style={styles.metaText}>{wordCount} words · 12 or 24 required</Text>
             <TouchableOpacity onPress={handlePaste} style={styles.pasteBtn}>
               <Ionicons name="clipboard-outline" size={16} color="#6C4CF1" />
               <Text style={styles.pasteBtnText}>Paste</Text>
@@ -99,9 +99,9 @@ export default function ImportWallet() {
           </View>
 
           <TouchableOpacity
-            style={[styles.continueBtn, wordCount !== 12 && styles.continueBtnDisabled]}
+            style={[styles.continueBtn, ![12, 24].includes(wordCount) && styles.continueBtnDisabled]}
             onPress={handleContinue}
-            disabled={wordCount !== 12}
+            disabled={!([12, 24].includes(wordCount))}
             activeOpacity={0.85}
           >
             <Text style={styles.continueBtnText}>Continue</Text>
