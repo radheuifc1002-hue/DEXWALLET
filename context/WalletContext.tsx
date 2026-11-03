@@ -262,7 +262,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     if (!walletAddresses || isLocked || !isWalletCreated) return;
     setIsLoadingBalances(true);
     try {
-      const addressesForNetwork = selectedBlockchain === 'bitcoin' && network === 'testnet' ? { ...walletAddresses, bitcoin: walletAddresses.bitcoinTestnet ?? '' } : walletAddresses;\n      const refreshed = await refreshWalletTokenBalances(addressesForNetwork, tokens, network);
+      const addressesForNetwork = network === 'testnet' ? { ...walletAddresses, bitcoin: walletAddresses.bitcoinTestnet ?? '' } : walletAddresses;\n      const refreshed = await refreshWalletTokenBalances(addressesForNetwork, tokens, network);
       setTokens((current) => current.map((token) => refreshed.find((item) => item.id === token.id) || token));
     } finally {
       setIsLoadingBalances(false);
