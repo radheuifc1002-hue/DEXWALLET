@@ -60,6 +60,7 @@ export default function Home() {
   const [walletPickerVisible, setWalletPickerVisible] = useState(false);
   const [switchingWalletId, setSwitchingWalletId] = useState<string | null>(null);
 
+  const activeWalletHasChainAddress = Boolean(activeWallet?.addresses[selectedBlockchain]?.trim());
   const visibleTokens = tokens.filter((token) => token.blockchain === selectedBlockchain).sort((a, b) => Number(Boolean(a.contractAddress)) - Number(Boolean(b.contractAddress)) || (b.balanceUSD || 0) - (a.balanceUSD || 0));
   const totalUSD = visibleTokens.reduce((s, t) => s + (!t.contractAddress ? (t.balanceUSD || 0) : 0), 0);
 
@@ -113,8 +114,8 @@ export default function Home() {
             <Text style={styles.headerTitle}>XU Wallet</Text>
             <TouchableOpacity style={styles.walletSelector} onPress={() => setWalletPickerVisible(true)} activeOpacity={0.75}>
               <Ionicons name="wallet" size={15} color="#6C4CF1" />
-              <Text style={styles.walletSelectorName}>{activeWallet?.name || 'Manage wallets'}</Text>
-              {activeWallet?.sourceType === 'watch-only' ? <Text style={styles.homeWatchBadge}>WATCH</Text> : null}
+              <Text style={styles.walletSelectorName}>{activeWalletHasChainAddress ? activeWallet?.name : 'Select wallet on this chain'}</Text>
+              {activeWalletHasChainAddress && activeWallet?.sourceType === 'watch-only' ? <Text style={styles.homeWatchBadge}>WATCH</Text> : null}
               <Text style={styles.walletSelectorVault}>{activeVault?.name || ''}</Text>
               <Ionicons name="chevron-down" size={14} color="#6C4CF1" />
             </TouchableOpacity>
