@@ -25,7 +25,7 @@ const CHAIN_COLORS: Record<string, string> = {
   ethereum: '#627EEA',
   solana: '#9945FF',
   bnb: '#F3BA2F',
-  polygon: '#8247E5',
+  polygon: '#8247E5', arbitrum:'#28A0F0', bitcoin:'#F7931A', tron:'#EF0027',
 };
 
 export default function Receive() {
@@ -45,9 +45,7 @@ export default function Receive() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const CHAINS: Array<'ethereum' | 'solana' | 'bnb' | 'polygon'> = [
-    'ethereum', 'solana', 'bnb', 'polygon',
-  ];
+  const CHAINS: Array<Blockchain> = ['ethereum','solana','bnb','polygon','arbitrum','bitcoin','tron'];
 
   return (
     <SafeAreaView style={styles.container}>
