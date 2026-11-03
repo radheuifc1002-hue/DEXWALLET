@@ -18,7 +18,10 @@ const CHAIN_SYMBOLS: Record<string, string> = {
   ethereum: 'ETH',
   solana: 'SOL',
   bnb: 'BNB',
-  polygon: 'MATIC',
+  polygon: 'POL',
+  arbitrum: 'ETH',
+  bitcoin: 'BTC',
+  tron: 'TRX',
 };
 
 const CHAIN_COLORS: Record<string, string> = {
