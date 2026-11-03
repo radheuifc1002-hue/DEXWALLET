@@ -379,7 +379,14 @@ async function deriveAccountAddresses(mnemonic: string, accountIndex: number, ch
   return Object.fromEntries(entries);
 }
 
-export async function addDerivedAccounts(vaultId: string, sourceId: string, count: number, authorization: WalletAuthorization, namePrefix = 'Account'): Promise<WalletVaultStore> {
+export async function addDerivedAccounts(
+  vaultId: string,
+  sourceId: string,
+  count: number,
+  authorization: WalletAuthorization,
+  namePrefix = 'Account',
+  blockchain?: Blockchain,
+): Promise<WalletVaultStore> {
   assertWalletAuthorization(authorization, 'derive-account');
   if (!Number.isInteger(count) || count < 1 || count > 20) throw new Error('Choose between 1 and 20 accounts.');
   const store = await getWalletVaultStore();
@@ -388,17 +395,22 @@ export async function addDerivedAccounts(vaultId: string, sourceId: string, coun
   if (!source || source.type !== 'mnemonic') throw new Error('Recovery phrase source not found.');
   const phrase = await SecureStore.getItemAsync(secretKey(sourceId));
   if (!phrase) throw new Error('Recovery phrase is unavailable. Restore this wallet.');
-  const sourceChains = source.blockchains?.length ? source.blockchains : (['ethereum', 'bnb', 'polygon', 'solana'] as Blockchain[]);
+  const enabledChains = source.blockchains?.length ? source.blockchains : (['ethereum', 'bnb', 'polygon', 'solana'] as Blockchain[]);
+  // A chain-scoped Add Wallet must never silently create sibling-chain accounts.
+  const targetChains = blockchain ? [blockchain] : enabledChains;
+  if (targetChains.some((chain) => !enabledChains.includes(chain))) {
+    throw new Error('This recovery phrase is not enabled for the selected blockchain.');
+  }
   const used = vault.accounts.filter((a) => a.sourceId === sourceId && a.accountIndex !== null).map((a) => a.accountIndex as number);
   const first = used.length ? Math.max(...used) + 1 : 0;
   const created: WalletAccount[] = [];
   for (let i = 0; i < count; i += 1) {
     const index = first + i;
-    const addresses = await deriveAccountAddresses(phrase, index, sourceChains);
+    const addresses = await deriveAccountAddresses(phrase, index, targetChains);
     if (accountExists({ ...vault, accounts: [...vault.accounts, ...created] }, addresses)) throw new Error('A derived account already exists. No accounts were added.');
     const fullMetadata = getAccountDerivationMetadata(index);
-    const derivationMetadata = Object.fromEntries(sourceChains.map((chain) => [chain, fullMetadata[chain]]));
-    const derivationPaths = Object.fromEntries(sourceChains.map((chain) => [chain, fullMetadata[chain].path]));
+    const derivationMetadata = Object.fromEntries(targetChains.map((chain) => [chain, fullMetadata[chain]]));
+    const derivationPaths = Object.fromEntries(targetChains.map((chain) => [chain, fullMetadata[chain].path]));
     created.push({
       id: makeId('account'), sourceId, sourceType: 'mnemonic',
       name: `${namePrefix.trim() || 'Account'} ${index + 1}`, accountIndex: index,

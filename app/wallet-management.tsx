@@ -75,7 +75,7 @@ export default function WalletManagement() {
         const count=Number(batchCount);
         if(!Number.isInteger(count)||count<1||count>20)throw new Error('Choose between 1 and 20 accounts.');
         if(!authorization)throw new Error('PIN authorization required.');
-        await addDerivedAccounts(targetVault,targetAccount,count,authorization,name.trim()||'Account');
+        await addDerivedAccounts(targetVault,targetAccount,count,authorization,name.trim()||'Account',selectedBlockchain);
       }else if(mode==='rename'){
         if(!targetVault)throw new Error('Wallet or vault not selected.');
         if(targetAccount==='__vault__') await renameWalletVault(targetVault,name);
