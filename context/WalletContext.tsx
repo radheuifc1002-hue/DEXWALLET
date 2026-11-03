@@ -294,6 +294,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         solana: active.account.addresses.solana ?? '',
         bnb: active.account.addresses.bnb ?? '',
         polygon: active.account.addresses.polygon ?? '',
+        arbitrum: active.account.addresses.arbitrum ?? '',
+        bitcoin: active.account.addresses.bitcoin ?? '',
+        bitcoinTestnet: active.account.addresses.bitcoinTestnet ?? '',
+        tron: active.account.addresses.tron ?? '',
       });
     } else {
       setWalletAddresses(null);
@@ -311,6 +315,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       solana: account.addresses.solana ?? '',
       bnb: account.addresses.bnb ?? '',
       polygon: account.addresses.polygon ?? '',
+      arbitrum: account.addresses.arbitrum ?? '',
+      bitcoin: account.addresses.bitcoin ?? '',
+      bitcoinTestnet: account.addresses.bitcoinTestnet ?? '',
+      tron: account.addresses.tron ?? '',
     });
     setTokens((current) => current.map((token) => ({ ...token, balance: 0, balanceUSD: 0 })));
   }, []);
