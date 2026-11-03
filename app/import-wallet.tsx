@@ -27,7 +27,7 @@ export default function ImportWallet() {
   const [walletName,setWalletName]=useState('Imported Wallet');
   const [hdWallet,setHdWallet]=useState(true);
   const [chain,setChain]=useState<Blockchain>('ethereum');
-  const chains:{id:Blockchain;label:string}[]=[{id:'ethereum',label:'Ethereum'},{id:'bnb',label:'BNB'},{id:'polygon',label:'Polygon'},{id:'solana',label:'Solana'}];
+  const chains:{id:Blockchain;label:string}[]=[{id:'ethereum',label:'Ethereum'},{id:'bnb',label:'BNB'},{id:'polygon',label:'Polygon'},{id:'arbitrum',label:'Arbitrum'},{id:'solana',label:'Solana'},{id:'bitcoin',label:'Bitcoin'},{id:'tron',label:'TRON'}];
 
   const handlePaste = async () => {
     const text = await Clipboard.getStringAsync();
@@ -70,9 +70,9 @@ export default function ImportWallet() {
           <TextInput style={styles.walletNameInput} value={walletName} onChangeText={setWalletName} placeholder="Wallet name" placeholderTextColor="#9B97B2" />
           <View style={styles.chainRow}><TouchableOpacity style={[styles.chainChip,method==='phrase'&&styles.chainChipActive]} onPress={()=>setMethod('phrase')}><Text style={[styles.chainText,method==='phrase'&&styles.chainTextActive]}>Recovery phrase</Text></TouchableOpacity><TouchableOpacity style={[styles.chainChip,method==='private'&&styles.chainChipActive]} onPress={()=>{setMethod('private');setHdWallet(false);}}><Text style={[styles.chainText,method==='private'&&styles.chainTextActive]}>Private key</Text></TouchableOpacity></View>
           {method==='phrase'?<><Text style={styles.chainHeading}>Blockchain access</Text>
-          <View style={styles.chainRow}><TouchableOpacity style={[styles.chainChip,hdWallet&&styles.chainChipActive]} onPress={()=>setHdWallet(true)}><Text style={[styles.chainText,hdWallet&&styles.chainTextActive]}>HD Wallet · All 4</Text></TouchableOpacity><TouchableOpacity style={[styles.chainChip,!hdWallet&&styles.chainChipActive]} onPress={()=>setHdWallet(false)}><Text style={[styles.chainText,!hdWallet&&styles.chainTextActive]}>Single chain</Text></TouchableOpacity></View>
+          <View style={styles.chainRow}><TouchableOpacity style={[styles.chainChip,hdWallet&&styles.chainChipActive]} onPress={()=>setHdWallet(true)}><Text style={[styles.chainText,hdWallet&&styles.chainTextActive]}>HD Wallet · All 7</Text></TouchableOpacity><TouchableOpacity style={[styles.chainChip,!hdWallet&&styles.chainChipActive]} onPress={()=>setHdWallet(false)}><Text style={[styles.chainText,!hdWallet&&styles.chainTextActive]}>Single chain</Text></TouchableOpacity></View>
           {!hdWallet?<View style={styles.chainRow}>{chains.map(item=><TouchableOpacity key={item.id} style={[styles.chainChip,chain===item.id&&styles.chainChipActive]} onPress={()=>setChain(item.id)}><Text style={[styles.chainText,chain===item.id&&styles.chainTextActive]}>{item.label}</Text></TouchableOpacity>)}</View>:null}</>:<><Text style={styles.chainHeading}>Private-key blockchain</Text><View style={styles.chainRow}>{chains.map(item=><TouchableOpacity key={item.id} style={[styles.chainChip,chain===item.id&&styles.chainChipActive]} onPress={()=>setChain(item.id)}><Text style={[styles.chainText,chain===item.id&&styles.chainTextActive]}>{item.label}</Text></TouchableOpacity>)}</View><TextInput style={styles.input} value={privateKey} onChangeText={setPrivateKey} placeholder="Enter private key" placeholderTextColor="#9B97B2" autoCapitalize="none" autoCorrect={false} secureTextEntry/></>}
-          <Text style={styles.subtitle}>{method==='phrase'?'Enter your 12- or 24-word recovery phrase separated by spaces.':'Import one chain-specific private key. EVM keys work across Ethereum, BNB and Polygon; Solana keys are separate.'}</Text>
+          <Text style={styles.subtitle}>{method==='phrase'?'Enter your 12- or 24-word recovery phrase separated by spaces.':'Import one chain-specific private key. EVM keys work across Ethereum, BNB, Polygon and Arbitrum; Bitcoin, TRON and Solana use their own address formats.'}</Text>
 
           {method==='phrase'?<>
           <View style={[styles.inputCard, error ? styles.inputCardError : null]}>
