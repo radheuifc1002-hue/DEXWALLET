@@ -106,6 +106,9 @@ jobs:
       - name: Run seven-chain RPC and history regression checks
         run: node --test tests/phase-2-chain-rpc-history.test.mjs
 
+      - name: Type-check backend API routes
+        run: npx tsc --noEmit -p backend/tsconfig.json
+
       - name: Generate Android icon and splash PNG assets
         run: |
           set -euo pipefail
