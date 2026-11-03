@@ -6,9 +6,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useWallet, type Blockchain, type Token } from '../context/WalletContext';
 import { refreshWalletTokenBalances } from '../mobile/services/balanceService';
 
-const COLORS: Record<Blockchain,string> = { ethereum:'#627EEA', bnb:'#F3BA2F', polygon:'#8247E5', solana:'#9945FF' };
-const LABELS: Record<Blockchain,string> = { ethereum:'Ethereum', bnb:'BNB Chain', polygon:'Polygon', solana:'Solana' };
-const CHAIN_ICONS: Record<Blockchain, string> = { ethereum:'logo-ethereum', bnb:'logo-bitcoin', polygon:'triangle-outline', solana:'planet-outline' };
+const COLORS: Record<Blockchain,string> = { ethereum:'#627EEA', bnb:'#F3BA2F', polygon:'#8247E5', arbitrum:'#28A0F0', solana:'#9945FF', bitcoin:'#F7931A', tron:'#EF0027' };
+const LABELS: Record<Blockchain,string> = { ethereum:'Ethereum', bnb:'BNB Chain', polygon:'Polygon', arbitrum:'Arbitrum', solana:'Solana', bitcoin:'Bitcoin', tron:'TRON' };
+const CHAIN_ICONS: Record<Blockchain, string> = { ethereum:'logo-ethereum', bnb:'logo-bitcoin', polygon:'triangle-outline', arbitrum:'layers-outline', solana:'planet-outline', bitcoin:'logo-bitcoin', tron:'flash-outline' };
 type PortfolioScope = 'wallet' | 'all';
 function addressFor(account: { addresses: Partial<Record<Blockchain,string>> }, chain: Blockchain) { return account.addresses[chain] || ''; }
 
@@ -34,7 +34,7 @@ export default function AssetsScreen() {
         const address = addressFor(account, selectedBlockchain); if (!address) continue;
         const key = selectedBlockchain === 'solana' ? address : address.toLowerCase();
         if (seenAddresses.has(key)) continue; seenAddresses.add(key);
-        const addresses: Record<Blockchain, string> = { ethereum:'', bnb:'', polygon:'', solana:'' }; addresses[selectedBlockchain] = address;
+        const addresses: Record<Blockchain, string> = { ethereum:'', bnb:'', polygon:'', arbitrum:'', solana:'', bitcoin:'', tron:'' }; addresses[selectedBlockchain] = address;
         try {
           const refreshed = await refreshWalletTokenBalances(addresses, chainTokens, network);
           for (const token of refreshed) {
