@@ -1,4 +1,5 @@
 import { consumeRateLimit } from './_lib/rate-limit.js';
+import bs58 from 'bs58';
 
 type Chain='bitcoin'|'tron';type Network='mainnet'|'testnet';
 const BTC_API:Record<Network,string>={mainnet:'https://mempool.space/api',testnet:'https://mempool.space/testnet4/api'};
@@ -51,8 +52,8 @@ export default async function handler(req:any,res:any){
    const incoming=owner.toLowerCase()!==address.toLowerCase();
    const amount=BigInt(String(value?.amount||0));
    const hash=String(tx?.txID||''),ts=Math.floor(Number(tx?.block_timestamp||tx?.raw_data?.timestamp||0)/1000);
-   const confirmed=Boolean(tx?.blockNumber||tx?.block);
-   return {id:hash,hash,title:incoming?'Received TRX':'Sent TRX',subtitle:incoming?'Incoming transfer':'Outgoing transfer',amount:(incoming?'+':'-')+(Number(amount)/1_000_000).toString()+' TRX',timestamp:ts,status:confirmed?'Confirmed':'Pending',incoming,explorerUrl:TRON_EXPLORER[network]+hash};
+   const confirmed=Boolean(tx?.blockNumber||tx?.block_number);
+   const success=tx?.ret?.[0]?.contractRet==='SUCCESS';\n   return {id:hash,hash,title:incoming?'Received TRX':'Sent TRX',subtitle:incoming?'Incoming transfer':'Outgoing transfer',amount:(incoming?'+':'-')+(Number(amount)/1_000_000).toString()+' TRX',timestamp:ts,status:confirmed?(success?'Confirmed':'Failed'):'Pending',incoming,explorerUrl:TRON_EXPLORER[network]+hash};
   }).filter(Boolean).slice(0,50);
   return res.status(200).json({chain,network,walletAddress:address,rows,limit:50,complete:!data?.meta?.fingerprint,source:'trongrid-v1'});
  }catch(error){console.error('chain_history_failed',chain,network,error instanceof Error?error.message:'unknown');return res.status(502).json({error:{code:'history_provider_unavailable'}});}
