@@ -2,10 +2,17 @@ import type { Blockchain, Network } from '../../context/WalletContext';
 export type RpcChain = Blockchain;
 const RPC_API = 'https://dexwallet-api.vercel.app/api/rpc';
 const EVM_CHAIN_IDS: Record<string, Record<Network, number>> = {
- ethereum:{mainnet:1,testnet:11155111},bnb:{mainnet:56,testnet:97},polygon:{mainnet:137,testnet:80002},
+ ethereum:{mainnet:1,testnet:11155111},bnb:{mainnet:56,testnet:97},polygon:{mainnet:137,testnet:80002},arbitrum:{mainnet:42161,testnet:421614},
 };
 export function getCentralRpcUrl(chain:RpcChain,network:Network):string{return RPC_API+'?chain='+encodeURIComponent(chain)+'&network='+encodeURIComponent(network);}
-export function getCentralEvmChainId(chain:Exclude<RpcChain,'solana'>,network:Network):number{return EVM_CHAIN_IDS[chain][network];}
+export function getCentralEvmChainId(chain:Exclude<RpcChain,'solana'|'bitcoin'|'tron'>,network:Network):number{return EVM_CHAIN_IDS[chain][network];}
+export async function serverChainDataRequest<T>(chain:'bitcoin'|'tron',network:Network,address:string):Promise<T>{
+ const url=RPC_API.replace('/rpc','/chain-data')+'?chain='+encodeURIComponent(chain)+'&network='+encodeURIComponent(network)+'&address='+encodeURIComponent(address);
+ const response=await fetch(url,{method:'GET',headers:{Accept:'application/json'}});
+ const payload=await response.json() as any;
+ if(!response.ok){if(payload?.error?.code==='rpc_not_configured')throw new Error('RPC provider is not configured for this network.');throw new Error('Chain data provider is temporarily unavailable.');}
+ return payload as T;
+}
 export async function serverRpcRequest<T>(chain:RpcChain,network:Network,method:string,params:unknown[]=[]):Promise<T>{
  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),22000);
  try{
