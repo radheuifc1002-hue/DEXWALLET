@@ -33,20 +33,29 @@ const CHAIN_NAMES: Record<Blockchain, string> = {
   ethereum: 'Ethereum',
   bnb: 'BNB Chain',
   polygon: 'Polygon',
+  arbitrum: 'Arbitrum',
   solana: 'Solana',
+  bitcoin: 'Bitcoin',
+  tron: 'TRON',
 };
 
 const NATIVE_SYMBOLS: Record<Blockchain, string> = {
   ethereum: 'ETH',
   bnb: 'BNB',
   polygon: 'POL',
+  arbitrum: 'ETH',
   solana: 'SOL',
+  bitcoin: 'BTC',
+  tron: 'TRX',
 };
 
 const ADDRESS_EXPLORERS: Record<Blockchain, { mainnet: string; testnet: string }> = {
   ethereum: { mainnet: 'https://etherscan.io/address/', testnet: 'https://sepolia.etherscan.io/address/' },
   bnb: { mainnet: 'https://bscscan.com/address/', testnet: 'https://testnet.bscscan.com/address/' },
   polygon: { mainnet: 'https://polygonscan.com/address/', testnet: 'https://amoy.polygonscan.com/address/' },
+  arbitrum: { mainnet: 'https://arbiscan.io/address/', testnet: 'https://sepolia.arbiscan.io/address/' },
+  bitcoin: { mainnet: 'https://mempool.space/address/', testnet: 'https://mempool.space/testnet/address/' },
+  tron: { mainnet: 'https://tronscan.org/#/address/', testnet: 'https://nile.tronscan.org/#/address/' },
   solana: { mainnet: 'https://solscan.io/account/', testnet: 'https://solscan.io/account/' },
 };
 
@@ -54,6 +63,9 @@ const EXPLORERS: Record<Blockchain, { mainnet: string; testnet: string }> = {
   ethereum: { mainnet: 'https://etherscan.io/tx/', testnet: 'https://sepolia.etherscan.io/tx/' },
   bnb: { mainnet: 'https://bscscan.com/tx/', testnet: 'https://testnet.bscscan.com/tx/' },
   polygon: { mainnet: 'https://polygonscan.com/tx/', testnet: 'https://amoy.polygonscan.com/tx/' },
+  arbitrum: { mainnet: 'https://arbiscan.io/tx/', testnet: 'https://sepolia.arbiscan.io/tx/' },
+  bitcoin: { mainnet: 'https://mempool.space/tx/', testnet: 'https://mempool.space/testnet/tx/' },
+  tron: { mainnet: 'https://tronscan.org/#/transaction/', testnet: 'https://nile.tronscan.org/#/transaction/' },
   solana: { mainnet: 'https://solscan.io/tx/', testnet: 'https://solscan.io/tx/' },
 };
 
