@@ -13,7 +13,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useWallet, Blockchain } from '../context/WalletContext';
-import { getEvmRpcConfig, getSolanaRpcEndpoint } from '../mobile/services/rpcManager';
+import { fetchEvmAssetHistory } from '../mobile/services/transactionHistory';
+import { fetchChainAssetHistory } from '../mobile/services/chainHistory';
+import { serverRpcRequest } from '../mobile/services/serverRpc';
 
 type HistoryItem = {
   id: string;
@@ -118,22 +120,6 @@ function cursorQuery(cursor: any): string {
   return entries.length ? '?' + entries.map(([key, value]) => encodeURIComponent(key) + '=' + encodeURIComponent(String(value))).join('&') : '';
 }
 
-async function fetchSolanaSignatures(address: string, network: 'mainnet' | 'testnet', before?: string) {
-  const endpoint = getSolanaRpcEndpoint(network);
-  const config: any = { limit: PAGE_SIZE, commitment: 'confirmed' };
-  if (before) config.before = before;
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getSignaturesForAddress', params: [address, config] }),
-  });
-  if (!response.ok) throw new Error('Solana RPC returned HTTP ' + response.status + '.');
-  const json = await response.json();
-  if (json.error) throw new Error(json.error.message || 'Unable to load Solana history.');
-  return Array.isArray(json.result) ? json.result : [];
-}
-
-
 async function fetchAlchemyTransfers(endpoint: string, address: string): Promise<any[]> {
   const request = async (direction: 'fromAddress' | 'toAddress') => {
     const response = await fetch(endpoint, {
@@ -224,11 +210,6 @@ export default function TransactionHistory() {
       setError('Wallet address is not available.');
       return;
     }
-    if (selectedBlockchain === 'bitcoin' || selectedBlockchain === 'tron') {
-      setItems([]); setHasMore(false); setLoading(false); setLoadingMore(false);
-      setError('Transaction history indexing for this chain is not enabled yet.');
-      return;
-    }
     if (reset) {
       setLoading(true);
       setError('');
@@ -246,7 +227,7 @@ export default function TransactionHistory() {
 
       if (selectedBlockchain === 'solana') {
         const before = reset ? undefined : beforeSignature || undefined;
-        const signatures = await fetchSolanaSignatures(walletAddress, network, before);
+        const signatures = await serverRpcRequest<any[]>('solana', network, 'getSignaturesForAddress', [walletAddress, { limit: PAGE_SIZE, commitment: 'confirmed', ...(before ? { before } : {}) }]);
         nextItems = signatures.map((entry: any) => ({
           id: String(entry.signature),
           hash: String(entry.signature),
@@ -261,12 +242,26 @@ export default function TransactionHistory() {
         more = signatures.length === PAGE_SIZE;
         if (signatures.length) setBeforeSignature(String(signatures[signatures.length - 1].signature));
       } else {
-        const rpcConfig = getEvmRpcConfig(selectedBlockchain, network);
-        const transfers = await fetchAlchemyTransfers(rpcConfig.rpc, walletAddress);
-        nextItems = transfers.map((transfer: any) =>
-          mapAlchemyTransfer(transfer, walletAddress, selectedBlockchain, network)
-        );
-        more = false;
+        if (selectedBlockchain === 'bitcoin' || selectedBlockchain === 'tron') {
+          const history = await fetchChainAssetHistory(selectedBlockchain, network, walletAddress);
+          nextItems = history.rows.map((row) => ({
+            id: row.id, hash: row.hash, title: row.title, subtitle: row.subtitle,
+            amount: row.amount, timestamp: row.timestamp, status: row.status === 'Failed' ? 'Failed' : 'Confirmed',
+            incoming: row.incoming, explorerUrl: row.explorerUrl,
+          }));
+          more = false;
+        } else {
+          const history = await fetchEvmAssetHistory({
+            chain: selectedBlockchain, network, walletAddress, contractAddress: '',
+            isNative: true, name: CHAIN_NAMES[selectedBlockchain], symbol: NATIVE_SYMBOLS[selectedBlockchain], limit: PAGE_SIZE,
+          });
+          nextItems = history.rows.map((row) => ({
+            id: row.id, hash: row.hash, title: row.title, subtitle: row.detail, amount: row.amount,
+            timestamp: row.timestamp, status: row.status === 'failed' ? 'Failed' : 'Confirmed',
+            incoming: row.incoming, explorerUrl: row.explorerUrl,
+          }));
+          more = false;
+        }
       }
 
       setItems((current) => {

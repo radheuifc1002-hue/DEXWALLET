@@ -254,8 +254,11 @@ export async function probeRpcProviders(chain: RpcChain, network: RpcNetwork): P
       if(payload.error||payload.result===undefined)throw new Error('Invalid health response');
       if(chain==='solana'&&payload.result!=='ok')throw new Error('Solana health response was not ok');
       if(chain!=='solana'){
-        const expected=getRpcChainId(chain,network),actual=Number(BigInt(String(payload.result)));
-        if(expected!==undefined&&actual!==expected)throw new Error('Wrong chain ID '+actual+' (expected '+expected+')');
+        const expected=getRpcChainId(chain,network);
+        if(expected!==undefined) {
+          const actual=Number(BigInt(String((payload.result as any)?.chainId??payload.result)));
+          if(actual!==expected)throw new Error('Wrong chain ID '+actual+' (expected '+expected+')');
+        }
       }
       markSuccess(key,Date.now()-started);
     }catch(error){markFailure(key,error);}

@@ -34,10 +34,10 @@ export default async function handler(req: any, res: any) {
     const payload=await response.json() as any;
     if(!response.ok)return res.status(response.status>=500?502:response.status).json({error:{code:'upstream_unavailable'}});
     if(chain==='bitcoin'){
-      const satoshis=BigInt(String(payload?.balance??'0'));
-      return res.status(200).json({chain,network,address,balanceSatoshis:satoshis.toString(),confirmed: true});
+      const satoshis=BigInt(String(payload?.balance??'0')) + BigInt(String(payload?.unconfirmedBalance??'0'));
+      return res.status(200).json({chain,network,address,balanceSatoshis:satoshis.toString(),confirmedBalanceSatoshis:String(payload?.balance??'0'),unconfirmedBalanceSatoshis:String(payload?.unconfirmedBalance??'0')});
     }
-    return res.status(200).json({chain,network,address,balanceSun:String(payload?.balance??'0'),accountExists:Boolean(payload?.address)});
+    return res.status(200).json({chain,network,address,balanceSun:String(payload?.balance??'0'),accountExists:payload!==null&&typeof payload==='object'&&(Object.prototype.hasOwnProperty.call(payload,'balance')||Boolean(payload?.address))});
   }catch{return res.status(502).json({error:{code:'upstream_unavailable'}});}
   finally{clearTimeout(timeout);}
 }
