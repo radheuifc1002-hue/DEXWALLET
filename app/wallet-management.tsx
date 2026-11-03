@@ -11,13 +11,12 @@ import { useWallet, type Blockchain } from '../context/WalletContext';
 import { createWalletVault, addMnemonicSource, addDerivedAccounts, addWatchOnlyAccount, renameWalletAccount, removeWalletAccount } from '../mobile/services/walletVaultService';
 
 type Mode = 'options' | 'import' | 'watch' | 'derive' | 'rename' | null;
-const CHAINS: Blockchain[] = ['ethereum', 'bnb', 'polygon', 'solana'];
 const CHAIN_NAMES: Record<Blockchain, string> = { ethereum: 'Ethereum', bnb: 'BNB Chain', polygon: 'Polygon', solana: 'Solana' };
 const short = (address?: string) => address ? address.slice(0, 8) + '…' + address.slice(-6) : '—';
 
 export default function WalletManagement() {
   const router = useRouter();
-  const { walletVaultStore, selectedBlockchain, setSelectedBlockchain, selectWalletAccount, refreshWalletVaultStore } = useWallet();
+  const { walletVaultStore, selectedBlockchain, selectWalletAccount, refreshWalletVaultStore } = useWallet();
   const [mode, setMode] = useState<Mode>(null);
   const [vaultId, setVaultId] = useState('');
   const [accountId, setAccountId] = useState('');
