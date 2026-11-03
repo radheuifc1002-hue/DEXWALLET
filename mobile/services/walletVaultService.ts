@@ -255,7 +255,8 @@ export async function createInitialMnemonicVault(
   const selectedChains = Array.from(new Set(blockchains));
   if (!selectedChains.length || selectedChains.some((chain) => !['ethereum', 'bnb', 'polygon', 'arbitrum', 'solana', 'bitcoin', 'tron'].includes(chain))) throw new Error('Select at least one supported blockchain.');
   const metadata = getAccountDerivationMetadata(accountIndex);
-  const selectedAddresses = Object.fromEntries(selectedChains.map((chain) => [chain, addresses[chain]])) as Partial<WalletAddresses>;\n  if (selectedChains.includes('bitcoin')) selectedAddresses.bitcoinTestnet = addresses.bitcoinTestnet;
+  const selectedAddresses = Object.fromEntries(selectedChains.map((chain) => [chain, addresses[chain]])) as Partial<WalletAddresses>;
+  if (selectedChains.includes('bitcoin')) selectedAddresses.bitcoinTestnet = addresses.bitcoinTestnet;
   const source: WalletKeySource = {
     id: sourceId,
     type: 'mnemonic',
@@ -385,7 +386,9 @@ export async function addMnemonicSource(
 
 async function deriveAccountAddresses(mnemonic: string, accountIndex: number, chains: Blockchain[]): Promise<Partial<WalletAddresses>> {
   const entries = await Promise.all(chains.map(async (chain) => [chain, await deriveAddressForChain(chain, mnemonic, accountIndex)] as const));
-  const result = Object.fromEntries(entries) as Partial<WalletAddresses>;\n  if (chains.includes('bitcoin')) result.bitcoinTestnet = await deriveBitcoinAddress(mnemonic, accountIndex, 'testnet');\n  return result;
+  const result = Object.fromEntries(entries) as Partial<WalletAddresses>;
+  if (chains.includes('bitcoin')) result.bitcoinTestnet = await deriveBitcoinAddress(mnemonic, accountIndex, 'testnet');
+  return result;
 }
 
 export async function addDerivedAccounts(
