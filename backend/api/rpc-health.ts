@@ -1,6 +1,7 @@
 import { consumeRateLimit } from './_lib/rate-limit.js';
 import { randomUUID } from 'node:crypto';
-import { probeRpcProviders, type RpcChain, type RpcNetwork } from './_lib/rpc-manager.js';\nimport { probeChainRpc } from './_lib/chain-rpc.js';
+import { probeRpcProviders, type RpcChain, type RpcNetwork } from './_lib/rpc-manager.js';
+import { probeChainRpc } from './_lib/chain-rpc.js';
 
 const CHAINS = new Set<RpcChain>(['ethereum','bnb','polygon','arbitrum','solana','bitcoin','tron']);
 const NETWORKS = new Set<RpcNetwork>(['mainnet','testnet']);
