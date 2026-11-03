@@ -221,6 +221,74 @@ export async function getWalletVaultStore(): Promise<WalletVaultStore> {
   return (await readStore()) ?? initializeWalletVaultStore();
 }
 
+/**
+ * Creates the first vault-backed account after legacy wallet initialization.
+ * The public addresses are supplied by the existing wallet derivation path so
+ * this migration never silently changes an address already shown to the user.
+ */
+export async function createInitialMnemonicVault(
+  mnemonic: string,
+  addresses: WalletAddresses,
+  name = 'My Wallet',
+): Promise<WalletVaultStore> {
+  const normalized = mnemonic.trim().toLowerCase().replace(/\\s+/g, ' ');
+  if (!validateMnemonic(normalized)) throw new Error('Invalid recovery phrase.');
+  const store = await getWalletVaultStore();
+  if (store.activeAccountId && store.vaults.some((vault) => vault.accounts.some((account) => account.id === store.activeAccountId))) {
+    return store;
+  }
+
+  const vaultId = makeId('vault');
+  const sourceId = makeId('seed');
+  const accountIndex = 0;
+  const metadata = getAccountDerivationMetadata(accountIndex);
+  const source: WalletKeySource = {
+    id: sourceId,
+    type: 'mnemonic',
+    name: 'Recovery Phrase',
+    createdAt: Date.now(),
+    blockchains: ['ethereum', 'bnb', 'polygon', 'solana'],
+  };
+  const account: WalletAccount = {
+    id: makeId('account'),
+    sourceId,
+    sourceType: 'mnemonic',
+    name: 'Main Wallet',
+    accountIndex,
+    derivationPaths: {
+      ethereum: metadata.ethereum.path,
+      bnb: metadata.bnb.path,
+      polygon: metadata.polygon.path,
+      solana: metadata.solana.path,
+    },
+    addresses: { ...addresses },
+    derivationMetadata: metadata,
+    createdAt: Date.now(),
+  };
+  const vault: WalletVault = {
+    id: vaultId,
+    name: name.trim() || 'My Wallet',
+    createdAt: Date.now(),
+    sources: [source],
+    accounts: [account],
+  };
+
+  await SecureStore.setItemAsync(secretKey(sourceId), normalized);
+  const next: WalletVaultStore = {
+    ...store,
+    activeVaultId: vaultId,
+    activeAccountId: account.id,
+    vaults: [...store.vaults, vault],
+  };
+  try {
+    await persistStore(next);
+  } catch (error) {
+    await SecureStore.deleteItemAsync(secretKey(sourceId)).catch(() => {});
+    throw error;
+  }
+  return next;
+}
+
 export async function createWalletVault(name = 'New Vault'): Promise<WalletVaultStore> {
   const store = await getWalletVaultStore();
   const vault: WalletVault = {

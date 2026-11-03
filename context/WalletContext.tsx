@@ -4,7 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { refreshWalletTokenBalances } from '../mobile/services/balanceService';
 import { openWalletSession, closeWalletSession } from '../mobile/services/walletSessionService';
 import { assertWalletAuthorization, type WalletAuthorization } from '../mobile/services/walletSecurityService';
-import { initializeWalletVaultStore, clearWalletVaultStore, setActiveWalletAccount as persistActiveWalletAccount, type WalletVaultStore, type WalletAccount, type WalletVault } from '../mobile/services/walletVaultService';
+import { initializeWalletVaultStore, createInitialMnemonicVault, clearWalletVaultStore, setActiveWalletAccount as persistActiveWalletAccount, type WalletVaultStore, type WalletAccount, type WalletVault } from '../mobile/services/walletVaultService';
 import {
   deriveAddresses,
   saveWalletToStorage,
@@ -228,7 +228,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     const addresses = await deriveAddresses(mnemonic);
     setWalletAddresses(addresses);
     await saveWalletToStorage(addresses, mnemonic);
-    const vaultStore = await initializeWalletVaultStore();
+    let vaultStore = await initializeWalletVaultStore();
+    // App startup initializes an empty vault index before onboarding. In that
+    // case the old init path persisted addresses but never created a vault
+    // account. Materialize the first mnemonic-backed account now.
+    if (!vaultStore.activeAccountId) {
+      vaultStore = await createInitialMnemonicVault(mnemonic, addresses);
+    }
     setWalletVaultStore(vaultStore);
     const native = NATIVE_TOKEN_DEFS.map((d) => ({ ...d, balance: 0, balanceUSD: 0 }));
     const storedCustom = await AsyncStorage.getItem(CUSTOM_TOKENS_KEY);
