@@ -55,11 +55,19 @@ function tokenUnits(raw: unknown, decimals: number): string {
   return fraction ? whole + '.' + fraction : String(whole);
 }
 function tronAddressHex(address: string): string {
-  const decoded = bs58.decode(address);
-  if (decoded.length !== 25) throw new Error('invalid_tron_address');
-  return Buffer.from(decoded.slice(0, 21)).toString('hex').toLowerCase();
+  const alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+  let value = 0n;
+  for (const char of address) {
+    const digit = alphabet.indexOf(char);
+    if (digit < 0) throw new Error('invalid_tron_address');
+    value = value * 58n + BigInt(digit);
+  }
+  const bytes: number[] = [];
+  while (value > 0n) { bytes.unshift(Number(value & 255n)); value >>= 8n; }
+  for (let i = 0; i < address.length && address[i] === '1'; i++) bytes.unshift(0);
+  if (bytes.length !== 25) throw new Error('invalid_tron_address');
+  return bytes.slice(0, 21).map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
-
 export default async function handler(req: any, res: any) {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store');
