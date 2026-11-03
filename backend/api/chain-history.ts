@@ -1,5 +1,4 @@
 import { consumeRateLimit } from './_lib/rate-limit.js';
-import bs58 from 'bs58';
 
 type Chain = 'bitcoin' | 'tron';
 type Network = 'mainnet' | 'testnet';
