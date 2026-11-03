@@ -5,7 +5,7 @@ const EVM_CHAIN_IDS: Record<string, Record<Network, number>> = {
  ethereum:{mainnet:1,testnet:11155111},bnb:{mainnet:56,testnet:97},polygon:{mainnet:137,testnet:80002},arbitrum:{mainnet:42161,testnet:421614},
 };
 export function getCentralRpcUrl(chain:RpcChain,network:Network):string{return RPC_API+'?chain='+encodeURIComponent(chain)+'&network='+encodeURIComponent(network);}
-export function getCentralEvmChainId(chain:Exclude<RpcChain,'solana'>,network:Network):number{const id=EVM_CHAIN_IDS[chain]?.[network];if(!id)throw new Error('This chain does not use EVM chain IDs.');return id;}}
+export function getCentralEvmChainId(chain:Exclude<RpcChain,'solana'>,network:Network):number{const id=EVM_CHAIN_IDS[chain]?.[network];if(!id)throw new Error('This chain does not use EVM chain IDs.');return id;}
 export async function serverChainDataRequest<T>(chain:'bitcoin'|'tron',network:Network,address:string):Promise<T>{
  const url=RPC_API.replace('/rpc','/chain-data')+'?chain='+encodeURIComponent(chain)+'&network='+encodeURIComponent(network)+'&address='+encodeURIComponent(address);
  const response=await fetch(url,{method:'GET',headers:{Accept:'application/json'}});
