@@ -10,14 +10,14 @@ import {
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useWallet } from '../context/WalletContext';
-import { createWalletVault, addPrivateKeyAccount } from '../mobile/services/walletVaultService';
+import { createWalletVault, addPrivateKeyAccount, addMnemonicSource } from '../mobile/services/walletVaultService';
 import { authorizeWalletAction } from '../mobile/services/walletSecurityService';
 import PinPad from '../components/PinPad';
 import { consumePendingMnemonic, consumePendingWalletConfig, consumePendingPrivateKey, persistPrivateKeyWalletAddresses } from '../mobile/services/walletService';
 
 export default function SetPin() {
   const router = useRouter();
-  const { setPin, initWallet, refreshWalletVaultStore, setIsWalletCreated } = useWallet();
+  const { setPin, initWallet, refreshWalletVaultStore, setIsWalletCreated, walletVaultStore, activeVault } = useWallet();
   const [pendingMnemonic, setPendingMnemonic] = useState<string | null>(null);
   const [pendingPrivateKey,setPendingPrivateKey]=useState<{privateKey:string;blockchain:'ethereum'|'bnb'|'polygon'|'arbitrum'|'solana'|'bitcoin'|'tron';name:string}|null>(null);
   const [pendingConfig, setPendingConfig] = useState<{name:string;blockchains:('ethereum'|'bnb'|'polygon'|'arbitrum'|'solana'|'bitcoin'|'tron')[]} | null>(null);
@@ -60,11 +60,47 @@ export default function SetPin() {
     setLoading(true);
     try {
       await setPin(confirmPin);
-      if(pendingPrivateKey){ const auth=await authorizeWalletAction(confirmPin,'import-secret'); if(!auth) throw new Error('PIN authorization failed.'); const empty=await createWalletVault(pendingPrivateKey.name); const vault=empty.vaults[empty.vaults.length-1]; const next=await addPrivateKeyAccount(vault.id,pendingPrivateKey.blockchain,pendingPrivateKey.privateKey,auth,pendingPrivateKey.name); const account=next.vaults.find(v=>v.id===vault.id)?.accounts.find(a=>a.id===next.activeAccountId); if(!account) throw new Error('Imported account could not be loaded.'); await persistPrivateKeyWalletAddresses(account.addresses); await refreshWalletVaultStore(); setIsWalletCreated(true); } else if(mnemonic){ await initWallet(mnemonic,pendingConfig??undefined); }
+      if (pendingPrivateKey) {
+        const auth = await authorizeWalletAction(confirmPin, 'import-secret');
+        if (!auth) throw new Error('PIN authorization failed.');
+        const empty = await createWalletVault(pendingPrivateKey.name);
+        const vault = empty.vaults[empty.vaults.length - 1];
+        const next = await addPrivateKeyAccount(vault.id, pendingPrivateKey.blockchain, pendingPrivateKey.privateKey, auth, pendingPrivateKey.name);
+        const account = next.vaults.find(v => v.id === vault.id)?.accounts.find(a => a.id === next.activeAccountId);
+        if (!account) throw new Error('Imported account could not be loaded.');
+        await persistPrivateKeyWalletAddresses(account.addresses);
+        await refreshWalletVaultStore();
+        setIsWalletCreated(true);
+      } else if (mnemonic) {
+        const hasExistingAccount = (walletVaultStore?.vaults ?? []).some(vault => vault.accounts.length > 0);
+        if (!hasExistingAccount) {
+          // First wallet setup: initialize legacy app state and materialize the initial vault account.
+          await initWallet(mnemonic, pendingConfig ?? undefined);
+        } else {
+          // Add Wallet must append a new mnemonic source/account. initWallet is first-wallet-only
+          // and intentionally returns without replacing an existing active vault account.
+          const targetVaultId = activeVault?.id
+            ?? walletVaultStore?.vaults.find(vault => vault.id === walletVaultStore.activeVaultId)?.id
+            ?? walletVaultStore?.vaults.find(vault => vault.accounts.length > 0)?.id;
+          if (!targetVaultId) throw new Error('Could not find the active wallet vault.');
+          const auth = await authorizeWalletAction(confirmPin, 'import-secret');
+          if (!auth) throw new Error('PIN authorization failed.');
+          await addMnemonicSource(
+            targetVaultId,
+            mnemonic,
+            auth,
+            'Recovery Phrase',
+            pendingConfig?.name?.trim() || 'HD Wallet',
+            pendingConfig?.blockchains?.length ? pendingConfig.blockchains : ['ethereum', 'bnb', 'polygon', 'arbitrum', 'solana', 'bitcoin', 'tron'],
+          );
+          await refreshWalletVaultStore();
+          setIsWalletCreated(true);
+        }
+      }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.replace('/(tabs)/home');
     } catch (e) {
-      Alert.alert('Error', 'Failed to set up wallet. Please try again.');
+      Alert.alert('Wallet setup failed', e instanceof Error ? e.message : 'Please try again.');
       setLoading(false);
     }
   };
