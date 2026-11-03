@@ -154,6 +154,23 @@ export default function Settings() {
         </View>
 
         <Text style={styles.sectionLabel}>Wallet</Text>
+        <TouchableOpacity
+          style={styles.manageWalletCard}
+          onPress={() => router.push('/wallet-management')}
+          activeOpacity={0.82}
+        >
+          <View style={styles.manageWalletIcon}>
+            <Ionicons name="wallet-outline" size={22} color="#D63384" />
+          </View>
+          <View style={styles.manageWalletCopy}>
+            <Text style={styles.manageWalletTitle}>Manage Wallet</Text>
+            <Text style={styles.manageWalletSubtitle}>Create, import and manage your wallets</Text>
+          </View>
+          <View style={styles.manageWalletArrow}>
+            <Ionicons name="chevron-forward" size={18} color="#D63384" />
+          </View>
+        </TouchableOpacity>
+
         <View style={styles.card}>
           <TouchableOpacity
             style={styles.row}
@@ -229,6 +246,36 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     marginBottom: 20,
     overflow: 'hidden',
+  },
+  manageWalletCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 15,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#F1C5DA',
+    backgroundColor: '#FFF7FB',
+    marginBottom: 18,
+    gap: 12,
+  },
+  manageWalletIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 15,
+    backgroundColor: '#FCE7F3',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  manageWalletCopy: { flex: 1, gap: 4 },
+  manageWalletTitle: { color: '#211B35', fontSize: 15, fontWeight: '800' },
+  manageWalletSubtitle: { color: '#777286', fontSize: 11, lineHeight: 16 },
+  manageWalletArrow: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    backgroundColor: '#FCE7F3',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   dangerCard: {
     borderWidth: 1,
