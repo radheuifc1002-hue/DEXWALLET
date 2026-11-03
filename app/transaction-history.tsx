@@ -224,6 +224,11 @@ export default function TransactionHistory() {
       setError('Wallet address is not available.');
       return;
     }
+    if (selectedBlockchain === 'bitcoin' || selectedBlockchain === 'tron') {
+      setItems([]); setHasMore(false); setLoading(false); setLoadingMore(false);
+      setError('Transaction history indexing for this chain is not enabled yet.');
+      return;
+    }
     if (reset) {
       setLoading(true);
       setError('');
