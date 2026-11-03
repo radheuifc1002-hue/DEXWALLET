@@ -259,9 +259,6 @@ export default function Home() {
                 ))}
                 {(walletVaultStore?.vaults ?? []).length === 0 ? <Text style={styles.walletGroupEmpty}>No wallets available. Add a wallet to get started.</Text> : null}
               </ScrollView>
-              <TouchableOpacity style={styles.manageWalletsButton} onPress={() => { setWalletPickerVisible(false); router.push('/wallet-management'); }} activeOpacity={0.8}>
-                <Ionicons name="settings-outline" size={17} color="#FFFFFF" /><Text style={styles.manageWalletsText}>Manage wallets</Text><Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
-              </TouchableOpacity>
             </View>
           </View>
         </Modal>
@@ -522,6 +519,5 @@ const styles = StyleSheet.create({
   walletChoiceIcon: { width: 40, height: 40, borderRadius: 13, backgroundColor: '#F1EDFF', alignItems: 'center', justifyContent: 'center' }, watchChoiceIcon: { backgroundColor: '#E6F7F4' }, walletChoiceInfo: { flex: 1 },
   walletChoiceNameRow: { flexDirection: 'row', alignItems: 'center', gap: 7 }, walletChoiceName: { color: '#211B35', fontSize: 13, fontWeight: '800' },
   walletChoiceAddress: { color: '#777286', fontSize: 10, fontFamily: 'monospace', marginTop: 4 }, watchChoiceBadge: { color: '#0D9488', backgroundColor: '#E6F7F4', fontSize: 8, fontWeight: '900', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 5 },
-  walletGroupEmpty: { color: '#9B97A8', fontSize: 12, padding: 12 }, manageWalletsButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, backgroundColor: '#6C4CF1', borderRadius: 14, paddingVertical: 14 },
-  manageWalletsText: { color: '#FFFFFF', fontSize: 13, fontWeight: '800', flex: 1 },
+  walletGroupEmpty: { color: '#9B97A8', fontSize: 12, padding: 12 },
 });
