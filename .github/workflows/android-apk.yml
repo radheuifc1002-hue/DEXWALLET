@@ -141,6 +141,7 @@ jobs:
           path: android
           key: android-project-v3-${{ runner.os }}-${{ hashFiles('package.json', 'app.json', 'babel.config.cjs', 'assets/icon.svg', 'assets/splash.svg') }}-${{ github.run_id }}
           restore-keys: |
+            android-project-v3-${{ runner.os }}-${{ hashFiles('package.json', 'app.json', 'babel.config.cjs', 'assets/icon.svg', 'assets/splash.svg') }}
             android-project-v3-${{ runner.os }}-${{ hashFiles('package.json', 'app.json', 'babel.config.cjs', 'assets/icon.svg', 'assets/splash.svg') }}-
 
       - name: Check whether Android project was restored
@@ -174,6 +175,7 @@ jobs:
             node_modules/*/android/.cxx
           key: android-release-v3-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.run_id }}
           restore-keys: |
+            android-release-v3-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
             android-release-v3-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
             android-release-v2-${{ runner.os }}-
 
@@ -184,6 +186,7 @@ jobs:
           path: node_modules/**/android/build
           key: android-module-build-v2-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json') }}-${{ github.run_id }}
           restore-keys: |
+            android-module-build-v2-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json') }}
             android-module-build-v2-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json') }}-
       # Expo/Metro normally keeps its transformer cache under the ephemeral
       # system temp directory. Persist it so unchanged modules are not transformed
@@ -195,6 +198,7 @@ jobs:
           path: ${{ runner.temp }}/metro-cache
           key: metro-transform-v2-${{ runner.os }}-${{ hashFiles('package-lock.json', 'babel.config.cjs', 'metro.config.cjs') }}-${{ github.run_id }}
           restore-keys: |
+            metro-transform-v2-${{ runner.os }}-${{ hashFiles('package-lock.json', 'babel.config.cjs', 'metro.config.cjs') }}
             metro-transform-v2-${{ runner.os }}-${{ hashFiles('package-lock.json', 'babel.config.cjs', 'metro.config.cjs') }}-
 
       # GitHub-hosted runners install the pinned NDK freshly each run. Its
