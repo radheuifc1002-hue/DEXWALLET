@@ -126,6 +126,24 @@ const adapters = new Map<WalletChainId, ChainAdapter>([
   }],
 ]);
 
+
+export function deriveAddressFromPrivateKey(chain: Exclude<WalletChainId, 'solana'>, privateKeyInput: string): string {
+  const normalized = privateKeyInput.trim().startsWith('0x') ? privateKeyInput.trim() : `0x${privateKeyInput.trim()}`;
+  const wallet = new ethers.Wallet(normalized);
+  if (['ethereum','bnb','polygon','arbitrum'].includes(chain)) return wallet.address;
+  if (chain === 'bitcoin') {
+    const publicKey = ethers.getBytes(ethers.SigningKey.computePublicKey(wallet.privateKey, true));
+    const payload = new Uint8Array(21);
+    payload[0] = 0x00;
+    payload.set(ripemd160(sha256(publicKey)), 1);
+    return base58Check(payload);
+  }
+  const payload = new Uint8Array(21);
+  payload[0] = 0x41;
+  payload.set(ethers.getBytes(ethers.computeAddress(wallet.privateKey)), 1);
+  return base58Check(payload);
+}
+
 export function registerChainAdapter(adapter: ChainAdapter): void {
   if (!adapter || !/^[a-z][a-z0-9-]{1,31}$/.test(adapter.chain)
     || !Number.isInteger(adapter.coinType) || adapter.coinType < 0 || adapter.coinType > 0x7fffffff
