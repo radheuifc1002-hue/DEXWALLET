@@ -153,7 +153,7 @@ export default function Send() {
   const address = walletAddresses?.[selectedBlockchain] || '';
   const symbol = SYMBOL[selectedBlockchain];
   const testnet = network === 'testnet';
-  const rpc = useMemo(() => selectedBlockchain === 'solana' ? null : { chainId: getCentralEvmChainId(selectedBlockchain, network) }, [selectedBlockchain, network]);
+  const rpc = useMemo(() => ['solana','bitcoin','tron'].includes(selectedBlockchain) ? null : { chainId: getCentralEvmChainId(selectedBlockchain as Exclude<Blockchain,'solana'>, network) }, [selectedBlockchain, network]);
   const nativeAsset: Token = useMemo(() => ({
     id: selectedBlockchain === 'polygon' ? 'matic' : selectedBlockchain === 'solana' ? 'sol' : selectedBlockchain === 'bnb' ? 'bnb' : selectedBlockchain === 'arbitrum' ? 'arbitrum' : 'eth',
     name: LABEL[selectedBlockchain],
@@ -305,6 +305,7 @@ export default function Send() {
   const prepare = async () => {
     setError('');
     if (isLocked) { setError('Unlock your wallet before sending.'); return; }
+    if (selectedBlockchain === 'bitcoin' || selectedBlockchain === 'tron') { setError('Transfers for Bitcoin and TRON are not enabled in this build yet. You can create, import and receive to these wallets.'); return; }
     if (!address) { setError('No wallet address is available for the selected blockchain.'); return; }
     if (!to.trim()) { setError('Enter a recipient address.'); return; }
     if (!cleanAmount(amount)) { setError('Enter a valid amount greater than zero.'); return; }
@@ -672,7 +673,7 @@ export default function Send() {
 
           <Text style={s.label}>Recipient address</Text>
           <View style={s.inputCard}>
-            <TextInput value={to} onChangeText={(v) => { setTo(v); setReview(null); }} placeholder={selectedBlockchain === 'solana' ? 'Solana address' : '0x recipient address'} placeholderTextColor="#A09AAC" autoCapitalize="none" autoCorrect={false} style={s.input} />
+            <TextInput value={to} onChangeText={(v) => { setTo(v); setReview(null); }} placeholder={selectedBlockchain === 'solana' ? 'Solana address' : selectedBlockchain === 'bitcoin' ? 'Bitcoin address' : selectedBlockchain === 'tron' ? 'TRON address' : '0x recipient address'} placeholderTextColor="#A09AAC" autoCapitalize="none" autoCorrect={false} style={s.input} />
             <TouchableOpacity onPress={() => { setTo(''); setReview(null); }}><Ionicons name="close-circle" size={19} color="#9A95A8" /></TouchableOpacity>
           </View>
 
