@@ -1,174 +1,219 @@
-import { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { useMemo, useState } from 'react';
+import { Alert, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Clipboard from 'expo-clipboard';
+import * as bip39 from 'bip39';
 import WalletAuthorizationModal from '../components/WalletAuthorizationModal';
 import type { WalletAuthorization, WalletSensitiveAction } from '../mobile/services/walletSecurityService';
 import { useWallet, type Blockchain } from '../context/WalletContext';
-import {
-  createWalletVault, renameWalletVault, addMnemonicSource, addDerivedAccounts,
-  addPrivateKeyAccount, addWatchOnlyAccount, renameWalletAccount, removeWalletAccount,
-} from '../mobile/services/walletVaultService';
+import { createWalletVault, addMnemonicSource, addDerivedAccounts, addWatchOnlyAccount, renameWalletAccount, removeWalletAccount } from '../mobile/services/walletVaultService';
 
-type Mode = 'vault'|'mnemonic'|'private'|'watch'|'rename'|'derive'|null;
-const CHAINS: Blockchain[] = ['ethereum','bnb','polygon','solana'];
-const CHAIN_NAMES: Record<Blockchain,string> = { ethereum:'Ethereum',bnb:'BNB Chain',polygon:'Polygon',solana:'Solana' };
-const short = (value?:string) => value ? value.slice(0,8)+'…'+value.slice(-6) : 'Not available';
+type Mode = 'options' | 'import' | 'watch' | 'derive' | 'rename' | null;
+const CHAINS: Blockchain[] = ['ethereum', 'bnb', 'polygon', 'solana'];
+const CHAIN_NAMES: Record<Blockchain, string> = { ethereum: 'Ethereum', bnb: 'BNB Chain', polygon: 'Polygon', solana: 'Solana' };
+const short = (address?: string) => address ? address.slice(0, 8) + '…' + address.slice(-6) : '—';
 
 export default function WalletManagement() {
-  const router=useRouter();
-  const { walletVaultStore, activeWallet, activeVault, selectedBlockchain, setSelectedBlockchain, selectWalletAccount, refreshWalletVaultStore }=useWallet();
-  const [mode,setMode]=useState<Mode>(null);
-  const [targetVault,setTargetVault]=useState('');
-  const [targetAccount,setTargetAccount]=useState('');
-  const [name,setName]=useState('');
-  const [secret,setSecret]=useState('');
-  const [chain,setChain]=useState<Blockchain>('ethereum');
-  const [addresses,setAddresses]=useState<Record<Blockchain,string>>({ethereum:'',bnb:'',polygon:'',solana:''});
-  const [busy,setBusy]=useState(false);
-  const [batchCount,setBatchCount]=useState('5');
-  const [authorizationRequest,setAuthorizationRequest]=useState<{action:WalletSensitiveAction;title:string;run:(authorization:WalletAuthorization)=>Promise<void>}|null>(null);
-  const vaults=walletVaultStore?.vaults??[];
+  const router = useRouter();
+  const { walletVaultStore, selectedBlockchain, setSelectedBlockchain, selectWalletAccount, refreshWalletVaultStore } = useWallet();
+  const [mode, setMode] = useState<Mode>(null);
+  const [vaultId, setVaultId] = useState('');
+  const [accountId, setAccountId] = useState('');
+  const [name, setName] = useState('');
+  const [phrase, setPhrase] = useState('');
+  const [publicAddress, setPublicAddress] = useState('');
+  const [count, setCount] = useState('1');
+  const [busy, setBusy] = useState(false);
+  const [menu, setMenu] = useState<{ vaultId: string; accountId: string } | null>(null);
+  const [authorization, setAuthorization] = useState<{ action: WalletSensitiveAction; title: string; run: (auth: WalletAuthorization) => Promise<void> } | null>(null);
+  const vaults = walletVaultStore?.vaults ?? [];
+  const chainAccounts = useMemo(() => vaults.flatMap(vault => vault.accounts
+    .filter(account => !!account.addresses[selectedBlockchain])
+    .map(account => ({ vault, account }))), [vaults, selectedBlockchain]);
+  const roots = chainAccounts.filter(item => item.account.sourceType === 'mnemonic' && item.account.accountIndex === 0);
+  const derived = chainAccounts.filter(item => item.account.sourceType === 'mnemonic' && item.account.accountIndex !== 0);
+  const others = chainAccounts.filter(item => item.account.sourceType !== 'mnemonic');
+  const menuItem = chainAccounts.find(item => item.vault.id === menu?.vaultId && item.account.id === menu?.accountId);
 
-  const openMode=(next:Mode,vaultId?:string,accountId?:string)=>{
-    setTargetVault(vaultId??activeVault?.id??vaults[0]?.id??'');
-    setTargetAccount(accountId??'');
+  const open = (next: Mode, vId?: string, aId?: string) => {
+    setVaultId(vId ?? vaults[0]?.id ?? '');
+    setAccountId(aId ?? '');
     setName('');
-    setSecret('');
-    setBatchCount('5');
-    setAddresses({ethereum:'',bnb:'',polygon:'',solana:''});
-    setChain(selectedBlockchain);
+    setPhrase('');
+    setPublicAddress('');
+    setCount('1');
     setMode(next);
   };
-  const finish=async()=>{await refreshWalletVaultStore();setMode(null);setBusy(false);setSecret('');};
-  const submit=async()=>{
-    if(busy)return;
-    if(mode==='mnemonic'||mode==='private'||mode==='derive'){
-      const action:WalletSensitiveAction=mode==='derive'?'derive-account':'import-secret';
-      setAuthorizationRequest({action,title:mode==='derive'?'Authorize account derivation':'Authorize secret import',run:async(auth)=>{await performSubmit(auth);setAuthorizationRequest(null);}});
-      return;
-    }
-    await performSubmit();
+  const refreshAndClose = async () => {
+    await refreshWalletVaultStore();
+    setMode(null);
+    setBusy(false);
+    setPhrase('');
   };
-  const performSubmit=async(authorization?:WalletAuthorization)=>{
-    if(busy)return;
+  const runAuthorized = (action: WalletSensitiveAction, title: string, run: (auth: WalletAuthorization) => Promise<void>) => setAuthorization({ action, title, run });
+
+  const submit = async (auth?: WalletAuthorization) => {
+    if (busy) return;
     setBusy(true);
-    try{
-      if(mode==='vault'){
-        await createWalletVault(name.trim()||'New Vault');
-      }else if(mode==='mnemonic'){
-        if(!targetVault)throw new Error('Create or select a vault first.');
-        if(!authorization)throw new Error('PIN authorization required.');
-        await addMnemonicSource(targetVault,secret,authorization,name.trim()||'Recovery Phrase',name.trim()||'Main Wallet',[selectedBlockchain]);
-      }else if(mode==='private'){
-        if(!targetVault)throw new Error('Create or select a vault first.');
-        if(!authorization)throw new Error('PIN authorization required.');
-        await addPrivateKeyAccount(targetVault,chain,secret,authorization,name.trim()||'Imported Key');
-      }else if(mode==='watch'){
-        if(!targetVault)throw new Error('Create or select a vault first.');
-        const input:Partial<Record<Blockchain,string>>={};
-        if(addresses[selectedBlockchain].trim())input[selectedBlockchain]=addresses[selectedBlockchain].trim();
-        await addWatchOnlyAccount(targetVault,input,name.trim()||'Watch Wallet');
-      }else if(mode==='derive'){
-        if(!targetVault||!targetAccount)throw new Error('Recovery phrase source not selected.');
-        const count=Number(batchCount);
-        if(!Number.isInteger(count)||count<1||count>20)throw new Error('Choose between 1 and 20 accounts.');
-        if(!authorization)throw new Error('PIN authorization required.');
-        await addDerivedAccounts(targetVault,targetAccount,count,authorization,name.trim()||'Account',selectedBlockchain);
-      }else if(mode==='rename'){
-        if(!targetVault)throw new Error('Wallet or vault not selected.');
-        if(targetAccount==='__vault__') await renameWalletVault(targetVault,name);
-        else {
-          if(!targetAccount)throw new Error('Wallet account not selected.');
-          await renameWalletAccount(targetVault,targetAccount,name);
+    try {
+      if (mode === 'import') {
+        const normalized = phrase.trim().toLowerCase().replace(/\\s+/g, ' ');
+        if (normalized.split(' ').filter(Boolean).length !== 12 || !bip39.validateMnemonic(normalized)) {
+          throw new Error('Enter a valid 12-word BIP39 recovery phrase.');
         }
+        if (!auth) throw new Error('Authorization required.');
+        let targetVaultId = vaultId;
+        if (!targetVaultId) {
+          const created = await createWalletVault('My Wallet');
+          targetVaultId = created.vaults[created.vaults.length - 1].id;
+        }
+        await addMnemonicSource(targetVaultId, normalized, auth, 'Recovery Phrase', 'HD Wallet', [selectedBlockchain]);
+      } else if (mode === 'watch') {
+        let targetVaultId = vaultId;
+        if (!targetVaultId) {
+          const created = await createWalletVault('My Wallet');
+          targetVaultId = created.vaults[created.vaults.length - 1].id;
+        }
+        await addWatchOnlyAccount(targetVaultId, { [selectedBlockchain]: publicAddress.trim() }, name.trim() || 'Watch Wallet');
+      } else if (mode === 'derive') {
+        const quantity = Number(count);
+        if (!vaultId || !accountId) throw new Error('Select an HD wallet first.');
+        if (!Number.isInteger(quantity) || quantity < 1 || quantity > 20) throw new Error('Choose 1–20 wallets.');
+        if (!auth) throw new Error('Authorization required.');
+        await addDerivedAccounts(vaultId, accountId, quantity, auth, name.trim() || 'Wallet', selectedBlockchain);
+      } else if (mode === 'rename') {
+        if (!vaultId || !accountId) throw new Error('Wallet not selected.');
+        await renameWalletAccount(vaultId, accountId, name);
       }
-      await finish();
-    }catch(error){
+      await refreshAndClose();
+    } catch (error) {
       setBusy(false);
-      Alert.alert('Unable to update wallets',error instanceof Error?error.message:'Please check the details and try again.');
+      Alert.alert('Unable to update wallets', error instanceof Error ? error.message : 'Please check the details and try again.');
     }
   };
-  const activate=async(vaultId:string,accountId:string)=>{
-    try{await selectWalletAccount(vaultId,accountId);router.replace('/(tabs)/home');}
-    catch(error){Alert.alert('Wallet switch failed',error instanceof Error?error.message:'Please try again.');}
+  const onSubmit = () => {
+    if (mode === 'import' || mode === 'derive') {
+      runAuthorized(mode === 'derive' ? 'derive-account' : 'import-secret',
+        mode === 'derive' ? 'Authorize wallet derivation' : 'Authorize recovery phrase import',
+        async auth => { await submit(auth); setAuthorization(null); });
+    } else void submit();
   };
-  const remove= (vaultId:string,accountId:string,label:string)=>{
-    Alert.alert('Remove '+label+'?', 'This removes this account from this device. It does not move or delete funds on-chain. Make sure its recovery information is safely backed up.',[
-      {text:'Cancel',style:'cancel'},
-      {text:'Continue',style:'destructive',onPress:()=>setAuthorizationRequest({action:'delete-account',title:'Authorize wallet removal',run:async(auth)=>{await removeWalletAccount(vaultId,accountId,auth);await refreshWalletVaultStore();setAuthorizationRequest(null);}})}
-    ]);
+  const activate = async (vId: string, aId: string) => {
+    try {
+      await selectWalletAccount(vId, aId);
+      router.replace('/(tabs)/home');
+    } catch (error) {
+      Alert.alert('Wallet switch failed', error instanceof Error ? error.message : 'Please try again.');
+    }
   };
-  return <SafeAreaView style={styles.container} edges={['top']}>
+  const remove = (vId: string, aId: string, label: string) => Alert.alert(
+    'Remove ' + label + '?',
+    'This removes the wallet entry from this device only. It does not affect on-chain funds. Make sure the recovery information is backed up.',
+    [{ text: 'Cancel', style: 'cancel' }, { text: 'Remove', style: 'destructive', onPress: () => runAuthorized('delete-account', 'Authorize wallet removal', async auth => {
+      await removeWalletAccount(vId, aId, auth);
+      await refreshWalletVaultStore();
+      setAuthorization(null);
+    }) }]
+  );
+  const copy = async (value: string) => {
+    await Clipboard.setStringAsync(value);
+    setMenu(null);
+    Alert.alert('Copied', 'Wallet address copied.');
+  };
+
+  const renderWallet = (item: typeof chainAccounts[number], isRoot = false) => {
+    const { vault, account } = item;
+    const address = account.addresses[selectedBlockchain] ?? '';
+    const active = walletVaultStore?.activeAccountId === account.id;
+    return <View key={account.id} style={[styles.walletCard, isRoot && styles.rootCard, active && styles.activeCard]}>
+      <TouchableOpacity style={styles.walletBody} onPress={() => void activate(vault.id, account.id)} activeOpacity={0.8}>
+        <View style={[styles.walletIcon, isRoot && styles.rootIcon, account.sourceType === 'watch-only' && styles.watchIcon]}>
+          <Ionicons name={account.sourceType === 'watch-only' ? 'eye-outline' : isRoot ? 'key-outline' : 'wallet-outline'} size={20} color={account.sourceType === 'watch-only' ? '#0D9488' : isRoot ? '#D63384' : '#6C4CF1'} />
+        </View>
+        <View style={styles.walletCopy}>
+          <View style={styles.walletNameRow}>
+            <Text style={[styles.walletName, isRoot && styles.rootName]} numberOfLines={1}>{account.name}</Text>
+            {isRoot ? <Text style={styles.badgePink}>HD</Text> : account.sourceType === 'watch-only' ? <Text style={styles.badgeGreen}>WATCH</Text> : null}
+            {active ? <Ionicons name="checkmark-circle" size={17} color="#D63384" /> : null}
+          </View>
+          <Text style={styles.address}>{short(address)}</Text>
+          <Text style={styles.walletMeta}>{account.sourceType === 'watch-only' ? 'Read-only address' : isRoot ? 'Recovery phrase wallet' : 'Derived wallet'}{account.derivationPaths[selectedBlockchain] ? ' · ' + account.derivationPaths[selectedBlockchain] : ''}</Text>
+        </View>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.more} onPress={() => setMenu({ vaultId: vault.id, accountId: account.id })} hitSlop={8}>
+        <Ionicons name="ellipsis-vertical" size={20} color="#777286" />
+      </TouchableOpacity>
+    </View>;
+  };
+
+  return <SafeAreaView style={styles.screen} edges={['top']}>
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.back} onPress={()=>router.back()}><Ionicons name="chevron-back" size={22} color="#211B35"/></TouchableOpacity>
-        <View style={{flex:1}}><Text style={styles.title}>Wallets</Text><Text style={styles.subtitle}>Manage {CHAIN_NAMES[selectedBlockchain]} wallets</Text></View>
-        <TouchableOpacity style={styles.addVault} onPress={()=>openMode('vault')}><Ionicons name="add" size={17} color="#FFFFFF"/><Text style={styles.addVaultText}>Vault</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.back} onPress={() => router.back()}><Ionicons name="chevron-back" size={21} color="#211B35" /></TouchableOpacity>
+        <View style={{ flex: 1 }}><Text style={styles.title}>Manage Wallet</Text><Text style={styles.subtitle}>{CHAIN_NAMES[selectedBlockchain]} · {chainAccounts.length} wallet{chainAccounts.length === 1 ? '' : 's'}</Text></View>
       </View>
-      <View style={styles.activeCard}>
-        <View style={styles.activeIcon}><Ionicons name="wallet" size={21} color="#6C4CF1"/></View>
-        <View style={{flex:1}}><Text style={styles.activeLabel}>CURRENT WALLET</Text><Text style={styles.activeName}>{activeWallet?.name??'No wallet selected'}</Text><Text style={styles.activeAddress}>{short(activeWallet?.addresses[selectedBlockchain])}</Text></View>
-        <View style={styles.activeBadge}><Text style={styles.activeBadgeText}>ACTIVE</Text></View>
-      </View>
-      <View style={styles.chainTabs}>{CHAINS.filter(item=>Boolean(activeVault?.accounts.some(account=>Boolean(account.addresses[item])))).map(item=><TouchableOpacity key={item} style={[styles.chainTab,selectedBlockchain===item&&styles.chainTabActive]} onPress={()=>setSelectedBlockchain(item)}><Text style={[styles.chainTabText,selectedBlockchain===item&&styles.chainTabTextActive]}>{CHAIN_NAMES[item]}</Text></TouchableOpacity>)}</View>
-      <View style={styles.quickActions}>
-        <TouchableOpacity style={styles.quick} onPress={()=>openMode('mnemonic')}><Ionicons name="key-outline" size={18} color="#6C4CF1"/><Text style={styles.quickText}>Add recovery phrase</Text></TouchableOpacity>
-        <TouchableOpacity style={styles.quick} onPress={()=>openMode('watch')}><Ionicons name="eye-outline" size={18} color="#6C4CF1"/><Text style={styles.quickText}>Add watch wallet</Text></TouchableOpacity>
-        <TouchableOpacity style={styles.quick} onPress={()=>openMode('private')}><Ionicons name="key" size={18} color="#6C4CF1"/><Text style={styles.quickText}>Import private key</Text></TouchableOpacity>
-      </View>
-      {vaults.map(vault=><View key={vault.id} style={styles.vaultCard}>
-        <View style={styles.vaultHeader}>
-          <View style={{flex:1}}><Text style={styles.vaultName}>{vault.name}</Text><Text style={styles.vaultMeta}>{vault.sources.length} recovery sources · {vault.accounts.length} accounts</Text></View>
-          <TouchableOpacity onPress={()=>{setTargetVault(vault.id);setTargetAccount('__vault__');setName(vault.name);setMode('rename');}}><Ionicons name="create-outline" size={19} color="#777286"/></TouchableOpacity>
-        </View>
-        {vault.accounts.filter(account=>Boolean(account.addresses[selectedBlockchain])).length===0?<View style={styles.emptyChain}><Ionicons name="wallet-outline" size={20} color="#A29BB8"/><Text style={styles.emptyChainText}>No {CHAIN_NAMES[selectedBlockchain]} wallets in this vault yet.</Text></View>:null}
-        {vault.accounts.filter(account=>Boolean(account.addresses[selectedBlockchain])).map(account=>{
-          const isActive=walletVaultStore?.activeAccountId===account.id;
-          const chainAddress=account.addresses[selectedBlockchain];
-          return <View key={account.id} style={[styles.accountRow,isActive&&styles.accountActive]}>
-            <TouchableOpacity style={styles.accountMain} onPress={()=>activate(vault.id,account.id)} activeOpacity={0.75}>
-              <View style={[styles.accountIcon,account.sourceType==='watch-only'&&styles.watchIcon]}><Ionicons name={account.sourceType==='watch-only'?'eye-outline':'wallet-outline'} size={19} color={account.sourceType==='watch-only'?'#0D9488':'#6C4CF1'}/></View>
-              <View style={{flex:1}}><View style={styles.nameLine}><Text style={styles.accountName}>{account.name}</Text>{account.sourceType==='watch-only'?<Text style={styles.watchBadge}>WATCH</Text>:null}</View><Text style={styles.accountAddress}>{short(chainAddress)}</Text><Text style={styles.accountType}>{account.sourceType==='mnemonic'?'Recovery phrase account':account.sourceType==='private-key'?'Imported private key':'Read-only address'}</Text></View>
-              {isActive?<Ionicons name="checkmark-circle" size={21} color="#6C4CF1"/>:<Ionicons name="chevron-forward" size={18} color="#9B97B2"/>}
-            </TouchableOpacity>
-            <View style={styles.accountActions}>
-              {account.sourceType==='private-key'?<TouchableOpacity onPress={()=>{void activate(vault.id,account.id).then(()=>router.push('/export-private-key'));}}><Ionicons name="download-outline" size={16} color="#6C4CF1"/></TouchableOpacity>:null}<TouchableOpacity onPress={()=>openMode('rename',vault.id,account.id)}><Ionicons name="pencil-outline" size={16} color="#777286"/></TouchableOpacity>
-              <TouchableOpacity onPress={()=>remove(vault.id,account.id,account.name)}><Ionicons name="trash-outline" size={16} color="#DC6262"/></TouchableOpacity>
-            </View>
-          </View>;
-        })}
-        {vault.sources.filter(source=>source.type==='mnemonic' && (source.blockchains?.includes(selectedBlockchain) || vault.accounts.some(account=>account.sourceId===source.id && Boolean(account.addresses[selectedBlockchain])))).map(source=><TouchableOpacity key={source.id} style={styles.deriveRow} onPress={()=>openMode('derive',vault.id,source.id)}><Ionicons name="git-branch-outline" size={16} color="#6C4CF1"/><Text style={styles.deriveText}>Add accounts from {source.name}</Text><Ionicons name="add-circle-outline" size={18} color="#6C4CF1"/></TouchableOpacity>)}
-        <View style={styles.vaultActions}><TouchableOpacity style={styles.vaultAction} onPress={()=>openMode('mnemonic',vault.id)}><Ionicons name="key-outline" size={15} color="#6C4CF1"/><Text style={styles.addToVaultText}>Recovery phrase</Text></TouchableOpacity><TouchableOpacity style={styles.vaultAction} onPress={()=>openMode('watch',vault.id)}><Ionicons name="eye-outline" size={15} color="#0D9488"/><Text style={styles.addToVaultText}>Watch wallet</Text></TouchableOpacity><TouchableOpacity style={styles.vaultAction} onPress={()=>openMode('private',vault.id)}><Ionicons name="key" size={15} color="#6C4CF1"/><Text style={styles.addToVaultText}>Private key</Text></TouchableOpacity></View>
-      </View>)}
-      {vaults.length===0?<View style={styles.empty}><Ionicons name="wallet-outline" size={38} color="#9B97B2"/><Text style={styles.emptyTitle}>No vaults found</Text><Text style={styles.emptyText}>Create a vault or add a wallet to get started.</Text></View>:null}
-      <View style={styles.footerNote}><Ionicons name="shield-checkmark-outline" size={16} color="#0D9488"/><Text style={styles.footerText}>Recovery phrases and private keys remain in device secure storage. Watch wallets are read-only.</Text></View>
+      <View style={styles.chainBar}>{CHAINS.map(chain => <TouchableOpacity key={chain} style={[styles.chainChip, selectedBlockchain === chain && styles.chainSelected]} onPress={() => setSelectedBlockchain(chain)}><Text style={[styles.chainText, selectedBlockchain === chain && styles.chainTextSelected]}>{CHAIN_NAMES[chain]}</Text></TouchableOpacity>)}</View>
+
+      <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>HD Wallet</Text><Text style={styles.counter}>{roots.length}</Text></View>
+      {roots.length ? roots.map(item => renderWallet(item, true)) : <View style={styles.empty}><Ionicons name="key-outline" size={23} color="#D63384" /><Text style={styles.emptyTitle}>No HD wallet on this chain</Text><Text style={styles.emptySubtitle}>Create or import a recovery phrase for {CHAIN_NAMES[selectedBlockchain]}.</Text></View>}
+
+      <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>Derived Wallets</Text><Text style={styles.counter}>{derived.length}</Text></View>
+      {derived.length ? derived.map(item => renderWallet(item)) : <Text style={styles.emptyLine}>No derived wallets yet.</Text>}
+
+      {others.length ? <><View style={styles.sectionHeader}><Text style={styles.sectionTitle}>Watch Wallets</Text><Text style={styles.counter}>{others.length}</Text></View>{others.map(item => renderWallet(item))}</> : null}
+
+      <TouchableOpacity style={styles.addButton} onPress={() => open('options')} activeOpacity={0.82}><Ionicons name="add-circle-outline" size={20} color="#FFFFFF" /><Text style={styles.addButtonText}>Add Wallet</Text></TouchableOpacity>
+      <TouchableOpacity style={styles.watchButton} onPress={() => open('watch')}><Ionicons name="eye-outline" size={19} color="#0D9488" /><Text style={styles.watchButtonText}>Add Watch Wallet</Text></TouchableOpacity>
+      <View style={styles.note}><Ionicons name="shield-checkmark-outline" size={17} color="#0D9488" /><Text style={styles.noteText}>Recovery phrases and private keys remain in secure device storage. Watch wallets are read-only.</Text></View>
     </ScrollView>
-    <Modal visible={mode!==null} transparent animationType="slide" onRequestClose={()=>setMode(null)}>
-      <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS==='ios'?'padding':undefined}>
+
+    <Modal visible={mode !== null} transparent animationType="slide" onRequestClose={() => setMode(null)}>
+      <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.modalCard}>
-          <View style={styles.modalHeader}><Text style={styles.modalTitle}>{mode==='vault'?'Create vault':mode==='mnemonic'?'Add recovery phrase':mode==='private'?'Import private key':mode==='watch'?'Add watch wallet':mode==='derive'?'Add derived accounts':'Rename'}</Text><TouchableOpacity onPress={()=>setMode(null)}><Ionicons name="close" size={22} color="#777286"/></TouchableOpacity></View>
-          {mode==='vault'||mode==='rename'?<TextInput style={styles.input} value={name} onChangeText={setName} placeholder={mode==='vault'?'Vault name':'New name'} placeholderTextColor="#9B97B2" autoCapitalize="words"/>:null}
-          {mode==='derive'?<><Text style={styles.fieldLabel}>Number of accounts (1–20)</Text><TextInput style={styles.input} value={batchCount} onChangeText={setBatchCount} keyboardType="number-pad" placeholder="5" placeholderTextColor="#9B97B2"/><Text style={styles.fieldLabel}>Account name prefix</Text><TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Account" placeholderTextColor="#9B97B2" autoCapitalize="words"/><Text style={styles.helper}>New accounts are derived locally from this recovery phrase. The phrase remains in secure device storage.</Text></>:null}
-          {mode==='mnemonic'?<><Text style={styles.fieldLabel}>Recovery phrase (12 or 24 words)</Text><TextInput style={[styles.input,styles.secretInput]} value={secret} onChangeText={setSecret} placeholder="Enter recovery phrase" placeholderTextColor="#9B97B2" autoCapitalize="none" autoCorrect={false} secureTextEntry multiline={false}/><Text style={styles.helper}>This phrase is processed locally and stored in secure device storage.</Text></>:null}
-          {mode==='private'?<><Text style={styles.fieldLabel}>Blockchain</Text><View style={styles.chainChips}>{CHAINS.map(item=><TouchableOpacity key={item} style={[styles.chainChip,chain===item&&styles.chainChipActive]} onPress={()=>setChain(item)}><Text style={[styles.chainChipText,chain===item&&styles.chainChipTextActive]}>{CHAIN_NAMES[item]}</Text></TouchableOpacity>)}</View><Text style={styles.fieldLabel}>Private key</Text><TextInput style={styles.input} value={secret} onChangeText={setSecret} placeholder="Enter private key" placeholderTextColor="#9B97B2" autoCapitalize="none" autoCorrect={false} secureTextEntry/></>:null}
-          {mode==='watch'?<><Text style={styles.fieldLabel}>{CHAIN_NAMES[selectedBlockchain]} public address</Text><TextInput style={styles.input} value={addresses[selectedBlockchain]} onChangeText={value=>setAddresses(current=>({...current,[selectedBlockchain]:value}))} placeholder={selectedBlockchain==='solana'?'Solana public address':'0x… public address'} placeholderTextColor="#9B97B2" autoCapitalize="none" autoCorrect={false}/></>:null}
-          {mode!=='vault'&&mode!=='rename'&&mode!=='derive'?<TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Wallet name (optional)" placeholderTextColor="#9B97B2" autoCapitalize="words"/>:null}
-          <TouchableOpacity style={[styles.submit,busy&&{opacity:0.6}]} onPress={submit} disabled={busy}><Text style={styles.submitText}>{busy?'Saving…':mode==='vault'?'Create vault':mode==='rename'?'Save name':mode==='derive'?'Create accounts':'Add wallet'}</Text></TouchableOpacity>
+          <View style={styles.modalHeader}><Text style={styles.modalTitle}>{mode === 'options' ? 'Add Wallet' : mode === 'import' ? 'Import Wallet' : mode === 'watch' ? 'Add Watch Wallet' : mode === 'derive' ? 'Create Derived Wallets' : 'Rename Wallet'}</Text><TouchableOpacity onPress={() => setMode(null)}><Ionicons name="close" size={23} color="#777286" /></TouchableOpacity></View>
+          {mode === 'options' ? <View style={{ gap: 10 }}>
+            <TouchableOpacity style={styles.option} onPress={() => { setMode(null); router.push('/onboarding'); }}><View style={styles.optionIcon}><Ionicons name="sparkles-outline" size={22} color="#D63384" /></View><View style={{ flex: 1 }}><Text style={styles.optionTitle}>Generate HD Wallet</Text><Text style={styles.optionDescription}>Create a new recovery phrase for {CHAIN_NAMES[selectedBlockchain]}.</Text></View><Ionicons name="chevron-forward" size={18} color="#D63384" /></TouchableOpacity>
+            <TouchableOpacity style={styles.option} onPress={() => open('import')}><View style={[styles.optionIcon, { backgroundColor: '#F1EDFF' }]}><Ionicons name="key-outline" size={22} color="#6C4CF1" /></View><View style={{ flex: 1 }}><Text style={styles.optionTitle}>Import Wallet</Text><Text style={styles.optionDescription}>Import a 12-word phrase for this chain only.</Text></View><Ionicons name="chevron-forward" size={18} color="#6C4CF1" /></TouchableOpacity>
+          </View> : null}
+          {mode === 'import' ? <><Text style={styles.label}>12-word recovery phrase</Text><TextInput style={[styles.input, styles.phraseInput]} value={phrase} onChangeText={setPhrase} placeholder="Enter all 12 words" placeholderTextColor="#A39DB2" autoCapitalize="none" autoCorrect={false} multiline secureTextEntry /><Text style={styles.helper}>BIP39 checksum is validated locally. The phrase is imported only for {CHAIN_NAMES[selectedBlockchain]}.</Text></> : null}
+          {mode === 'watch' ? <><Text style={styles.label}>{CHAIN_NAMES[selectedBlockchain]} public address</Text><TextInput style={styles.input} value={publicAddress} onChangeText={setPublicAddress} placeholder={selectedBlockchain === 'solana' ? 'Solana public address' : '0x public address'} placeholderTextColor="#A39DB2" autoCapitalize="none" autoCorrect={false} /><TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Wallet name (optional)" placeholderTextColor="#A39DB2" autoCapitalize="words" /></> : null}
+          {mode === 'derive' ? <><Text style={styles.label}>Number of wallets (1–20)</Text><TextInput style={styles.input} value={count} onChangeText={setCount} keyboardType="number-pad" placeholder="1" placeholderTextColor="#A39DB2" /><Text style={styles.label}>Wallet name prefix</Text><TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Wallet" placeholderTextColor="#A39DB2" autoCapitalize="words" /></> : null}
+          {mode === 'rename' ? <><Text style={styles.label}>Wallet name</Text><TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Wallet name" placeholderTextColor="#A39DB2" autoCapitalize="words" /></> : null}
+          {mode !== 'options' ? <TouchableOpacity style={[styles.submit, busy && { opacity: 0.6 }]} onPress={onSubmit} disabled={busy}><Text style={styles.submitText}>{busy ? 'Saving…' : mode === 'import' ? 'Import Wallet' : mode === 'watch' ? 'Add Watch Wallet' : mode === 'derive' ? 'Create Wallets' : 'Save Name'}</Text></TouchableOpacity> : null}
         </View>
       </KeyboardAvoidingView>
     </Modal>
-    <WalletAuthorizationModal visible={authorizationRequest!==null} action={authorizationRequest?.action??'import-secret'} title={authorizationRequest?.title??'Authorize wallet action'} onAuthorized={async(auth)=>{await authorizationRequest?.run(auth);}} onCancel={()=>setAuthorizationRequest(null)}/>
+
+    <Modal visible={menu !== null} transparent animationType="fade" onRequestClose={() => setMenu(null)}>
+      <TouchableOpacity style={styles.menuBackdrop} activeOpacity={1} onPress={() => setMenu(null)}>
+        <View style={styles.menuCard}>
+          <Text style={styles.menuTitle}>{menuItem?.account.name ?? 'Wallet actions'}</Text>
+          {menuItem ? <TouchableOpacity style={styles.menuItem} onPress={() => void copy(menuItem.account.addresses[selectedBlockchain] ?? '')}><Ionicons name="copy-outline" size={18} color="#6C4CF1" /><Text style={styles.menuText}>Copy address</Text></TouchableOpacity> : null}
+          {menuItem ? <TouchableOpacity style={styles.menuItem} onPress={() => { const item = menuItem; setMenu(null); open('rename', item.vault.id, item.account.id); setName(item.account.name); }}><Ionicons name="create-outline" size={18} color="#6C4CF1" /><Text style={styles.menuText}>Rename wallet</Text></TouchableOpacity> : null}
+          {menuItem?.account.sourceType === 'mnemonic' && menuItem.account.accountIndex === 0 ? <TouchableOpacity style={styles.menuItem} onPress={() => { const item = menuItem; setMenu(null); void activate(item.vault.id, item.account.id).then(() => router.push('/export-seed')); }}><Ionicons name="key-outline" size={18} color="#D63384" /><Text style={styles.menuText}>Export recovery phrase</Text></TouchableOpacity> : null}
+          {menuItem?.account.sourceType === 'mnemonic' && menuItem.account.accountIndex === 0 ? <TouchableOpacity style={styles.menuItem} onPress={() => { const item = menuItem; setMenu(null); runAuthorized('derive-account', 'Authorize derived wallet creation', async auth => { await addDerivedAccounts(item.vault.id, item.account.sourceId ?? '', 1, auth, 'Wallet', selectedBlockchain); await refreshWalletVaultStore(); setAuthorization(null); }); }}><Ionicons name="git-branch-outline" size={18} color="#D63384" /><Text style={styles.menuText}>Create derived wallet</Text></TouchableOpacity> : null}
+          {menuItem?.account.sourceType === 'mnemonic' && menuItem.account.accountIndex !== 0 ? <TouchableOpacity style={styles.menuItem} onPress={() => { const item = menuItem; setMenu(null); void activate(item.vault.id, item.account.id).then(() => router.push('/export-private-key')); }}><Ionicons name="download-outline" size={18} color="#6C4CF1" /><Text style={styles.menuText}>Export private key</Text></TouchableOpacity> : null}
+          {menuItem?.account.derivationPaths[selectedBlockchain] ? <View style={styles.pathBox}><Text style={styles.pathLabel}>Derivation path</Text><Text style={styles.pathText}>{menuItem.account.derivationPaths[selectedBlockchain]}</Text></View> : null}
+          {menuItem ? <TouchableOpacity style={[styles.menuItem, styles.removeMenu]} onPress={() => { const item = menuItem; setMenu(null); remove(item.vault.id, item.account.id, item.account.name); }}><Ionicons name="trash-outline" size={18} color="#DC6262" /><Text style={[styles.menuText, { color: '#DC6262' }]}>Remove wallet</Text></TouchableOpacity> : null}
+        </View>
+      </TouchableOpacity>
+    </Modal>
+    <WalletAuthorizationModal visible={authorization !== null} action={authorization?.action ?? 'import-secret'} title={authorization?.title ?? 'Authorize wallet action'} onAuthorized={async auth => { await authorization?.run(auth); }} onCancel={() => setAuthorization(null)} />
   </SafeAreaView>;
 }
-const styles=StyleSheet.create({
- container:{flex:1,backgroundColor:'#FFFFFF'},content:{padding:18,paddingBottom:38},
- header:{flexDirection:'row',alignItems:'center',gap:12,marginBottom:18},back:{width:38,height:38,borderRadius:12,backgroundColor:'#F3F0FF',alignItems:'center',justifyContent:'center'},title:{fontSize:25,fontWeight:'900',color:'#211B35'},subtitle:{fontSize:12,color:'#777286',marginTop:3},addVault:{flexDirection:'row',alignItems:'center',gap:4,paddingHorizontal:12,paddingVertical:10,borderRadius:12,backgroundColor:'#6C4CF1'},addVaultText:{fontSize:12,fontWeight:'800',color:'#FFFFFF'},
- activeCard:{flexDirection:'row',alignItems:'center',gap:12,padding:16,borderRadius:18,backgroundColor:'#F8F6FF',borderWidth:1,borderColor:'#E8E4F3',marginBottom:14},activeIcon:{width:42,height:42,borderRadius:14,backgroundColor:'#EEE9FF',alignItems:'center',justifyContent:'center'},activeLabel:{fontSize:10,fontWeight:'800',color:'#777286',letterSpacing:1},activeName:{fontSize:16,fontWeight:'900',color:'#211B35',marginTop:3},activeAddress:{fontSize:11,color:'#777286',marginTop:3,fontFamily:'monospace'},activeBadge:{backgroundColor:'#EDE9FE',paddingHorizontal:8,paddingVertical:5,borderRadius:8},activeBadgeText:{fontSize:9,fontWeight:'900',color:'#6C4CF1'},
- quickActions:{gap:8,marginBottom:16},quick:{flexDirection:'row',alignItems:'center',gap:10,padding:13,borderRadius:13,borderWidth:1,borderColor:'#E8E4F3',backgroundColor:'#FFFFFF'},quickText:{fontSize:13,fontWeight:'700',color:'#211B35'},
- vaultCard:{padding:14,borderRadius:18,borderWidth:1,borderColor:'#E8E4F3',marginBottom:14,backgroundColor:'#FFFFFF'},vaultHeader:{flexDirection:'row',alignItems:'center',marginBottom:8},vaultName:{fontSize:16,fontWeight:'900',color:'#211B35'},vaultMeta:{fontSize:11,color:'#777286',marginTop:3},
- accountRow:{borderTopWidth:1,borderTopColor:'#F0EDF7',paddingTop:10,paddingBottom:8},accountActive:{backgroundColor:'#FAF9FF',marginHorizontal:-6,paddingHorizontal:6,borderRadius:12},accountMain:{flexDirection:'row',alignItems:'center',gap:10},accountIcon:{width:38,height:38,borderRadius:13,backgroundColor:'#F1EDFF',alignItems:'center',justifyContent:'center'},watchIcon:{backgroundColor:'#E6F7F4'},nameLine:{flexDirection:'row',alignItems:'center',gap:7},accountName:{fontSize:13,fontWeight:'800',color:'#211B35'},watchBadge:{fontSize:8,fontWeight:'900',color:'#0D9488',backgroundColor:'#E6F7F4',paddingHorizontal:6,paddingVertical:3,borderRadius:5},accountAddress:{fontSize:10,color:'#777286',fontFamily:'monospace',marginTop:3},accountType:{fontSize:10,color:'#9B97B2',marginTop:2},accountActions:{flexDirection:'row',justifyContent:'flex-end',gap:18,paddingRight:5,paddingTop:6},deriveRow:{flexDirection:'row',alignItems:'center',gap:8,paddingVertical:10,borderTopWidth:1,borderTopColor:'#F0EDF7'},deriveText:{flex:1,fontSize:11,fontWeight:'700',color:'#6C4CF1'},vaultActions:{flexDirection:'row',flexWrap:'wrap',gap:8,paddingTop:10,borderTopWidth:1,borderTopColor:'#F0EDF7'},vaultAction:{flexDirection:'row',alignItems:'center',gap:6,paddingHorizontal:9,paddingVertical:8,borderRadius:9,backgroundColor:'#F8F6FF'},addToVaultText:{fontSize:11,fontWeight:'700',color:'#6C4CF1'},
- emptyChain:{flexDirection:'row',alignItems:'center',gap:9,paddingVertical:14,paddingHorizontal:12},emptyChainText:{fontSize:12,color:'#918BA4'},empty:{alignItems:'center',padding:32,gap:8},emptyTitle:{fontSize:16,fontWeight:'800',color:'#211B35'},emptyText:{fontSize:12,color:'#777286',textAlign:'center'},footerNote:{flexDirection:'row',gap:8,alignItems:'flex-start',padding:13,backgroundColor:'#EAF8F4',borderRadius:12,marginTop:4},footerText:{flex:1,fontSize:11,color:'#387568',lineHeight:16},
- modalOverlay:{flex:1,justifyContent:'flex-end',backgroundColor:'rgba(20,16,38,0.45)'},modalCard:{backgroundColor:'#FFFFFF',padding:20,paddingBottom:30,borderTopLeftRadius:24,borderTopRightRadius:24,gap:12},modalHeader:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',marginBottom:4},modalTitle:{fontSize:19,fontWeight:'900',color:'#211B35'},fieldLabel:{fontSize:12,fontWeight:'800',color:'#777286'},input:{borderWidth:1,borderColor:'#E8E4F3',borderRadius:12,paddingHorizontal:13,paddingVertical:12,color:'#211B35',fontSize:14,backgroundColor:'#FFFFFF'},secretInput:{letterSpacing:1},helper:{fontSize:11,color:'#777286',lineHeight:16},chainTabs:{flexDirection:'row',flexWrap:'wrap',gap:7,marginBottom:14},chainTab:{paddingHorizontal:10,paddingVertical:8,borderRadius:10,backgroundColor:'#F4F2FA'},chainTabActive:{backgroundColor:'#6C4CF1'},chainTabText:{fontSize:11,fontWeight:'700',color:'#777286'},chainTabTextActive:{color:'#FFFFFF'},chainChips:{flexDirection:'row',flexWrap:'wrap',gap:7},chainChip:{paddingHorizontal:10,paddingVertical:8,borderRadius:9,borderWidth:1,borderColor:'#E8E4F3'},chainChipActive:{backgroundColor:'#F3F0FF',borderColor:'#6C4CF1'},chainChipText:{fontSize:10,color:'#777286',fontWeight:'700'},chainChipTextActive:{color:'#6C4CF1'},addressField:{gap:5},addressLabel:{fontSize:10,fontWeight:'800',color:'#777286'},submit:{backgroundColor:'#6C4CF1',paddingVertical:15,borderRadius:13,alignItems:'center',marginTop:4},submitText:{color:'#FFFFFF',fontSize:14,fontWeight:'900'}
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: '#FFFFFF' }, content: { padding: 18, paddingBottom: 36 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 }, back: { width: 40, height: 40, borderRadius: 13, backgroundColor: '#F5F2FA', alignItems: 'center', justifyContent: 'center' },
+  title: { fontSize: 25, fontWeight: '900', color: '#211B35' }, subtitle: { fontSize: 12, color: '#777286', marginTop: 4 },
+  chainBar: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 22 }, chainChip: { paddingHorizontal: 12, paddingVertical: 9, borderRadius: 11, backgroundColor: '#F5F2FA', borderWidth: 1, borderColor: '#EEE9F5' }, chainSelected: { backgroundColor: '#D63384', borderColor: '#D63384' }, chainText: { fontSize: 11, fontWeight: '800', color: '#777286' }, chainTextSelected: { color: '#FFFFFF' },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10, marginTop: 4 }, sectionTitle: { fontSize: 15, fontWeight: '900', color: '#211B35' }, counter: { paddingHorizontal: 7, paddingVertical: 3, borderRadius: 7, backgroundColor: '#FCE7F3', color: '#B4236E', fontSize: 10, fontWeight: '900', overflow: 'hidden' },
+  walletCard: { flexDirection: 'row', alignItems: 'center', gap: 6, padding: 13, borderRadius: 17, borderWidth: 1, borderColor: '#EEEAF4', backgroundColor: '#FFFFFF', marginBottom: 9 }, rootCard: { borderColor: '#F0B8D5', backgroundColor: '#FFF7FB' }, activeCard: { borderColor: '#D63384', borderWidth: 1.4 }, walletBody: { flexDirection: 'row', alignItems: 'center', gap: 11, flex: 1 }, walletIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: '#F1EDFF', alignItems: 'center', justifyContent: 'center' }, rootIcon: { backgroundColor: '#FCE7F3' }, watchIcon: { backgroundColor: '#E6F7F4' }, walletCopy: { flex: 1, gap: 4 }, walletNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 }, walletName: { fontSize: 13, fontWeight: '800', color: '#211B35', flexShrink: 1 }, rootName: { color: '#B4236E' }, badgePink: { fontSize: 8, fontWeight: '900', color: '#B4236E', backgroundColor: '#FCE7F3', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 5 }, badgeGreen: { fontSize: 8, fontWeight: '900', color: '#0D9488', backgroundColor: '#E6F7F4', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 5 }, address: { fontSize: 10, color: '#777286', fontFamily: 'monospace' }, walletMeta: { fontSize: 9, color: '#9B95AA' }, more: { width: 34, height: 38, borderRadius: 10, backgroundColor: '#F8F6FB', alignItems: 'center', justifyContent: 'center' },
+  empty: { alignItems: 'center', padding: 20, gap: 7, borderRadius: 16, borderWidth: 1, borderColor: '#F0D1E2', backgroundColor: '#FFF8FC', marginBottom: 16 }, emptyTitle: { fontSize: 13, fontWeight: '800', color: '#B4236E' }, emptySubtitle: { fontSize: 11, color: '#8D8498', textAlign: 'center', lineHeight: 16 }, emptyLine: { fontSize: 11, color: '#9B95AA', paddingVertical: 8, marginBottom: 10 },
+  addButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, paddingVertical: 15, borderRadius: 15, backgroundColor: '#D63384', marginTop: 20 }, addButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '900' }, watchButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 13, borderRadius: 14, borderWidth: 1, borderColor: '#CDEBE5', backgroundColor: '#F4FBF9', marginTop: 9 }, watchButtonText: { color: '#0D9488', fontSize: 13, fontWeight: '800' }, note: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, padding: 13, backgroundColor: '#EAF8F4', borderRadius: 13, marginTop: 18 }, noteText: { flex: 1, fontSize: 11, color: '#387568', lineHeight: 16 },
+  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(20,16,38,0.45)' }, modalCard: { backgroundColor: '#FFFFFF', padding: 20, paddingBottom: 28, borderTopLeftRadius: 25, borderTopRightRadius: 25, gap: 13 }, modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }, modalTitle: { fontSize: 19, fontWeight: '900', color: '#211B35' }, option: { flexDirection: 'row', alignItems: 'center', gap: 11, borderWidth: 1, borderColor: '#EEE8F3', borderRadius: 16, padding: 13 }, optionIcon: { width: 43, height: 43, borderRadius: 14, backgroundColor: '#FCE7F3', alignItems: 'center', justifyContent: 'center' }, optionTitle: { fontSize: 13, fontWeight: '900', color: '#211B35' }, optionDescription: { fontSize: 10, color: '#777286', lineHeight: 15 },
+  label: { fontSize: 12, fontWeight: '800', color: '#777286' }, input: { borderWidth: 1, borderColor: '#E8E4F3', borderRadius: 13, paddingHorizontal: 13, paddingVertical: 12, color: '#211B35', fontSize: 14, backgroundColor: '#FFFFFF' }, phraseInput: { minHeight: 84, textAlignVertical: 'top', lineHeight: 22 }, helper: { fontSize: 11, color: '#777286', lineHeight: 16 }, submit: { backgroundColor: '#D63384', paddingVertical: 15, borderRadius: 14, alignItems: 'center', marginTop: 4 }, submitText: { color: '#FFFFFF', fontSize: 14, fontWeight: '900' },
+  menuBackdrop: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(20,16,38,0.35)', padding: 22 }, menuCard: { width: '100%', borderRadius: 20, backgroundColor: '#FFFFFF', padding: 17, gap: 3 }, menuTitle: { fontSize: 15, fontWeight: '900', color: '#211B35', marginBottom: 8 }, menuItem: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 12, paddingHorizontal: 5 }, menuText: { fontSize: 13, fontWeight: '700', color: '#211B35' }, pathBox: { borderTopWidth: 1, borderTopColor: '#F0EDF7', paddingTop: 10, paddingBottom: 8 }, pathLabel: { fontSize: 10, color: '#777286', fontWeight: '800', marginBottom: 3 }, pathText: { fontSize: 11, color: '#6C4CF1', fontFamily: 'monospace' }, removeMenu: { borderTopWidth: 1, borderTopColor: '#F7E5E5', marginTop: 4 },
 });
