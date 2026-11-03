@@ -9,7 +9,7 @@ import {
   type WalletAddresses,
 } from './walletService';
 import type { Blockchain } from '../../context/WalletContext';
-import { deriveAddressForChain, deriveAddressFromPrivateKey, deriveBitcoinAddress, getDerivationMetadata, getAccountDerivationMetadata } from './chainAdapterRegistry';
+import { deriveAddressForChain, deriveAddressFromPrivateKey, deriveBitcoinAddress, deriveBitcoinAddressFromPrivateKey, getDerivationMetadata, getAccountDerivationMetadata } from './chainAdapterRegistry';
 import { assertWalletAuthorization, type WalletAuthorization } from './walletSecurityService';
 
 const STORE_KEY = 'xu_wallet_vault_store_v1';
@@ -508,10 +508,14 @@ export async function addWatchOnlyAccount(
       const checksum = decoded.slice(21);
       const { sha256 } = await import('@noble/hashes/sha2.js');
       const expected = sha256(sha256(payload)).slice(0, 4);
-      if (checksum.some((byte, i) => byte !== expected[i]) || payload[0] !== (chain === 'bitcoin' ? 0x00 : 0x41)) {
+      const expectedPrefix = chain === 'bitcoin' ? [0x00, 0x6f] : [0x41];
+      if (checksum.some((byte, i) => byte !== expected[i]) || !expectedPrefix.includes(payload[0])) {
         throw new Error(`Invalid ${chain} address.`);
       }
-      addresses[chain] = value;
+      if (chain === 'bitcoin') {
+        if (payload[0] === 0x00) addresses.bitcoin = value;
+        else addresses.bitcoinTestnet = value;
+      } else addresses.tron = value;
     } else {
       if (!ethers.isAddress(value)) throw new Error(`Invalid ${chain} address.`);
       addresses[chain] = ethers.getAddress(value);
