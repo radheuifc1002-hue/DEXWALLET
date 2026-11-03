@@ -71,3 +71,20 @@ test('Generated HD wallet setup appends to the active vault instead of silently 
   assert.match(setup, /refreshWalletVaultStore\(\)/);
   assert.match(setup, /if \(!hasExistingAccount\)[\s\S]*?initWallet\(/);
 });
+
+
+test('Home wallet selector lists only accounts with a selected-chain address and assets preview is capped at five', () => {
+  const home = read('app/(tabs)/home.tsx');
+  assert.match(home, /vault\.accounts\.filter\(\(account\) => Boolean\(account\.addresses\[selectedBlockchain\]\?\.trim\(\)\)\)/);
+  assert.match(home, /visibleTokens\.slice\(0, 5\)/);
+  assert.match(home, /visibleTokens\.length - 5/);
+  assert.match(home, /Number\(Boolean\(a\.contractAddress\)\) - Number\(Boolean\(b\.contractAddress\)\)/);
+  assert.match(home, /View all assets/);
+});
+
+test('Full asset page keeps every token and ranks native first then by USD value', () => {
+  const assets = read('app/assets.tsx');
+  assert.match(assets, /tokens\.filter\(\(token\) => token\.blockchain === selectedBlockchain\)\.sort/);
+  assert.match(assets, /b\.balanceUSD \|\| 0/);
+  assert.doesNotMatch(assets, /visible\.slice\(0, 5\)/);
+});
