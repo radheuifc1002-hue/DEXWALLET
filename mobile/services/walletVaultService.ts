@@ -231,7 +231,7 @@ export async function createInitialMnemonicVault(
   addresses: WalletAddresses,
   name = 'My Wallet',
 ): Promise<WalletVaultStore> {
-  const normalized = mnemonic.trim().toLowerCase().replace(/\\s+/g, ' ');
+  const normalized = mnemonic.trim().toLowerCase().replace(/\s+/g, ' ');
   if (!validateMnemonic(normalized)) throw new Error('Invalid recovery phrase.');
   const store = await getWalletVaultStore();
   if (store.activeAccountId && store.vaults.some((vault) => vault.accounts.some((account) => account.id === store.activeAccountId))) {
