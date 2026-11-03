@@ -24,7 +24,7 @@ export default function GenerateSeed() {
   const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState(false);
   const [walletName, setWalletName] = useState('My Wallet');
-  const [chain, setChain] = useState<Blockchain>(initialChain);
+  const chain = initialChain;
 
   useEffect(() => {
     const mnemonic = generateMnemonic();
