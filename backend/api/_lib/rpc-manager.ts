@@ -35,7 +35,7 @@ const READ_ONLY_METHODS = new Set([
   'wallet_getbalance','getaccount','getaccountresource','getnowblock','getblockbynum','gettransactionbyid','gettransactioninfobyid',
   'wallet/getaccount','wallet/getaccountresource','wallet/getnowblock','wallet/getblockbynum','wallet/gettransactionbyid','wallet/gettransactioninfobyid',
 ]);
-const SIGNED_BROADCAST_METHODS = new Set(['eth_sendRawTransaction','sendTransaction','sendrawtransaction','sendrawtransaction']);
+const SIGNED_BROADCAST_METHODS = new Set(['eth_sendRawTransaction','sendTransaction','sendrawtransaction','wallet/broadcasttransaction','broadcasttransaction']);
 const REQUEST_TIMEOUT_MS = 18_000;
 const MAX_FAILURES = 3;
 const BASE_COOLDOWN_MS = 5_000;
@@ -246,7 +246,7 @@ export async function probeRpcProviders(chain: RpcChain, network: RpcNetwork): P
     const key=providerKey(chain,network,provider),controller=new AbortController();
     const timeout=setTimeout(()=>controller.abort(),6_000),started=Date.now();
     try{
-      const method=chain==='solana'?'getHealth':'eth_chainId';
+      const method=chain==='solana'?'getHealth':chain==='bitcoin'?'getblockchaininfo':chain==='tron'?'net_version':'eth_chainId';
       const response=await fetch(provider.url,{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},
         body:JSON.stringify({jsonrpc:'2.0',id:'dexwallet-health',method,params:[]}),signal:controller.signal});
       if(!response.ok)throw new Error('HTTP '+response.status);
