@@ -21,7 +21,7 @@ test('Bitcoin testnet derives coin type 1 and testnet Base58 version byte', () =
   assert.match(wallet, /bitcoinTestnet: await deriveBitcoinAddress/);
   assert.match(vault, /deriveBitcoinAddress\(phrase, account\.accountIndex, 'testnet'\)/);
   assert.match(context, /network === 'testnet'/);
-  assert.match(context, /walletAddresses\\.bitcoinTestnet/);
+  assert.ok(context.includes('walletAddresses.bitcoinTestnet'));
 });
 
 test('Bitcoin and TRON mobile RPC requests are routed through the server gateway', () => {
@@ -48,7 +48,7 @@ test('TRON RPC adapter uses TronGrid mainnet and Nile, and probes the actual pro
 test('Bitcoin balances and history use network-specific indexed APIs', () => {
   assert.match(balances, /mempool\.space\/testnet4\/api/);
   assert.match(balances, /chain_stats/);
-  assert.match(history, /\\/address\\/'\\+encodeURIComponent\\(address\\)\\+'\\/txs'/);
+  assert.ok(history.includes("'/address/'+encodeURIComponent(address)+'/txs'"));
   assert.match(history, /mempool-space/);
 });
 
