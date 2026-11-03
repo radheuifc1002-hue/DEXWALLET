@@ -7,7 +7,7 @@ const TRON_CHAIN_ID:Record<RpcNetwork,number>={mainnet:728126428,testnet:3448148
 const BTC_READ=new Set(['getblockchaininfo','getblockcount','getblockhash','getblockheader','getrawtransaction','estimatesmartfee']);
 const BTC_WRITE=new Set(['sendrawtransaction']);
 const TRON_READ=new Set(['net_version','eth_chainId','getaccount','getaccountresource','getnowblock','getblockbynum','gettransactionbyid','gettransactioninfobyid']);
-const TRON_WRITE=new Set(['broadcasttransaction']);
+const TRON_WRITE=new Set(['broadcasttransaction','eth_sendRawTransaction']);\nconst TRON_EVM=new Set(['eth_chainId','eth_blockNumber','eth_getBalance','eth_call','eth_getCode','eth_gasPrice','eth_estimateGas','eth_getTransactionCount','eth_getTransactionByHash','eth_getTransactionReceipt','eth_sendRawTransaction']);
 async function request(url:string,init?:RequestInit):Promise<any>{
  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),12000);
  try{const response=await fetch(url,{...init,headers:{Accept:'application/json',...(init?.headers||{})},signal:controller.signal});const text=await response.text();if(!response.ok)throw new Error('upstream_http_'+response.status);try{return JSON.parse(text)}catch{return text;}}
@@ -51,10 +51,10 @@ export async function proxyChainRpc(chain:Chain,network:RpcNetwork,body:unknown)
    const rate=target<=1?fees.fastestFee:target<=3?fees.halfHourFee:target<=6?fees.hourFee:fees.economyFee;
    return result(id,{feerate:Number(rate)*0.00001,blocks:target});
   }
-  if(!TRON_READ.has(method)&&!TRON_WRITE.has(method))return failure(id,'Unsupported TRON RPC method: '+method,-32601,400);
+  if(!TRON_READ.has(method)&&!TRON_WRITE.has(method)&&!TRON_EVM.has(method))return failure(id,'Unsupported TRON RPC method: '+method,-32601,400);
   if(method==='net_version')return result(id,String(TRON_CHAIN_ID[network]));
   if(method==='eth_chainId')return result(id,'0x'+TRON_CHAIN_ID[network].toString(16));
-  if(method.startsWith('eth_')){
+  if(TRON_EVM.has(method)){
    const response=await request(TRON[network]+'/jsonrpc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id,method,params})});
    if(response?.error)return failure(id,String(response.error.message||'TRON JSON-RPC error'),Number(response.error.code)||-32000);
    return result(id,response?.result);
