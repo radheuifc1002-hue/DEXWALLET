@@ -7,7 +7,7 @@ import bs58 from 'bs58';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { assertWalletSession } from './walletSessionService';
-import { deriveWalletAddresses } from './chainAdapterRegistry';
+import { deriveWalletAddresses, deriveBitcoinAddress } from './chainAdapterRegistry';
 
 export interface WalletAddresses {
   ethereum: string;
@@ -44,7 +44,7 @@ const PENDING_PRIVATE_KEY_KEY = 'xu_wallet_pending_private_key';
 export type WalletSetupConfig = { name: string; blockchains: ('ethereum'|'bnb'|'polygon'|'arbitrum'|'solana'|'bitcoin'|'tron')[] };
 export const stagePendingPrivateKey = async (privateKey: string, blockchain: 'ethereum'|'bnb'|'polygon'|'arbitrum'|'solana'|'bitcoin'|'tron', name: string): Promise<void> => { if (!privateKey.trim()) throw new Error('Private key is required.'); await SecureStore.setItemAsync(PENDING_PRIVATE_KEY_KEY, JSON.stringify({ privateKey: privateKey.trim(), blockchain, name: name.trim() || 'Imported Wallet' })); };
 export const consumePendingPrivateKey = async (): Promise<{privateKey:string;blockchain:'ethereum'|'bnb'|'polygon'|'arbitrum'|'solana'|'bitcoin'|'tron';name:string}|null> => { const raw=await SecureStore.getItemAsync(PENDING_PRIVATE_KEY_KEY); await SecureStore.deleteItemAsync(PENDING_PRIVATE_KEY_KEY).catch(()=>{}); if(!raw)return null; try { const v=JSON.parse(raw); return v && typeof v.privateKey==='string' && ['ethereum','bnb','polygon','arbitrum','solana','bitcoin','tron'].includes(v.blockchain) ? v : null; } catch { return null; } };
-export const persistPrivateKeyWalletAddresses = async (addresses: Partial<WalletAddresses>): Promise<void> => { const normalized: WalletAddresses={ethereum:addresses.ethereum??'',bnb:addresses.bnb??'',polygon:addresses.polygon??'',arbitrum:addresses.arbitrum??'',solana:addresses.solana??'',bitcoin:addresses.bitcoin??'',tron:addresses.tron??''}; await AsyncStorage.setItem(WALLET_ADDRESSES_KEY,JSON.stringify(normalized)); await AsyncStorage.setItem(WALLET_CREATED_KEY,'true'); };
+export const persistPrivateKeyWalletAddresses = async (addresses: Partial<WalletAddresses>): Promise<void> => { const normalized: WalletAddresses={ethereum:addresses.ethereum??'',bnb:addresses.bnb??'',polygon:addresses.polygon??'',arbitrum:addresses.arbitrum??'',solana:addresses.solana??'',bitcoin:addresses.bitcoin??'',bitcoinTestnet:addresses.bitcoinTestnet??'',tron:addresses.tron??''}; await AsyncStorage.setItem(WALLET_ADDRESSES_KEY,JSON.stringify(normalized)); await AsyncStorage.setItem(WALLET_CREATED_KEY,'true'); };
 export const stagePendingWalletConfig = async (config: WalletSetupConfig): Promise<void> => { const blockchains = Array.from(new Set(config.blockchains)); if (!blockchains.length || blockchains.some((chain) => !['ethereum','bnb','polygon','arbitrum','solana','bitcoin','tron'].includes(chain))) throw new Error('Select at least one supported blockchain.'); await SecureStore.setItemAsync(PENDING_WALLET_CONFIG_KEY, JSON.stringify({ name: config.name.trim() || 'My Wallet', blockchains })); };
 export const consumePendingWalletConfig = async (): Promise<WalletSetupConfig | null> => { const raw = await SecureStore.getItemAsync(PENDING_WALLET_CONFIG_KEY); await SecureStore.deleteItemAsync(PENDING_WALLET_CONFIG_KEY).catch(() => {}); if (!raw) return null; try { const value = JSON.parse(raw) as WalletSetupConfig; return value && Array.isArray(value.blockchains) && value.blockchains.length ? value : null; } catch { return null; } };
 
