@@ -195,7 +195,7 @@ jobs:
         id: metro-transform-cache
         uses: actions/cache/restore@v4
         with:
-          path: ${{ runner.temp }}/metro-cache
+          path: ${{ runner.temp }}/metro-cache-restore
           key: metro-transform-v2-${{ runner.os }}-${{ hashFiles('package-lock.json', 'babel.config.cjs', 'metro.config.cjs') }}-${{ github.run_id }}
           restore-keys: |
             metro-transform-v2-${{ runner.os }}-${{ hashFiles('package-lock.json', 'babel.config.cjs', 'metro.config.cjs') }}
@@ -254,13 +254,14 @@ jobs:
         timeout-minutes: 55
         env:
           EXPO_ROUTER_APP_ROOT: app
-          EXPO_METRO_CACHE_OUTPUT_DIR: ${{ runner.temp }}/metro-cache
+          EXPO_METRO_CACHE_RESTORE_DIR: ${{ runner.temp }}/metro-cache-restore
+          EXPO_METRO_CACHE_OUTPUT_DIR: ${{ runner.temp }}/metro-cache-output
           CMAKE_BUILD_PARALLEL_LEVEL: "4"
           NODE_ENV: production
           GRADLE_OPTS: "-Dorg.gradle.workers.max=4 -Dorg.gradle.parallel=true -Dorg.gradle.caching=true"
         run: |
           set -euo pipefail
-          mkdir -p "$EXPO_METRO_CACHE_OUTPUT_DIR"
+          mkdir -p "$EXPO_METRO_CACHE_RESTORE_DIR" "$EXPO_METRO_CACHE_OUTPUT_DIR"
           chmod +x gradlew
           ./gradlew --max-workers=4 --parallel --stacktrace --info --profile --build-cache -PreactNativeArchitectures=arm64-v8a assembleRelease -x lintVitalAnalyzeRelease -x lintVitalRelease
           METRO_CACHE_FILES=$(find "$EXPO_METRO_CACHE_OUTPUT_DIR" -type f | wc -l)
@@ -288,7 +289,7 @@ jobs:
         if: ${{ always() && steps.android-build.outcome == 'success' && steps.metro-transform-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4
         with:
-          path: ${{ runner.temp }}/metro-cache
+          path: ${{ runner.temp }}/metro-cache-output
           key: ${{ steps.metro-transform-cache.outputs.cache-primary-key }}
 
       - name: Save complete Android project and build outputs
