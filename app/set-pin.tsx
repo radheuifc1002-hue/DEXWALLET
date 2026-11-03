@@ -19,8 +19,8 @@ export default function SetPin() {
   const router = useRouter();
   const { setPin, initWallet, refreshWalletVaultStore, setIsWalletCreated } = useWallet();
   const [pendingMnemonic, setPendingMnemonic] = useState<string | null>(null);
-  const [pendingPrivateKey,setPendingPrivateKey]=useState<{privateKey:string;blockchain:'ethereum'|'bnb'|'polygon'|'solana';name:string}|null>(null);
-  const [pendingConfig, setPendingConfig] = useState<{name:string;blockchains:('ethereum'|'bnb'|'polygon'|'solana')[]} | null>(null);
+  const [pendingPrivateKey,setPendingPrivateKey]=useState<{privateKey:string;blockchain:'ethereum'|'bnb'|'polygon'|'arbitrum'|'solana'|'bitcoin'|'tron';name:string}|null>(null);
+  const [pendingConfig, setPendingConfig] = useState<{name:string;blockchains:('ethereum'|'bnb'|'polygon'|'arbitrum'|'solana'|'bitcoin'|'tron')[]} | null>(null);
   useEffect(() => { void Promise.all([consumePendingMnemonic(), consumePendingWalletConfig(), consumePendingPrivateKey()]).then(([phrase, config, privateKey]) => { setPendingMnemonic(phrase); setPendingConfig(config); setPendingPrivateKey(privateKey); }); }, []);
 
   const [step, setStep] = useState<'enter' | 'confirm'>('enter');
