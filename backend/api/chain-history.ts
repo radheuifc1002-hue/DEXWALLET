@@ -17,7 +17,7 @@ async function getJson(url:string,headers:Record<string,string>={}):Promise<any>
  finally{clearTimeout(timer);}
 }
 const short=(s:string)=>s.length>18?s.slice(0,9)+'…'+s.slice(-7):s;
-function btc(sats:bigint):string{const whole=sats/100000000n,frac=(sats%100000000n).toString().padStart(8,'0').replace(/0+$/,'');return frac?whole+'.'+frac:String(whole);}
+function btc(sats:bigint):string{const whole=sats/100000000n,frac=(sats%100000000n).toString().padStart(8,'0').replace(/0+$/,'');return frac?whole+'.'+frac:String(whole);}\nfunction units(raw:unknown,decimals:number):string{const n=BigInt(String(raw||'0')),d=Math.max(0,Math.min(30,decimals)),base=10n**BigInt(d),whole=n/base,frac=(n%base).toString().padStart(d,'0').replace(/0+$/,'');return frac?whole+'.'+frac:String(whole);}
 function tronAddressHex(address:string):string{
  // TronGrid returns base58check addresses in some fields and 41-prefixed hex in raw transaction data.
  return address;
@@ -44,7 +44,7 @@ export default async function handler(req:any,res:any){
   }
   const headers=process.env.TRONGRID_API_KEY?{'TRON-PRO-API-KEY':process.env.TRONGRID_API_KEY}:{};
   const url=TRON_API[network]+'/v1/accounts/'+encodeURIComponent(address)+'/transactions?limit=50&order_by=block_timestamp,desc&only_confirmed=false';
-  const data=await getJson(url,headers),items=Array.isArray(data?.data)?data.data:[];
+  const [data,trc20]=await Promise.all([getJson(url,headers),getJson(TRON_API[network]+'/v1/accounts/'+encodeURIComponent(address)+'/transactions/trc20?limit=50&order_by=block_timestamp,desc',headers)]);\n  const items=Array.isArray(data?.data)?data.data:[];
   const rows=items.map((tx:any)=>{
    const contract=tx?.raw_data?.contract?.[0],type=String(contract?.type||''),value=contract?.parameter?.value||{};
    if(type!=='TransferContract')return null;
@@ -55,6 +55,6 @@ export default async function handler(req:any,res:any){
    const confirmed=Boolean(tx?.blockNumber||tx?.block_number);
    const success=tx?.ret?.[0]?.contractRet==='SUCCESS';\n   return {id:hash,hash,title:incoming?'Received TRX':'Sent TRX',subtitle:incoming?'Incoming transfer':'Outgoing transfer',amount:(incoming?'+':'-')+(Number(amount)/1_000_000).toString()+' TRX',timestamp:ts,status:confirmed?(success?'Confirmed':'Failed'):'Pending',incoming,explorerUrl:TRON_EXPLORER[network]+hash};
   }).filter(Boolean).slice(0,50);
-  return res.status(200).json({chain,network,walletAddress:address,rows,limit:50,complete:!data?.meta?.fingerprint,source:'trongrid-v1'});
+  const tokenRows=(Array.isArray(trc20?.data)?trc20.data:[]).map((tx:any)=>{\n   const from=String(tx?.from||''),to=String(tx?.to||''),incoming=to.toLowerCase()===address.toLowerCase();\n   const hash=String(tx?.transaction_id||''),info=tx?.token_info||{},symbol=String(info?.symbol||'TRC20'),decimals=Number(info?.decimals??6);\n   return {id:hash+':trc20:'+String(tx?.contract_address||''),hash,title:(incoming?'Received ':'Sent ')+symbol,subtitle:(incoming?'From ':'To ')+short(incoming?from:to),amount:(incoming?'+':'-')+units(tx?.value,decimals)+' '+symbol,timestamp:Math.floor(Number(tx?.block_timestamp||0)/1000),status:tx?.confirmed?'Confirmed':'Pending',incoming,explorerUrl:TRON_EXPLORER[network]+hash};\n  }).filter((row:any)=>row.hash);\n  const combined=[...rows,...tokenRows].sort((a:any,b:any)=>b.timestamp-a.timestamp).slice(0,50);\n  return res.status(200).json({chain,network,walletAddress:address,rows:combined,limit:50,complete:!data?.meta?.fingerprint&&!trc20?.meta?.fingerprint,source:'trongrid-v1'});
  }catch(error){console.error('chain_history_failed',chain,network,error instanceof Error?error.message:'unknown');return res.status(502).json({error:{code:'history_provider_unavailable'}});}
 }
