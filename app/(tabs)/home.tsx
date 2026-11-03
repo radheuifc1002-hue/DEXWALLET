@@ -21,20 +21,21 @@ const CHAIN_COLORS: Record<string, string> = {
   solana: '#9945FF',
   bnb: '#F3BA2F',
   polygon: '#8247E5',
+  arbitrum: '#28A0F0', bitcoin: '#F7931A', tron: '#EF0027',
 };
 
 const CHAIN_SYMBOLS: Record<string, string> = {
   ethereum: 'ETH',
   solana: 'SOL',
   bnb: 'BNB',
-  polygon: 'MATIC',
+  polygon: 'POL', arbitrum: 'ETH', bitcoin: 'BTC', tron: 'TRX',
 };
 
 const CHAIN_ICONS: Record<string, string> = {
   ethereum: 'logo-ethereum',
   solana: 'planet-outline',
   bnb: 'logo-bitcoin',
-  polygon: 'triangle-outline',
+  polygon: 'triangle-outline', arbitrum: 'layers-outline', bitcoin: 'logo-bitcoin', tron: 'flash-outline',
 };
 
 export default function Home() {
@@ -92,12 +93,7 @@ export default function Home() {
     ? `${walletAddress.slice(0, 8)}…${walletAddress.slice(-6)}`
     : '';
 
-  const CHAINS: Array<'ethereum' | 'solana' | 'bnb' | 'polygon'> = [
-    'ethereum',
-    'solana',
-    'bnb',
-    'polygon',
-  ];
+  const CHAINS: Array<'ethereum' | 'solana' | 'bnb' | 'polygon' | 'arbitrum' | 'bitcoin' | 'tron'> = ['ethereum','solana','bnb','polygon','arbitrum','bitcoin','tron'];
 
   return (
     <SafeAreaContextView edges={["top"]} style={styles.container}>
@@ -212,7 +208,7 @@ export default function Home() {
                     <Ionicons name={(CHAIN_ICONS[chain] as any) || 'ellipse-outline'} size={21} color={CHAIN_COLORS[chain]} />
                   </View>
                   <View style={styles.chainOptionTextWrap}>
-                    <Text style={styles.chainOptionName}>{chain === 'bnb' ? 'BNB Chain' : chain === 'polygon' ? 'Polygon' : chain === 'ethereum' ? 'Ethereum' : 'Solana'}</Text>
+                    <Text style={styles.chainOptionName}>{chain === 'bnb' ? 'BNB Chain' : chain === 'polygon' ? 'Polygon' : chain === 'arbitrum' ? 'Arbitrum' : chain === 'bitcoin' ? 'Bitcoin' : chain === 'tron' ? 'TRON' : chain === 'ethereum' ? 'Ethereum' : 'Solana'}</Text>
                     <Text style={styles.chainOptionSymbol}>{CHAIN_SYMBOLS[chain]}</Text>
                   </View>
                   {selectedBlockchain === chain && <Ionicons name="checkmark-circle" size={22} color="#6C4CF1" />}
