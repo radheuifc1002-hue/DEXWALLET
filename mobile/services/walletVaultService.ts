@@ -340,8 +340,7 @@ export async function addMnemonicSource(
   if (!validateMnemonic(mnemonic)) throw new Error('Invalid recovery phrase.');
   const selectedChains = Array.from(new Set(blockchains));
   if (!selectedChains.length || selectedChains.some((chain) => !['ethereum', 'bnb', 'polygon', 'arbitrum', 'solana', 'bitcoin', 'tron'].includes(chain))) throw new Error('Select at least one supported blockchain.');
-  const addressEntries = await Promise.all(selectedChains.map(async (chain) => [chain, await deriveAddressForChain(chain, mnemonic, 0)] as const));
-  const addresses: Partial<WalletAddresses> = Object.fromEntries(addressEntries);
+  const addresses = await deriveAccountAddresses(mnemonic, 0, selectedChains);
   const store = await getWalletVaultStore();
   const vault = findVault(store, vaultId);
   if (accountExists(vault, addresses)) throw new Error('This wallet is already present in this vault.');
@@ -456,7 +455,9 @@ export async function addPrivateKeyAccount(
     addresses = { solana: bs58.encode(await ed.getPublicKeyAsync(seed)) };
   } else {
     const normalizedKey = privateKey.startsWith('0x') ? privateKey : `0x${privateKey}`;
-    addresses = { [blockchain]: deriveAddressFromPrivateKey(blockchain, normalizedKey) };
+    addresses = blockchain === 'bitcoin'
+      ? { bitcoin: deriveBitcoinAddressFromPrivateKey(normalizedKey, 'mainnet'), bitcoinTestnet: deriveBitcoinAddressFromPrivateKey(normalizedKey, 'testnet') }
+      : { [blockchain]: deriveAddressFromPrivateKey(blockchain, normalizedKey) };
   }
 
   const store = await getWalletVaultStore();
