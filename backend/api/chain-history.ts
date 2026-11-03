@@ -98,10 +98,10 @@ export default async function handler(req: any, res: any) {
         const outputs = Array.isArray(tx?.vout) ? tx.vout : [];
         const sent = inputs
           .filter((input: any) => input?.prevout?.scriptpubkey_address === address)
-          .reduce((sum: bigint, input: any) => sum + BigInt(input?.prevout?.value || 0), 0n);
+          .reduce<bigint>((sum, input: any) => sum + BigInt(input?.prevout?.value || 0), 0n);
         const received = outputs
           .filter((output: any) => output?.scriptpubkey_address === address)
-          .reduce((sum: bigint, output: any) => sum + BigInt(output?.value || 0), 0n);
+          .reduce<bigint>((sum, output: any) => sum + BigInt(output?.value || 0), 0n);
         const delta = received - sent;
         const incoming = delta >= 0n;
         const hash = String(tx?.txid || '');
@@ -124,7 +124,7 @@ export default async function handler(req: any, res: any) {
       });
     }
 
-    const headers = process.env.TRONGRID_API_KEY
+    const headers: Record<string, string> = process.env.TRONGRID_API_KEY
       ? { 'TRON-PRO-API-KEY': process.env.TRONGRID_API_KEY }
       : {};
     const addressHex = tronAddressHex(address);
