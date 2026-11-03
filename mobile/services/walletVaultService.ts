@@ -97,6 +97,9 @@ async function readStore(): Promise<WalletVaultStore | null> {
             ...(account.addresses.ethereum ? { ethereum: account.derivationPaths?.ethereum ?? metadata.ethereum.path } : {}),
             ...(account.addresses.bnb ? { bnb: account.derivationPaths?.bnb ?? metadata.bnb.path } : {}),
             ...(account.addresses.polygon ? { polygon: account.derivationPaths?.polygon ?? metadata.polygon.path } : {}),
+            ...(account.addresses.arbitrum ? { arbitrum: account.derivationPaths?.arbitrum ?? metadata.arbitrum.path } : {}),
+            ...(account.addresses.bitcoin ? { bitcoin: account.derivationPaths?.bitcoin ?? metadata.bitcoin.path } : {}),
+            ...(account.addresses.tron ? { tron: account.derivationPaths?.tron ?? metadata.tron.path } : {}),
             ...(account.addresses.solana ? { solana: account.derivationPaths?.solana ?? metadata.solana.path } : {}),
           },
         };
@@ -230,7 +233,7 @@ export async function createInitialMnemonicVault(
   mnemonic: string,
   addresses: WalletAddresses,
   name = 'My Wallet',
-  blockchains: Blockchain[] = ['ethereum', 'bnb', 'polygon', 'solana'],
+  blockchains: Blockchain[] = ['ethereum', 'bnb', 'polygon', 'arbitrum', 'solana', 'bitcoin', 'tron'],
 ): Promise<WalletVaultStore> {
   const normalized = mnemonic.trim().toLowerCase().replace(/\s+/g, ' ');
   if (!validateMnemonic(normalized)) throw new Error('Invalid recovery phrase.');
@@ -243,7 +246,7 @@ export async function createInitialMnemonicVault(
   const sourceId = makeId('seed');
   const accountIndex = 0;
   const selectedChains = Array.from(new Set(blockchains));
-  if (!selectedChains.length || selectedChains.some((chain) => !['ethereum', 'bnb', 'polygon', 'solana'].includes(chain))) throw new Error('Select at least one supported blockchain.');
+  if (!selectedChains.length || selectedChains.some((chain) => !['ethereum', 'bnb', 'polygon', 'arbitrum', 'solana', 'bitcoin', 'tron'].includes(chain))) throw new Error('Select at least one supported blockchain.');
   const metadata = getAccountDerivationMetadata(accountIndex);
   const selectedAddresses = Object.fromEntries(selectedChains.map((chain) => [chain, addresses[chain]])) as Partial<WalletAddresses>;
   const source: WalletKeySource = {
@@ -488,7 +491,7 @@ export async function addWatchOnlyAccount(
   accountName = 'Watch Wallet',
 ): Promise<WalletVaultStore> {
   const addresses: Partial<WalletAddresses> = {};
-  for (const chain of ['ethereum', 'bnb', 'polygon', 'solana'] as Blockchain[]) {
+  for (const chain of ['ethereum', 'bnb', 'polygon', 'arbitrum', 'solana', 'bitcoin', 'tron'] as Blockchain[]) {
     const value = addressesInput[chain]?.trim();
     if (!value) continue;
     if (chain === 'solana') {
