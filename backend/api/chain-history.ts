@@ -96,12 +96,14 @@ export default async function handler(req: any, res: any) {
       const rows = (Array.isArray(txs) ? txs : []).slice(0, 50).map((tx: any) => {
         const inputs = Array.isArray(tx?.vin) ? tx.vin : [];
         const outputs = Array.isArray(tx?.vout) ? tx.vout : [];
-        const sent = inputs
-          .filter((input: any) => input?.prevout?.scriptpubkey_address === address)
-          .reduce<bigint>((sum, input: any) => sum + BigInt(input?.prevout?.value || 0), 0n);
-        const received = outputs
-          .filter((output: any) => output?.scriptpubkey_address === address)
-          .reduce<bigint>((sum, output: any) => sum + BigInt(output?.value || 0), 0n);
+        let sent = 0n;
+        for (const input of inputs) {
+          if (input?.prevout?.scriptpubkey_address === address) sent += BigInt(input?.prevout?.value || 0);
+        }
+        let received = 0n;
+        for (const output of outputs) {
+          if (output?.scriptpubkey_address === address) received += BigInt(output?.value || 0);
+        }
         const delta = received - sent;
         const incoming = delta >= 0n;
         const hash = String(tx?.txid || '');
