@@ -397,7 +397,7 @@ export async function addDerivedAccounts(
   if (!source || source.type !== 'mnemonic') throw new Error('Recovery phrase source not found.');
   const phrase = await SecureStore.getItemAsync(secretKey(sourceId));
   if (!phrase) throw new Error('Recovery phrase is unavailable. Restore this wallet.');
-  const enabledChains = source.blockchains?.length ? source.blockchains : (['ethereum', 'bnb', 'polygon', 'solana'] as Blockchain[]);
+  const enabledChains = source.blockchains?.length ? source.blockchains : (['ethereum', 'bnb', 'polygon', 'arbitrum', 'solana', 'bitcoin', 'tron'] as Blockchain[]);
   // A chain-scoped Add Wallet must never silently create sibling-chain accounts.
   const targetChains = blockchain ? [blockchain] : enabledChains;
   if (targetChains.some((chain) => !enabledChains.includes(chain))) {
