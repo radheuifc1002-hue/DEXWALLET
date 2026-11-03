@@ -48,7 +48,11 @@ const PIN_MAX_FAILURES = 5;
 const PIN_LOCK_MS = 30_000;
 const PENDING_MNEMONIC_KEY = 'xu_wallet_pending_mnemonic';
 const PENDING_WALLET_CONFIG_KEY = 'xu_wallet_pending_config';
+const PENDING_PRIVATE_KEY_KEY = 'xu_wallet_pending_private_key';
 export type WalletSetupConfig = { name: string; blockchains: ('ethereum'|'bnb'|'polygon'|'solana')[] };
+export const stagePendingPrivateKey = async (privateKey: string, blockchain: 'ethereum'|'bnb'|'polygon'|'solana', name: string): Promise<void> => { if (!privateKey.trim()) throw new Error('Private key is required.'); await SecureStore.setItemAsync(PENDING_PRIVATE_KEY_KEY, JSON.stringify({ privateKey: privateKey.trim(), blockchain, name: name.trim() || 'Imported Wallet' })); };
+export const consumePendingPrivateKey = async (): Promise<{privateKey:string;blockchain:'ethereum'|'bnb'|'polygon'|'solana';name:string}|null> => { const raw=await SecureStore.getItemAsync(PENDING_PRIVATE_KEY_KEY); await SecureStore.deleteItemAsync(PENDING_PRIVATE_KEY_KEY).catch(()=>{}); if(!raw)return null; try { const v=JSON.parse(raw); return v && typeof v.privateKey==='string' && ['ethereum','bnb','polygon','solana'].includes(v.blockchain) ? v : null; } catch { return null; } };
+export const persistPrivateKeyWalletAddresses = async (addresses: Partial<WalletAddresses>): Promise<void> => { const normalized: WalletAddresses={ethereum:addresses.ethereum??'',bnb:addresses.bnb??'',polygon:addresses.polygon??'',solana:addresses.solana??''}; await AsyncStorage.setItem(WALLET_ADDRESSES_KEY,JSON.stringify(normalized)); await AsyncStorage.setItem(WALLET_CREATED_KEY,'true'); };
 export const stagePendingWalletConfig = async (config: WalletSetupConfig): Promise<void> => { const blockchains = Array.from(new Set(config.blockchains)); if (!blockchains.length || blockchains.some((chain) => !['ethereum','bnb','polygon','solana'].includes(chain))) throw new Error('Select at least one supported blockchain.'); await SecureStore.setItemAsync(PENDING_WALLET_CONFIG_KEY, JSON.stringify({ name: config.name.trim() || 'My Wallet', blockchains })); };
 export const consumePendingWalletConfig = async (): Promise<WalletSetupConfig | null> => { const raw = await SecureStore.getItemAsync(PENDING_WALLET_CONFIG_KEY); await SecureStore.deleteItemAsync(PENDING_WALLET_CONFIG_KEY).catch(() => {}); if (!raw) return null; try { const value = JSON.parse(raw) as WalletSetupConfig; return value && Array.isArray(value.blockchains) && value.blockchains.length ? value : null; } catch { return null; } };
 
@@ -139,6 +143,7 @@ export const clearWalletFromStorage = async (): Promise<void> => {
     SecureStore.deleteItemAsync(MNEMONIC_KEY).catch(() => {}),
     SecureStore.deleteItemAsync(PENDING_MNEMONIC_KEY).catch(() => {}),
     SecureStore.deleteItemAsync(PENDING_WALLET_CONFIG_KEY).catch(() => {}),
+    SecureStore.deleteItemAsync(PENDING_PRIVATE_KEY_KEY).catch(() => {}),
   ]);
 };
 

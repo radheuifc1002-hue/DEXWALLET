@@ -10,15 +10,18 @@ import {
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useWallet } from '../context/WalletContext';
+import { createWalletVault, addPrivateKeyAccount } from '../mobile/services/walletVaultService';
+import { authorizeWalletAction } from '../mobile/services/walletSecurityService';
 import PinPad from '../components/PinPad';
-import { consumePendingMnemonic, consumePendingWalletConfig } from '../mobile/services/walletService';
+import { consumePendingMnemonic, consumePendingWalletConfig, consumePendingPrivateKey, persistPrivateKeyWalletAddresses } from '../mobile/services/walletService';
 
 export default function SetPin() {
   const router = useRouter();
-  const { setPin, initWallet } = useWallet();
+  const { setPin, initWallet, refreshWalletVaultStore, setIsWalletCreated } = useWallet();
   const [pendingMnemonic, setPendingMnemonic] = useState<string | null>(null);
+  const [pendingPrivateKey,setPendingPrivateKey]=useState<{privateKey:string;blockchain:'ethereum'|'bnb'|'polygon'|'solana';name:string}|null>(null);
   const [pendingConfig, setPendingConfig] = useState<{name:string;blockchains:('ethereum'|'bnb'|'polygon'|'solana')[]} | null>(null);
-  useEffect(() => { void Promise.all([consumePendingMnemonic(), consumePendingWalletConfig()]).then(([phrase, config]) => { setPendingMnemonic(phrase); setPendingConfig(config); }); }, []);
+  useEffect(() => { void Promise.all([consumePendingMnemonic(), consumePendingWalletConfig(), consumePendingPrivateKey()]).then(([phrase, config, privateKey]) => { setPendingMnemonic(phrase); setPendingConfig(config); setPendingPrivateKey(privateKey); }); }, []);
 
   const [step, setStep] = useState<'enter' | 'confirm'>('enter');
   const [firstPin, setFirstPin] = useState('');
@@ -49,7 +52,7 @@ export default function SetPin() {
     }
 
     const mnemonic = pendingMnemonic;
-    if (!mnemonic) {
+    if (!mnemonic && !pendingPrivateKey) {
       Alert.alert('Error', 'No wallet seed found. Please restart the setup.');
       return;
     }
@@ -57,7 +60,7 @@ export default function SetPin() {
     setLoading(true);
     try {
       await setPin(confirmPin);
-      await initWallet(mnemonic, pendingConfig ?? undefined);
+      if(pendingPrivateKey){ const auth=await authorizeWalletAction(confirmPin,'import-secret'); if(!auth) throw new Error('PIN authorization failed.'); const empty=await createWalletVault(pendingPrivateKey.name); const vault=empty.vaults[empty.vaults.length-1]; const next=await addPrivateKeyAccount(vault.id,pendingPrivateKey.blockchain,pendingPrivateKey.privateKey,auth,pendingPrivateKey.name); const account=next.vaults.find(v=>v.id===vault.id)?.accounts.find(a=>a.id===next.activeAccountId); if(!account) throw new Error('Imported account could not be loaded.'); await persistPrivateKeyWalletAddresses(account.addresses); await refreshWalletVaultStore(); setIsWalletCreated(true); } else if(mnemonic){ await initWallet(mnemonic,pendingConfig??undefined); }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.replace('/(tabs)/home');
     } catch (e) {

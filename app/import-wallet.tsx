@@ -15,12 +15,14 @@ import { useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
-import { validateMnemonic, stagePendingMnemonic, stagePendingWalletConfig } from '../mobile/services/walletService';
+import { validateMnemonic, stagePendingMnemonic, stagePendingWalletConfig, stagePendingPrivateKey } from '../mobile/services/walletService';
 import type { Blockchain } from '../context/WalletContext';
 
 export default function ImportWallet() {
   const router = useRouter();
   const [mnemonic, setMnemonic] = useState('');
+  const [method,setMethod]=useState<'phrase'|'private'>('phrase');
+  const [privateKey,setPrivateKey]=useState('');
   const [error, setError] = useState('');
   const [walletName,setWalletName]=useState('Imported Wallet');
   const [hdWallet,setHdWallet]=useState(true);
@@ -34,6 +36,7 @@ export default function ImportWallet() {
   };
 
   const handleContinue = () => {
+    if(method==='private') { void stagePendingPrivateKey(privateKey,chain,walletName).then(()=>router.push('/set-pin')).catch(()=>setError('Unable to securely prepare private-key import.')); return; }
     const cleaned = mnemonic.trim().toLowerCase().replace(/\s+/g, ' ');
     if (!validateMnemonic(cleaned)) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -65,12 +68,11 @@ export default function ImportWallet() {
 
           <Text style={styles.title}>Import Wallet</Text>
           <TextInput style={styles.walletNameInput} value={walletName} onChangeText={setWalletName} placeholder="Wallet name" placeholderTextColor="#9B97B2" />
-          <Text style={styles.chainHeading}>Blockchain access</Text>
+          <View style={styles.chainRow}><TouchableOpacity style={[styles.chainChip,method==='phrase'&&styles.chainChipActive]} onPress={()=>setMethod('phrase')}><Text style={[styles.chainText,method==='phrase'&&styles.chainTextActive]}>Recovery phrase</Text></TouchableOpacity><TouchableOpacity style={[styles.chainChip,method==='private'&&styles.chainChipActive]} onPress={()=>{setMethod('private');setHdWallet(false);}}><Text style={[styles.chainText,method==='private'&&styles.chainTextActive]}>Private key</Text></TouchableOpacity></View>
+          {method==='phrase'?<><Text style={styles.chainHeading}>Blockchain access</Text>
           <View style={styles.chainRow}><TouchableOpacity style={[styles.chainChip,hdWallet&&styles.chainChipActive]} onPress={()=>setHdWallet(true)}><Text style={[styles.chainText,hdWallet&&styles.chainTextActive]}>HD Wallet · All 4</Text></TouchableOpacity><TouchableOpacity style={[styles.chainChip,!hdWallet&&styles.chainChipActive]} onPress={()=>setHdWallet(false)}><Text style={[styles.chainText,!hdWallet&&styles.chainTextActive]}>Single chain</Text></TouchableOpacity></View>
-          {!hdWallet?<View style={styles.chainRow}>{chains.map(item=><TouchableOpacity key={item.id} style={[styles.chainChip,chain===item.id&&styles.chainChipActive]} onPress={()=>setChain(item.id)}><Text style={[styles.chainText,chain===item.id&&styles.chainTextActive]}>{item.label}</Text></TouchableOpacity>)}</View>:null}
-          <Text style={styles.subtitle}>
-            Enter your 12- or 24-word recovery phrase separated by spaces.
-          </Text>
+          {!hdWallet?<View style={styles.chainRow}>{chains.map(item=><TouchableOpacity key={item.id} style={[styles.chainChip,chain===item.id&&styles.chainChipActive]} onPress={()=>setChain(item.id)}><Text style={[styles.chainText,chain===item.id&&styles.chainTextActive]}>{item.label}</Text></TouchableOpacity>)}</View>:null}</>:<><Text style={styles.chainHeading}>Private-key blockchain</Text><View style={styles.chainRow}>{chains.map(item=><TouchableOpacity key={item.id} style={[styles.chainChip,chain===item.id&&styles.chainChipActive]} onPress={()=>setChain(item.id)}><Text style={[styles.chainText,chain===item.id&&styles.chainTextActive]}>{item.label}</Text></TouchableOpacity>)}</View><TextInput style={styles.input} value={privateKey} onChangeText={setPrivateKey} placeholder="Enter private key" placeholderTextColor="#9B97B2" autoCapitalize="none" autoCorrect={false} secureTextEntry/></>}
+          <Text style={styles.subtitle}>{method==='phrase'?'Enter your 12- or 24-word recovery phrase separated by spaces.':'Import one chain-specific private key. EVM keys work across Ethereum, BNB and Polygon; Solana keys are separate.'}</Text>
 
           <View style={[styles.inputCard, error ? styles.inputCardError : null]}>
             <TextInput
@@ -103,14 +105,14 @@ export default function ImportWallet() {
           <View style={styles.warning}>
             <Ionicons name="shield-checkmark-outline" size={18} color="#6C4CF1" />
             <Text style={styles.warningText}>
-              Your phrase stays on your device. We never store or transmit it.
+              Your recovery phrase or private key stays in secure device storage and is not sent to a server.
             </Text>
           </View>
 
           <TouchableOpacity
-            style={[styles.continueBtn, ![12, 24].includes(wordCount) && styles.continueBtnDisabled]}
+            style={[styles.continueBtn, (method==='phrase'?![12,24].includes(wordCount):!privateKey.trim()) && styles.continueBtnDisabled]}
             onPress={handleContinue}
-            disabled={!([12, 24].includes(wordCount))}
+            disabled={method==='phrase'?!([12, 24].includes(wordCount)):!privateKey.trim()}
             activeOpacity={0.85}
           >
             <Text style={styles.continueBtnText}>Continue</Text>
