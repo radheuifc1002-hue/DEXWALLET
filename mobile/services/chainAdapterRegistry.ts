@@ -196,3 +196,16 @@ export async function deriveWalletAddresses(mnemonic: string, index: number): Pr
   const [ethereum,solana,bitcoin,tron] = chains;
   return {ethereum,bnb:ethereum,polygon:ethereum,arbitrum:ethereum,solana,bitcoin,tron};
 }
+
+/** Bitcoin's test networks use SLIP-0044 coin type 1, not mainnet coin type 0. */
+export async function deriveBitcoinAddress(mnemonic:string,accountIndex:number,network:'mainnet'|'testnet'='mainnet'):Promise<string>{
+ assertAccountIndex(accountIndex);
+ if(!mnemonic||!bip39.validateMnemonic(mnemonic.trim()))throw new Error('Invalid recovery phrase.');
+ const coinType=network==='mainnet'?0:1;
+ const wallet=ethers.HDNodeWallet.fromPhrase(mnemonic.trim(),'',bip44Path(coinType,accountIndex));
+ const publicKey=ethers.getBytes(ethers.SigningKey.computePublicKey(wallet.privateKey,true));
+ const payload=new Uint8Array(21);
+ payload[0]=network==='mainnet'?0x00:0x6f;
+ payload.set(ripemd160(sha256(publicKey)),1);
+ return base58Check(payload);
+}
