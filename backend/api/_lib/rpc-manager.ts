@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 export type RpcNetwork = 'mainnet' | 'testnet';
-export type RpcChain = 'ethereum' | 'bnb' | 'polygon' | 'solana';
+export type RpcChain = 'ethereum' | 'bnb' | 'polygon' | 'arbitrum' | 'solana' | 'bitcoin' | 'tron';
 type Provider = { name: string; url: string; priority: number };
 type ProviderHealth = { failures: number; openUntil: number; latencyMs: number; lastFailure?: string; lastCheckedAt?: number };
 type RpcRequest = { jsonrpc: '2.0'; id: string | number | null; method: string; params?: unknown[] };
@@ -11,10 +11,14 @@ const NETWORKS: Record<RpcChain, Partial<Record<RpcNetwork,string>>> = {
   bnb: { mainnet: 'bnb-mainnet', testnet: 'bnb-testnet' },
   polygon: { mainnet: 'polygon-mainnet', testnet: 'polygon-amoy' },
   solana: { mainnet: 'solana-mainnet', testnet: 'solana-devnet' },
+  arbitrum: { mainnet: 'arb-mainnet', testnet: 'arb-sepolia' },
+  bitcoin: { mainnet: 'bitcoin-mainnet', testnet: 'bitcoin-testnet' },
+  tron: { mainnet: 'tron-mainnet', testnet: 'tron-nile' },
 };
 const CHAIN_IDS: Partial<Record<RpcChain, Partial<Record<RpcNetwork,number>>>> = {
   ethereum: { mainnet: 1, testnet: 11155111 }, bnb: { mainnet: 56, testnet: 97 },
   polygon: { mainnet: 137, testnet: 80002 },
+  arbitrum: { mainnet: 42161, testnet: 421614 },
 };
 const READ_ONLY_METHODS = new Set([
   'alchemy_getAssetTransfers','eth_chainId','eth_blockNumber','eth_call','eth_estimateGas','eth_gasPrice',
@@ -27,6 +31,8 @@ const READ_ONLY_METHODS = new Set([
   'getMinimumBalanceForRentExemption','getMultipleAccounts','getProgramAccounts',
   'getSignatureStatuses','getSignaturesForAddress','getSlot','getTokenAccountBalance','getTokenAccountsByOwner',
   'getTransaction','getVersion',
+  'getblockchaininfo','getblockhash','getblockheader','getblock','getrawtransaction','gettxout','estimatesmartfee',
+  'wallet_getbalance','getaccount','getaccountresource','getnowblock','getblockbynum','gettransactionbyid','gettransactioninfobyid',
 ]);
 const SIGNED_BROADCAST_METHODS = new Set(['eth_sendRawTransaction','sendTransaction']);
 const REQUEST_TIMEOUT_MS = 18_000;
@@ -76,7 +82,7 @@ function getProviders(chain: RpcChain, network: RpcNetwork): Provider[] {
   const providers: Provider[] = [];
   const scoped = 'ALCHEMY_' + chain.toUpperCase() + '_' + network.toUpperCase() + '_API_KEY';
   const key = process.env[scoped] || process.env.ALCHEMY_API_KEY;
-  if (key) providers.push({ name: 'alchemy', url: 'https://' + networkName + '.g.alchemy.com/v2/' + encodeURIComponent(key), priority: 10 });
+  if (key && !['bitcoin','tron'].includes(chain)) providers.push({ name: 'alchemy', url: 'https://' + networkName + '.g.alchemy.com/v2/' + encodeURIComponent(key), priority: 10 });
   if (chain === 'bnb' && network === 'mainnet') {
     const chainstack = process.env.CHAINSTACK_BNB_MAINNET_RPC_URL;
     if (validHttpsUrl(chainstack)) providers.push({ name: 'chainstack', url: chainstack, priority: 20 });
