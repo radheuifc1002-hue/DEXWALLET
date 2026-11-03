@@ -116,6 +116,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             polygon: migratedActive.account.addresses.polygon ?? '',
             arbitrum: migratedActive.account.addresses.arbitrum ?? '',
             bitcoin: migratedActive.account.addresses.bitcoin ?? '',
+            bitcoinTestnet: migratedActive.account.addresses.bitcoinTestnet ?? '',
             tron: migratedActive.account.addresses.tron ?? '',
           });
         }
@@ -147,6 +148,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             polygon: activeAfterHydration.account.addresses.polygon ?? '',
             arbitrum: activeAfterHydration.account.addresses.arbitrum ?? '',
             bitcoin: activeAfterHydration.account.addresses.bitcoin ?? '',
+            bitcoinTestnet: activeAfterHydration.account.addresses.bitcoinTestnet ?? '',
             tron: activeAfterHydration.account.addresses.tron ?? '',
           });
         }
