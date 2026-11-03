@@ -60,7 +60,7 @@ export default function Home() {
   const [walletPickerVisible, setWalletPickerVisible] = useState(false);
   const [switchingWalletId, setSwitchingWalletId] = useState<string | null>(null);
 
-  const visibleTokens = tokens.filter((token) => token.blockchain === selectedBlockchain);
+  const visibleTokens = tokens.filter((token) => token.blockchain === selectedBlockchain).sort((a, b) => Number(!a.contractAddress) - Number(!b.contractAddress) || (b.balanceUSD || 0) - (a.balanceUSD || 0));
   const totalUSD = visibleTokens.reduce((s, t) => s + (!t.contractAddress ? (t.balanceUSD || 0) : 0), 0);
 
   const handleWalletSelect = async (vaultId: string, accountId: string) => {
@@ -232,38 +232,38 @@ export default function Home() {
                 <TouchableOpacity onPress={() => setWalletPickerVisible(false)} hitSlop={10}><Ionicons name="close" size={22} color="#777286" /></TouchableOpacity>
               </View>
               <ScrollView style={styles.walletList} showsVerticalScrollIndicator={false}>
-                {(walletVaultStore?.vaults ?? []).map((vault) => (
-                  <View key={vault.id} style={styles.walletGroup}>
-                    <View style={styles.walletGroupHeader}><Text style={styles.walletGroupName}>{vault.name}</Text><Text style={styles.walletGroupCount}>{vault.accounts.length} {vault.accounts.length === 1 ? 'wallet' : 'wallets'}</Text></View>
-                    {vault.accounts.map((account) => {
-                      const isActive = walletVaultStore?.activeAccountId === account.id;
-                      const address = account.addresses[selectedBlockchain] ?? '';
-                      const shortAddress = address ? address.slice(0, 8) + '…' + address.slice(-6) : 'No address on ' + CHAIN_SYMBOLS[selectedBlockchain];
-                      return (
-                        <TouchableOpacity key={account.id} style={[styles.walletChoice, isActive && styles.walletChoiceActive]} onPress={() => void handleWalletSelect(vault.id, account.id)} disabled={switchingWalletId !== null} activeOpacity={0.75}>
-                          <View style={[styles.walletChoiceIcon, account.sourceType === 'watch-only' && styles.watchChoiceIcon]}><Ionicons name={account.sourceType === 'watch-only' ? 'eye-outline' : 'wallet-outline'} size={19} color={account.sourceType === 'watch-only' ? '#0D9488' : '#6C4CF1'} /></View>
-                          <View style={styles.walletChoiceInfo}>
-                            <View style={styles.walletChoiceNameRow}><Text style={styles.walletChoiceName}>{account.name}</Text>{account.sourceType === 'watch-only' ? <Text style={styles.watchChoiceBadge}>WATCH</Text> : null}</View>
-                            <Text style={styles.walletChoiceAddress}>{shortAddress}</Text>
-                          </View>
-                          {switchingWalletId === account.id ? <Ionicons name="sync" size={19} color="#6C4CF1" /> : isActive ? <Ionicons name="checkmark-circle" size={21} color="#6C4CF1" /> : <Ionicons name="chevron-forward" size={18} color="#9B97A8" />}
-                        </TouchableOpacity>
-                      );
-                    })}
-                    {vault.accounts.length === 0 ? <Text style={styles.walletGroupEmpty}>No accounts in this vault yet.</Text> : null}
-                  </View>
-                ))}
+                {(walletVaultStore?.vaults ?? []).map((vault) => {
+                  const chainAccounts = vault.accounts.filter((account) => Boolean(account.addresses[selectedBlockchain]?.trim()));
+                  if (!chainAccounts.length) return null;
+                  return (
+                    <View key={vault.id} style={styles.walletGroup}>
+                      <View style={styles.walletGroupHeader}><Text style={styles.walletGroupName}>{vault.name}</Text><Text style={styles.walletGroupCount}>{chainAccounts.length} {chainAccounts.length === 1 ? 'wallet' : 'wallets'}</Text></View>
+                      {chainAccounts.map((account) => {
+                        const isActive = walletVaultStore?.activeAccountId === account.id;
+                        const address = account.addresses[selectedBlockchain] ?? '';
+                        const shortAddress = address.slice(0, 8) + '…' + address.slice(-6);
+                        return (
+                          <TouchableOpacity key={account.id} style={[styles.walletChoice, isActive && styles.walletChoiceActive]} onPress={() => void handleWalletSelect(vault.id, account.id)} disabled={switchingWalletId !== null} activeOpacity={0.75}>
+                            <View style={[styles.walletChoiceIcon, account.sourceType === 'watch-only' && styles.watchChoiceIcon]}><Ionicons name={account.sourceType === 'watch-only' ? 'eye-outline' : 'wallet-outline'} size={19} color={account.sourceType === 'watch-only' ? '#0D9488' : '#6C4CF1'} /></View>
+                            <View style={styles.walletChoiceInfo}>
+                              <View style={styles.walletChoiceNameRow}><Text style={styles.walletChoiceName}>{account.name}</Text>{account.sourceType === 'watch-only' ? <Text style={styles.watchChoiceBadge}>WATCH</Text> : null}</View>
+                              <Text style={styles.walletChoiceAddress}>{shortAddress}</Text>
+                            </View>
+                            {switchingWalletId === account.id ? <Ionicons name="sync" size={19} color="#6C4CF1" /> : isActive ? <Ionicons name="checkmark-circle" size={21} color="#6C4CF1" /> : <Ionicons name="chevron-forward" size={18} color="#9B97A8" />}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  );
+                })}
+                {!((walletVaultStore?.vaults ?? []).some((vault) => vault.accounts.some((account) => Boolean(account.addresses[selectedBlockchain]?.trim())))) ? <Text style={styles.walletGroupEmpty}>No wallets have an address on {CHAIN_SYMBOLS[selectedBlockchain]}. Add or import one for this chain.</Text> : null}
                 {(walletVaultStore?.vaults ?? []).length === 0 ? <Text style={styles.walletGroupEmpty}>No wallets available. Add a wallet to get started.</Text> : null}
               </ScrollView>
             </View>
           </View>
         </Modal>
         <View style={styles.assetsHeader}>
-          <Text style={styles.sectionTitle}>Assets</Text>
-          <TouchableOpacity style={styles.viewAllButton} onPress={() => router.push('/assets')} activeOpacity={0.75}>
-            <Text style={styles.viewAllText}>View all</Text>
-            <Ionicons name="chevron-forward" size={14} color="#6C4CF1" />
-          </TouchableOpacity>
+          <View><Text style={styles.sectionTitle}>Assets</Text><Text style={styles.assetsSubtitle}>{visibleTokens.length} assets on this network</Text></View>
           <TouchableOpacity style={styles.importButton} onPress={() => router.push('/import-token')} activeOpacity={0.8}>
             <Ionicons name="add" size={16} color="#FFFFFF" />
             <Text style={styles.importButtonText}>Import</Text>
@@ -276,7 +276,7 @@ export default function Home() {
             <Text style={styles.emptyText}>No tokens yet</Text>
           </View>
         ) : (
-          visibleTokens.map((token) => (
+          visibleTokens.slice(0, 5).map((token) => (
             <TouchableOpacity
               key={token.id}
               style={styles.tokenCard}
@@ -323,6 +323,13 @@ export default function Home() {
             </TouchableOpacity>
           ))
         )}
+        {visibleTokens.length > 5 ? (
+          <TouchableOpacity style={styles.viewAllCard} onPress={() => router.push('/assets')} activeOpacity={0.8}>
+            <View style={styles.viewAllCardIcon}><Ionicons name="grid-outline" size={17} color="#6C4CF1" /></View>
+            <View style={{flex:1}}><Text style={styles.viewAllCardTitle}>View all assets</Text><Text style={styles.viewAllCardSubtitle}>{visibleTokens.length - 5} more token{visibleTokens.length - 5 === 1 ? '' : 's'} · Sorted by value</Text></View>
+            <Ionicons name="chevron-forward" size={18} color="#6C4CF1" />
+          </TouchableOpacity>
+        ) : null}
       </ScrollView>
     </SafeAreaContextView>
   );
@@ -345,8 +352,11 @@ const styles = StyleSheet.create({
   walletSelector: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 7, paddingVertical: 5, paddingHorizontal: 9, alignSelf: 'flex-start', backgroundColor: '#F3F0FF', borderRadius: 10 },
   walletSelectorName: { color: '#211B35', fontSize: 12, fontWeight: '800', maxWidth: 115 },
   walletSelectorVault: { color: '#777286', fontSize: 10, maxWidth: 80 },
-  viewAllButton: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingVertical: 6, paddingHorizontal: 8 },
-  viewAllText: { color: '#6C4CF1', fontSize: 12, fontWeight: '700' },
+  assetsSubtitle: { color: '#777286', fontSize: 11, marginTop: 3 },
+  viewAllCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, marginTop: 2, marginBottom: 10, borderRadius: 16, borderWidth: 1, borderColor: '#E8E4F3', backgroundColor: '#F8F6FF' },
+  viewAllCardIcon: { width: 36, height: 36, borderRadius: 11, backgroundColor: '#EEE9FF', alignItems: 'center', justifyContent: 'center' },
+  viewAllCardTitle: { color: '#211B35', fontSize: 13, fontWeight: '800' },
+  viewAllCardSubtitle: { color: '#777286', fontSize: 11, marginTop: 3 },
   chainPicker: {
     flexDirection: 'row',
     alignItems: 'center',
