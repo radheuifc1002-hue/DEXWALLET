@@ -103,6 +103,9 @@ jobs:
           key: node-modules-v1-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json') }}
 
 
+      - name: Run seven-chain RPC and history regression checks
+        run: node --test tests/phase-2-chain-rpc-history.test.mjs
+
       - name: Generate Android icon and splash PNG assets
         run: |
           set -euo pipefail
