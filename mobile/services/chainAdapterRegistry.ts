@@ -3,7 +3,7 @@ import * as bip39 from 'bip39';
 import * as ed from '@noble/ed25519';
 import { hmac } from '@noble/hashes/hmac.js';
 import { sha512, sha256 } from '@noble/hashes/sha2.js';
-import { ripemd160 } from '@noble/hashes/ripemd160.js';
+import { ripemd160 } from '@noble/hashes/legacy.js';
 import bs58 from 'bs58';
 
 export type WalletChainId = 'ethereum' | 'bnb' | 'polygon' | 'arbitrum' | 'solana' | 'bitcoin' | 'tron';
