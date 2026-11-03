@@ -85,13 +85,19 @@ async function readStore(): Promise<WalletVaultStore | null> {
   const upgraded: WalletVaultStore = {
     ...parsed,
     version: STORE_VERSION,
-    vaults: parsed.vaults.map((vault) => ({
+    vaults: await Promise.all(parsed.vaults.map(async (vault) => ({
       ...vault,
-      accounts: vault.accounts.map((account) => {
+      accounts: await Promise.all(vault.accounts.map(async (account) => {
         if (account.sourceType !== 'mnemonic' || account.accountIndex === null || account.accountIndex === undefined) return account;
         const metadata = getAccountDerivationMetadata(account.accountIndex);
+        let bitcoinTestnet = account.addresses.bitcoinTestnet;
+        if (account.addresses.bitcoin && !bitcoinTestnet && account.sourceId) {
+          const phrase = await SecureStore.getItemAsync(secretKey(account.sourceId));
+          if (phrase) bitcoinTestnet = await deriveBitcoinAddress(phrase, account.accountIndex, 'testnet');
+        }
         return {
           ...account,
+          addresses: { ...account.addresses, ...(bitcoinTestnet ? { bitcoinTestnet } : {}) },
           derivationMetadata: account.derivationMetadata ?? metadata,
           derivationPaths: {
             ...(account.addresses.ethereum ? { ethereum: account.derivationPaths?.ethereum ?? metadata.ethereum.path } : {}),
@@ -103,8 +109,8 @@ async function readStore(): Promise<WalletVaultStore | null> {
             ...(account.addresses.solana ? { solana: account.derivationPaths?.solana ?? metadata.solana.path } : {}),
           },
         };
-      }),
-    })),
+      })),
+    }))),
   };
   if (parsed.version !== STORE_VERSION || JSON.stringify(parsed) !== JSON.stringify(upgraded)) {
     await persistStore(upgraded);
@@ -164,6 +170,7 @@ export async function initializeWalletVaultStore(): Promise<WalletVaultStore> {
         name: 'Recovery Phrase 1',
         createdAt: Date.now(),
       });
+      const migratedAddresses: WalletAddresses = { ...legacy.addresses, bitcoinTestnet: legacy.addresses.bitcoin ? await deriveBitcoinAddress(legacy.mnemonic, 0, 'testnet') : '' };
       vault.accounts.push({
         id: makeId('account'),
         sourceId,
@@ -177,7 +184,7 @@ export async function initializeWalletVaultStore(): Promise<WalletVaultStore> {
           // Preserve the existing XU Solana address during migration.
           solana: 'legacy:first-32-bytes-of-bip39-seed',
         },
-        addresses: legacy.addresses,
+        addresses: migratedAddresses,
         derivationMetadata: getAccountDerivationMetadata(0),
         createdAt: Date.now(),
       });
