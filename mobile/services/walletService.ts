@@ -16,6 +16,7 @@ export interface WalletAddresses {
   polygon: string;
   arbitrum: string;
   bitcoin: string;
+  bitcoinTestnet?: string;
   tron: string;
 }
 
