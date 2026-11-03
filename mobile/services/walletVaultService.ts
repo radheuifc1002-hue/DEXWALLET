@@ -230,6 +230,7 @@ export async function createInitialMnemonicVault(
   mnemonic: string,
   addresses: WalletAddresses,
   name = 'My Wallet',
+  blockchains: Blockchain[] = ['ethereum', 'bnb', 'polygon', 'solana'],
 ): Promise<WalletVaultStore> {
   const normalized = mnemonic.trim().toLowerCase().replace(/\s+/g, ' ');
   if (!validateMnemonic(normalized)) throw new Error('Invalid recovery phrase.');
@@ -241,13 +242,16 @@ export async function createInitialMnemonicVault(
   const vaultId = makeId('vault');
   const sourceId = makeId('seed');
   const accountIndex = 0;
+  const selectedChains = Array.from(new Set(blockchains));
+  if (!selectedChains.length || selectedChains.some((chain) => !['ethereum', 'bnb', 'polygon', 'solana'].includes(chain))) throw new Error('Select at least one supported blockchain.');
   const metadata = getAccountDerivationMetadata(accountIndex);
+  const selectedAddresses = Object.fromEntries(selectedChains.map((chain) => [chain, addresses[chain]])) as Partial<WalletAddresses>;
   const source: WalletKeySource = {
     id: sourceId,
     type: 'mnemonic',
     name: 'Recovery Phrase',
     createdAt: Date.now(),
-    blockchains: ['ethereum', 'bnb', 'polygon', 'solana'],
+    blockchains: selectedChains,
   };
   const account: WalletAccount = {
     id: makeId('account'),
@@ -255,14 +259,9 @@ export async function createInitialMnemonicVault(
     sourceType: 'mnemonic',
     name: 'Main Wallet',
     accountIndex,
-    derivationPaths: {
-      ethereum: metadata.ethereum.path,
-      bnb: metadata.bnb.path,
-      polygon: metadata.polygon.path,
-      solana: metadata.solana.path,
-    },
-    addresses: { ...addresses },
-    derivationMetadata: metadata,
+    derivationPaths: Object.fromEntries(selectedChains.map((chain) => [chain, metadata[chain].path])),
+    addresses: selectedAddresses,
+    derivationMetadata: Object.fromEntries(selectedChains.map((chain) => [chain, metadata[chain]])),
     createdAt: Date.now(),
   };
   const vault: WalletVault = {

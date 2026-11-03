@@ -47,6 +47,10 @@ const PIN_LOCK_UNTIL_KEY = 'xu_wallet_pin_lock_until';
 const PIN_MAX_FAILURES = 5;
 const PIN_LOCK_MS = 30_000;
 const PENDING_MNEMONIC_KEY = 'xu_wallet_pending_mnemonic';
+const PENDING_WALLET_CONFIG_KEY = 'xu_wallet_pending_config';
+export type WalletSetupConfig = { name: string; blockchains: ('ethereum'|'bnb'|'polygon'|'solana')[] };
+export const stagePendingWalletConfig = async (config: WalletSetupConfig): Promise<void> => { const blockchains = Array.from(new Set(config.blockchains)); if (!blockchains.length || blockchains.some((chain) => !['ethereum','bnb','polygon','solana'].includes(chain))) throw new Error('Select at least one supported blockchain.'); await SecureStore.setItemAsync(PENDING_WALLET_CONFIG_KEY, JSON.stringify({ name: config.name.trim() || 'My Wallet', blockchains })); };
+export const consumePendingWalletConfig = async (): Promise<WalletSetupConfig | null> => { const raw = await SecureStore.getItemAsync(PENDING_WALLET_CONFIG_KEY); await SecureStore.deleteItemAsync(PENDING_WALLET_CONFIG_KEY).catch(() => {}); if (!raw) return null; try { const value = JSON.parse(raw) as WalletSetupConfig; return value && Array.isArray(value.blockchains) && value.blockchains.length ? value : null; } catch { return null; } };
 
 /** Temporary setup hand-off kept in platform secure storage, never global React state or route params. */
 export const stagePendingMnemonic = async (mnemonic: string): Promise<void> => {
@@ -134,6 +138,7 @@ export const clearWalletFromStorage = async (): Promise<void> => {
     SecureStore.deleteItemAsync(BIOMETRIC_KEY).catch(() => {}),
     SecureStore.deleteItemAsync(MNEMONIC_KEY).catch(() => {}),
     SecureStore.deleteItemAsync(PENDING_MNEMONIC_KEY).catch(() => {}),
+    SecureStore.deleteItemAsync(PENDING_WALLET_CONFIG_KEY).catch(() => {}),
   ]);
 };
 

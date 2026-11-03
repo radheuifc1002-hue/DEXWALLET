@@ -45,7 +45,7 @@ interface WalletContextType {
   addToken: (token: Token) => void;
   walletAddress: string;
   walletAddresses: WalletAddresses | null;
-  initWallet: (mnemonic: string) => Promise<void>;
+  initWallet: (mnemonic: string, config?: { name?: string; blockchains?: Blockchain[] }) => Promise<void>;
   isLoadingBalances: boolean;
   refreshBalances: () => void;
   biometricEnabled: boolean;
@@ -224,8 +224,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const walletAddress = walletAddresses ? walletAddresses[selectedBlockchain] ?? '' : '';
 
-  const initWallet = useCallback(async (mnemonic: string) => {
-    const addresses = await deriveAddresses(mnemonic);
+  const initWallet = useCallback(async (mnemonic: string, config?: { name?: string; blockchains?: Blockchain[] }) => {
+    const allAddresses = await deriveAddresses(mnemonic);
+    const selectedChains = Array.from(new Set(config?.blockchains?.length ? config.blockchains : ['ethereum', 'bnb', 'polygon', 'solana']));
+    const addresses = { ethereum: selectedChains.includes('ethereum') ? allAddresses.ethereum : '', bnb: selectedChains.includes('bnb') ? allAddresses.bnb : '', polygon: selectedChains.includes('polygon') ? allAddresses.polygon : '', solana: selectedChains.includes('solana') ? allAddresses.solana : '' };
+    setSelectedBlockchain(selectedChains[0]);
     setWalletAddresses(addresses);
     await saveWalletToStorage(addresses, mnemonic);
     let vaultStore = await initializeWalletVaultStore();
@@ -233,7 +236,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     // case the old init path persisted addresses but never created a vault
     // account. Materialize the first mnemonic-backed account now.
     if (!vaultStore.activeAccountId) {
-      vaultStore = await createInitialMnemonicVault(mnemonic, addresses);
+      vaultStore = await createInitialMnemonicVault(mnemonic, addresses, config?.name || 'My Wallet', selectedChains);
     }
     setWalletVaultStore(vaultStore);
     const native = NATIVE_TOKEN_DEFS.map((d) => ({ ...d, balance: 0, balanceUSD: 0 }));

@@ -7,18 +7,24 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
+  TextInput,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
-import { generateMnemonic, stagePendingMnemonic } from '../mobile/services/walletService';
+import { generateMnemonic, stagePendingMnemonic, stagePendingWalletConfig } from '../mobile/services/walletService';
+import type { Blockchain } from '../context/WalletContext';
 
 export default function GenerateSeed() {
   const router = useRouter();
   const [words, setWords] = useState<string[]>([]);
   const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [walletName, setWalletName] = useState('My Wallet');
+  const [hdWallet, setHdWallet] = useState(true);
+  const [chain, setChain] = useState<Blockchain>('ethereum');
+  const chains: {id:Blockchain;label:string}[] = [{id:'ethereum',label:'Ethereum'},{id:'bnb',label:'BNB'},{id:'polygon',label:'Polygon'},{id:'solana',label:'Solana'}];
 
   useEffect(() => {
     const mnemonic = generateMnemonic();
@@ -36,6 +42,7 @@ export default function GenerateSeed() {
 
   const handleContinue = async () => {
     await stagePendingMnemonic(words.join(' '));
+    await stagePendingWalletConfig({ name: walletName, blockchains: hdWallet ? chains.map(item=>item.id) : [chain] });
     Alert.alert(
       'Did you save your seed phrase?',
       'Without it, you cannot recover your wallet if you lose access.',
@@ -55,6 +62,10 @@ export default function GenerateSeed() {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
+        <TextInput style={styles.nameInput} value={walletName} onChangeText={setWalletName} placeholder="Wallet name" placeholderTextColor="#9B97B2" />
+        <Text style={styles.subtitle}>Choose blockchain access</Text>
+        <View style={styles.selectionRow}><TouchableOpacity style={[styles.selectionChip,hdWallet&&styles.selectionChipActive]} onPress={()=>setHdWallet(true)}><Text style={[styles.selectionText,hdWallet&&styles.selectionTextActive]}>HD Wallet · All 4</Text></TouchableOpacity><TouchableOpacity style={[styles.selectionChip,!hdWallet&&styles.selectionChipActive]} onPress={()=>setHdWallet(false)}><Text style={[styles.selectionText,!hdWallet&&styles.selectionTextActive]}>Single chain</Text></TouchableOpacity></View>
+        {!hdWallet ? <View style={styles.selectionRow}>{chains.map(item=><TouchableOpacity key={item.id} style={[styles.selectionChip,chain===item.id&&styles.selectionChipActive]} onPress={()=>setChain(item.id)}><Text style={[styles.selectionText,chain===item.id&&styles.selectionTextActive]}>{item.label}</Text></TouchableOpacity>)}</View> : null}
         <View style={styles.iconWrap}>
           <Ionicons name="key" size={40} color="#6C4CF1" />
         </View>
@@ -120,6 +131,7 @@ export default function GenerateSeed() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFFFFF' },
+  nameInput:{width:'100%',borderWidth:1,borderColor:'#E8E4F3',borderRadius:12,padding:13,color:'#211B35',marginBottom:12},selectionRow:{width:'100%',flexDirection:'row',flexWrap:'wrap',gap:8,justifyContent:'center',marginBottom:12},selectionChip:{borderWidth:1,borderColor:'#E8E4F3',borderRadius:10,paddingHorizontal:12,paddingVertical:9},selectionChipActive:{backgroundColor:'#6C4CF1',borderColor:'#6C4CF1'},selectionText:{fontSize:12,color:'#777286',fontWeight:'600'},selectionTextActive:{color:'#FFFFFF'},
   scroll: { padding: 24, alignItems: 'center', paddingBottom: 40 },
   iconWrap: {
     width: 72,

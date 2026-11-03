@@ -11,13 +11,14 @@ import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useWallet } from '../context/WalletContext';
 import PinPad from '../components/PinPad';
-import { consumePendingMnemonic } from '../mobile/services/walletService';
+import { consumePendingMnemonic, consumePendingWalletConfig } from '../mobile/services/walletService';
 
 export default function SetPin() {
   const router = useRouter();
   const { setPin, initWallet } = useWallet();
   const [pendingMnemonic, setPendingMnemonic] = useState<string | null>(null);
-  useEffect(() => { void consumePendingMnemonic().then(setPendingMnemonic); }, []);
+  const [pendingConfig, setPendingConfig] = useState<{name:string;blockchains:('ethereum'|'bnb'|'polygon'|'solana')[]} | null>(null);
+  useEffect(() => { void Promise.all([consumePendingMnemonic(), consumePendingWalletConfig()]).then(([phrase, config]) => { setPendingMnemonic(phrase); setPendingConfig(config); }); }, []);
 
   const [step, setStep] = useState<'enter' | 'confirm'>('enter');
   const [firstPin, setFirstPin] = useState('');
@@ -56,7 +57,7 @@ export default function SetPin() {
     setLoading(true);
     try {
       await setPin(confirmPin);
-      await initWallet(mnemonic);
+      await initWallet(mnemonic, pendingConfig ?? undefined);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.replace('/(tabs)/home');
     } catch (e) {
