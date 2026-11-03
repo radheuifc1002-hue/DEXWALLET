@@ -131,6 +131,12 @@ export default function AssetDetails() {
       setRefreshing(false);
       return;
     }
+    if (chain === 'bitcoin' || chain === 'tron') {
+      if (!append) setRows([]);
+      setError('Transaction history indexing for this chain is not enabled yet.');
+      setLoading(false); setLoadingMore(false); setRefreshing(false);
+      return;
+    }
     if (append) setLoadingMore(true);
     else setLoading(true);
     setError('');
