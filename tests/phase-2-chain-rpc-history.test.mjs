@@ -63,3 +63,11 @@ test('Arbitrum is supported by the shared EVM transaction-history path', () => {
   assert.match(evmHistory, /arbitrum/);
   assert.match(evmHistory, /alchemy_getAssetTransfers/);
 });
+
+test('Generated HD wallet setup appends to the active vault instead of silently reusing the current account', () => {
+  const setup = read('app/set-pin.tsx');
+  assert.match(setup, /hasExistingAccount/);
+  assert.match(setup, /addMnemonicSource\(/);
+  assert.match(setup, /refreshWalletVaultStore\(\)/);
+  assert.match(setup, /if \(!hasExistingAccount\)[\s\S]*?initWallet\(/);
+});
