@@ -24,9 +24,7 @@ export default function GenerateSeed() {
   const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState(false);
   const [walletName, setWalletName] = useState('My Wallet');
-  const [hdWallet, setHdWallet] = useState(true);
   const [chain, setChain] = useState<Blockchain>(initialChain);
-  const chains: {id:Blockchain;label:string}[] = [{id:'ethereum',label:'Ethereum'},{id:'bnb',label:'BNB'},{id:'polygon',label:'Polygon'},{id:'solana',label:'Solana'}];
 
   useEffect(() => {
     const mnemonic = generateMnemonic();
@@ -44,7 +42,7 @@ export default function GenerateSeed() {
 
   const handleContinue = async () => {
     await stagePendingMnemonic(words.join(' '));
-    await stagePendingWalletConfig({ name: walletName, blockchains: hdWallet ? chains.map(item=>item.id) : [chain] });
+    await stagePendingWalletConfig({ name: walletName, blockchains: params.chain ? [chain] : ['ethereum', 'bnb', 'polygon', 'solana'] });
     Alert.alert(
       'Did you save your seed phrase?',
       'Without it, you cannot recover your wallet if you lose access.',
@@ -65,9 +63,6 @@ export default function GenerateSeed() {
         showsVerticalScrollIndicator={false}
       >
         <TextInput style={styles.nameInput} value={walletName} onChangeText={setWalletName} placeholder="Wallet name" placeholderTextColor="#9B97B2" />
-        <Text style={styles.subtitle}>Choose blockchain access</Text>
-        <View style={styles.selectionRow}><TouchableOpacity style={[styles.selectionChip,hdWallet&&styles.selectionChipActive]} onPress={()=>setHdWallet(true)}><Text style={[styles.selectionText,hdWallet&&styles.selectionTextActive]}>HD Wallet · All 4</Text></TouchableOpacity><TouchableOpacity style={[styles.selectionChip,!hdWallet&&styles.selectionChipActive]} onPress={()=>setHdWallet(false)}><Text style={[styles.selectionText,!hdWallet&&styles.selectionTextActive]}>Single chain</Text></TouchableOpacity></View>
-        {!hdWallet ? <View style={styles.selectionRow}>{chains.map(item=><TouchableOpacity key={item.id} style={[styles.selectionChip,chain===item.id&&styles.selectionChipActive]} onPress={()=>setChain(item.id)}><Text style={[styles.selectionText,chain===item.id&&styles.selectionTextActive]}>{item.label}</Text></TouchableOpacity>)}</View> : null}
         <View style={styles.iconWrap}>
           <Ionicons name="key" size={40} color="#6C4CF1" />
         </View>
