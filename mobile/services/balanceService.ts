@@ -1,13 +1,13 @@
 import { ethers } from 'ethers';
 import type { Blockchain, Network, Token } from '../../context/WalletContext';
-import { serverRpcRequest } from './serverRpc';
+import { serverRpcRequest, serverChainDataRequest } from './serverRpc';
 
 const ERC20 = new ethers.Interface([
   'function balanceOf(address owner) view returns (uint256)',
   'function decimals() view returns (uint8)',
 ]);
 const COIN_IDS: Record<Blockchain,string> = {
-  ethereum:'ethereum', bnb:'binancecoin', polygon:'matic-network', solana:'solana',
+  ethereum:'ethereum', bnb:'binancecoin', polygon:'matic-network', arbitrum:'ethereum', solana:'solana', bitcoin:'bitcoin', tron:'tron',
 };
 const priceCache: Record<string,{price:number;at:number}> = {};
 async function price(chain:Blockchain):Promise<number>{
@@ -21,7 +21,7 @@ async function price(chain:Blockchain):Promise<number>{
   }catch{}
   return cached?.price??0;
 }
-async function evmTokenBalance(chain:Exclude<Blockchain,'solana'>,network:Network,contract:string,owner:string){
+async function evmTokenBalance(chain:Exclude<Blockchain,'solana'|'bitcoin'|'tron'>,network:Network,contract:string,owner:string){
   const [raw,decimalsRaw]=await Promise.all([
     serverRpcRequest<string>(chain,network,'eth_call',[{to:contract,data:ERC20.encodeFunctionData('balanceOf',[owner])},'latest']),
     serverRpcRequest<string>(chain,network,'eth_call',[{to:contract,data:ERC20.encodeFunctionData('decimals',[])},'latest']),
@@ -31,7 +31,7 @@ async function evmTokenBalance(chain:Exclude<Blockchain,'solana'>,network:Networ
   return Number(ethers.formatUnits(balance,Number(decimals)));
 }
 export async function refreshWalletTokenBalances(addresses:Record<Blockchain,string>,tokens:Token[],network:Network):Promise<Token[]>{
-  const prices=await Promise.all((['ethereum','solana','bnb','polygon'] as Blockchain[]).map(async c=>[c,await price(c)] as const));
+  const prices=await Promise.all((['ethereum','solana','bnb','polygon','arbitrum','bitcoin','tron'] as Blockchain[]).map(async c=>[c,await price(c)] as const));
   const priceMap=Object.fromEntries(prices) as Record<Blockchain,number>;
   const jobs=tokens.map(async token=>{
     const address=addresses[token.blockchain];
@@ -39,7 +39,15 @@ export async function refreshWalletTokenBalances(addresses:Record<Blockchain,str
     try{
       let balance:number;
       if(!token.contractAddress){
-        if(token.blockchain==='solana'){
+        if(token.blockchain==='bitcoin'){
+          const data=await serverChainDataRequest<{balanceSatoshis:string}>('bitcoin',network,address);
+          balance=Number(ethers.formatUnits(BigInt(data.balanceSatoshis),8));
+        }else if(token.blockchain==='tron'){
+          const data=await serverChainDataRequest<{balanceSun:string}>('tron',network,address);
+          balance=Number(ethers.formatUnits(BigInt(data.balanceSun),6));
+        }else if(token.blockchain==='bitcoin'||token.blockchain==='tron'){
+        return token;
+      }else if(token.blockchain==='solana'){
           const result=await serverRpcRequest<{value:number}>('solana',network,'getBalance',[address,{commitment:'confirmed'}]);
           balance=Number(ethers.formatUnits(BigInt(result.value),9));
         }else{
