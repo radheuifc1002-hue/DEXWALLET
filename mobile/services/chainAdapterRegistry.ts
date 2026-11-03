@@ -167,6 +167,34 @@ export async function deriveAddressForChain(chain: ChainAdapterId, mnemonic: str
   if (!mnemonic || !bip39.validateMnemonic(mnemonic.trim())) throw new Error('Invalid recovery phrase.');
   return getChainAdapter(chain).deriveAddress(mnemonic.trim(), accountIndex);
 }
+
+/** Derive the signing key for the exact account path used by this adapter. */
+export function derivePrivateKeyForChain(chain: ChainAdapterId, mnemonic: string, accountIndex: number): string {
+  assertAccountIndex(accountIndex);
+  const normalized = mnemonic.trim();
+  if (!normalized || !bip39.validateMnemonic(normalized)) throw new Error('Invalid recovery phrase.');
+  if (chain === 'solana') {
+    const seed = bip39.mnemonicToSeedSync(normalized);
+    if (accountIndex === 0) return bs58.encode(seed.slice(0, 32));
+    const keyName = new Uint8Array([101,100,50,53,53,49,57,32,115,101,101,100]);
+    let digest = hmac(sha512, keyName, seed);
+    let key = digest.slice(0, 32);
+    let chainCode = digest.slice(32);
+    for (const component of [44, 501, accountIndex, 0]) {
+      const data = new Uint8Array(37);
+      data[0] = 0;
+      data.set(key, 1);
+      new DataView(data.buffer).setUint32(33, (component + 0x80000000) >>> 0, false);
+      digest = hmac(sha512, chainCode, data);
+      key = digest.slice(0, 32);
+      chainCode = digest.slice(32);
+    }
+    return bs58.encode(key);
+  }
+  const adapter = getChainAdapter(chain);
+  const path = chain === 'bitcoin' ? bip44Path(0, accountIndex) : adapter.getPath(accountIndex);
+  return ethers.HDNodeWallet.fromPhrase(normalized, '', path).privateKey;
+}
 export function getDerivationMetadata(chain: WalletChainId, accountIndex: number): ChainDerivationMetadata {
   assertAccountIndex(accountIndex);
   const adapter = getChainAdapter(chain);
