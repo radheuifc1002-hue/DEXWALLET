@@ -112,7 +112,7 @@ export default function WalletManagement() {
         <View style={{flex:1}}><Text style={styles.activeLabel}>CURRENT WALLET</Text><Text style={styles.activeName}>{activeWallet?.name??'No wallet selected'}</Text><Text style={styles.activeAddress}>{short(activeWallet?.addresses[selectedBlockchain])}</Text></View>
         <View style={styles.activeBadge}><Text style={styles.activeBadgeText}>ACTIVE</Text></View>
       </View>
-      <View style={styles.chainTabs}>{CHAINS.map(item=><TouchableOpacity key={item} style={[styles.chainTab,selectedBlockchain===item&&styles.chainTabActive]} onPress={()=>setSelectedBlockchain(item)}><Text style={[styles.chainTabText,selectedBlockchain===item&&styles.chainTabTextActive]}>{CHAIN_NAMES[item]}</Text></TouchableOpacity>)}</View>
+      <View style={styles.chainTabs}>{CHAINS.filter(item=>Boolean(activeVault?.accounts.some(account=>Boolean(account.addresses[item])))).map(item=><TouchableOpacity key={item} style={[styles.chainTab,selectedBlockchain===item&&styles.chainTabActive]} onPress={()=>setSelectedBlockchain(item)}><Text style={[styles.chainTabText,selectedBlockchain===item&&styles.chainTabTextActive]}>{CHAIN_NAMES[item]}</Text></TouchableOpacity>)}</View>
       <View style={styles.quickActions}>
         <TouchableOpacity style={styles.quick} onPress={()=>openMode('mnemonic')}><Ionicons name="key-outline" size={18} color="#6C4CF1"/><Text style={styles.quickText}>Add recovery phrase</Text></TouchableOpacity>
         <TouchableOpacity style={styles.quick} onPress={()=>openMode('watch')}><Ionicons name="eye-outline" size={18} color="#6C4CF1"/><Text style={styles.quickText}>Add watch wallet</Text></TouchableOpacity>
@@ -145,7 +145,6 @@ export default function WalletManagement() {
       {vaults.length===0?<View style={styles.empty}><Ionicons name="wallet-outline" size={38} color="#9B97B2"/><Text style={styles.emptyTitle}>No vaults found</Text><Text style={styles.emptyText}>Create a vault or add a wallet to get started.</Text></View>:null}
       <View style={styles.footerNote}><Ionicons name="shield-checkmark-outline" size={16} color="#0D9488"/><Text style={styles.footerText}>Recovery phrases and private keys remain in device secure storage. Watch wallets are read-only.</Text></View>
     </ScrollView>
-    <WalletAuthorizationModal visible={authorizationRequest!==null} action={authorizationRequest?.action??'import-secret'} title={authorizationRequest?.title??'Authorize'} onCancel={()=>setAuthorizationRequest(null)} onAuthorized={async(auth)=>{if(authorizationRequest)await authorizationRequest.run(auth);}} />
     <Modal visible={mode!==null} transparent animationType="slide" onRequestClose={()=>setMode(null)}>
       <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS==='ios'?'padding':undefined}>
         <View style={styles.modalCard}>
