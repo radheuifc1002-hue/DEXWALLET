@@ -19,7 +19,7 @@ export default function AssetsScreen() {
   const [aggregate, setAggregate] = useState<Record<string, { balance: number; balanceUSD: number }>>({});
   const [aggregateLoading, setAggregateLoading] = useState(false);
   const [aggregateError, setAggregateError] = useState('');
-  const visible = useMemo(() => tokens.filter((token) => token.blockchain === selectedBlockchain), [tokens, selectedBlockchain]);
+  const visible = useMemo(() => tokens.filter((token) => token.blockchain === selectedBlockchain).sort((a, b) => Number(Boolean(a.contractAddress)) - Number(Boolean(b.contractAddress)) || (b.balanceUSD || 0) - (a.balanceUSD || 0)), [tokens, selectedBlockchain]);
   const tokenSignature = visible.map((token) => token.id).join('|');
   useEffect(() => {
     if (scope !== 'all') return;
