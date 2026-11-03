@@ -226,7 +226,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const initWallet = useCallback(async (mnemonic: string, config?: { name?: string; blockchains?: Blockchain[] }) => {
     const allAddresses = await deriveAddresses(mnemonic);
-    const selectedChains = Array.from(new Set(config?.blockchains?.length ? config.blockchains : ['ethereum', 'bnb', 'polygon', 'solana']));
+    const selectedChains: Blockchain[] = Array.from(new Set<Blockchain>(config?.blockchains?.length ? config.blockchains : ['ethereum', 'bnb', 'polygon', 'solana']));
     const addresses = { ethereum: selectedChains.includes('ethereum') ? allAddresses.ethereum : '', bnb: selectedChains.includes('bnb') ? allAddresses.bnb : '', polygon: selectedChains.includes('polygon') ? allAddresses.polygon : '', solana: selectedChains.includes('solana') ? allAddresses.solana : '' };
     setSelectedBlockchain(selectedChains[0]);
     setWalletAddresses(addresses);
