@@ -70,6 +70,6 @@ export async function probeChainRpc(chain:Chain,network:RpcNetwork):Promise<{nam
  try{
   if(chain==='bitcoin'){const height=await request(BTC[network]+'/blocks/tip/height');if(!Number.isFinite(Number(height)))throw new Error('Invalid Bitcoin tip height');}
   else{const key=process.env.TRONGRID_API_KEY;const block=await request(TRON[network]+'/wallet/getnowblock',{method:'POST',headers:{'Content-Type':'application/json',...(key?{'TRON-PRO-API-KEY':key}:{})},body:'{}'});if(!block?.block_header?.raw_data?.number)throw new Error('Invalid TRON block response');}
-  return{name:chain==='bitcoin'?'mempool.space':'TronGrid',configured:true,healthy:true,latencyMs:Date.now()-started};
- }catch(error){return{name:chain==='bitcoin'?'mempool.space':'TronGrid',configured:true,healthy:false,latencyMs:null,lastFailure:error instanceof Error?error.message:'provider unavailable'};}
+  return{name:chain==='bitcoin'?'mempool.space':'TronGrid',configured:true,healthy:true,circuit:'closed',cooldownMs:0,latencyMs:Date.now()-started,consecutiveFailures:0,lastCheckedAt:Date.now()};
+ }catch(error){return{name:chain==='bitcoin'?'mempool.space':'TronGrid',configured:true,healthy:false,circuit:'closed',cooldownMs:0,latencyMs:null,consecutiveFailures:1,lastCheckedAt:Date.now(),lastFailure:error instanceof Error?error.message:'provider unavailable'};}
 }
