@@ -96,7 +96,7 @@ function sanitizeConfig(input: unknown): RpcConfig | null {
   if (value.version !== 2 || !value.chains || typeof value.chains !== 'object') return null;
 
   const chains: RpcChain[] = ['ethereum', 'bnb', 'polygon', 'arbitrum', 'solana'];
-  const result = { version: 1, chains: {} } as RpcConfig;
+  const result = { version: 2, chains: {} } as RpcConfig;
   for (const chain of chains) {
     const candidate = value.chains[chain];
     if (!candidate) return null;
