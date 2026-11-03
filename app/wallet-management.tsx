@@ -154,7 +154,6 @@ export default function WalletManagement() {
         <TouchableOpacity style={styles.back} onPress={() => router.back()}><Ionicons name="chevron-back" size={21} color="#211B35" /></TouchableOpacity>
         <View style={{ flex: 1 }}><Text style={styles.title}>Manage Wallet</Text><Text style={styles.subtitle}>{CHAIN_NAMES[selectedBlockchain]} · {chainAccounts.length} wallet{chainAccounts.length === 1 ? '' : 's'}</Text></View>
       </View>
-      <View style={styles.chainBar}>{CHAINS.map(chain => <TouchableOpacity key={chain} style={[styles.chainChip, selectedBlockchain === chain && styles.chainSelected]} onPress={() => setSelectedBlockchain(chain)}><Text style={[styles.chainText, selectedBlockchain === chain && styles.chainTextSelected]}>{CHAIN_NAMES[chain]}</Text></TouchableOpacity>)}</View>
 
       <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>HD Wallet</Text><Text style={styles.counter}>{roots.length}</Text></View>
       {roots.length ? roots.map(item => renderWallet(item, true)) : <View style={styles.empty}><Ionicons name="key-outline" size={23} color="#D63384" /><Text style={styles.emptyTitle}>No HD wallet on this chain</Text><Text style={styles.emptySubtitle}>Create or import a recovery phrase for {CHAIN_NAMES[selectedBlockchain]}.</Text></View>}
