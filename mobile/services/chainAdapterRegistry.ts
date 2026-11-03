@@ -209,3 +209,11 @@ export async function deriveBitcoinAddress(mnemonic:string,accountIndex:number,n
  payload.set(ripemd160(sha256(publicKey)),1);
  return base58Check(payload);
 }
+
+export function deriveBitcoinAddressFromPrivateKey(privateKeyInput:string,network:'mainnet'|'testnet'='mainnet'):string{
+ const normalized=privateKeyInput.trim().startsWith('0x')?privateKeyInput.trim():`0x${privateKeyInput.trim()}`;
+ const wallet=new ethers.Wallet(normalized);
+ const publicKey=ethers.getBytes(ethers.SigningKey.computePublicKey(wallet.privateKey,true));
+ const payload=new Uint8Array(21);payload[0]=network==='mainnet'?0x00:0x6f;
+ payload.set(ripemd160(sha256(publicKey)),1);return base58Check(payload);
+}
