@@ -9,7 +9,7 @@ import {
   type WalletAddresses,
 } from './walletService';
 import type { Blockchain } from '../../context/WalletContext';
-import { deriveAddressForChain, deriveAddressFromPrivateKey, deriveBitcoinAddress, deriveBitcoinAddressFromPrivateKey, getDerivationMetadata, getAccountDerivationMetadata } from './chainAdapterRegistry';
+import { deriveAddressForChain, deriveAddressFromPrivateKey, deriveBitcoinAddress, deriveBitcoinAddressFromPrivateKey, derivePrivateKeyForChain, getDerivationMetadata, getAccountDerivationMetadata } from './chainAdapterRegistry';
 import { assertWalletAuthorization, type WalletAuthorization } from './walletSecurityService';
 
 const STORE_KEY = 'xu_wallet_vault_store_v1';
@@ -226,6 +226,35 @@ export async function getPrivateKeyForSource(sourceId: string, authorization: Wa
   return SecureStore.getItemAsync(secretKey(sourceId));
 }
 
+/** Export a selected account's own signing key, deriving HD keys on demand. */
+export async function getPrivateKeyForAccount(
+  accountId: string,
+  blockchain: Blockchain,
+  authorization: WalletAuthorization,
+  action: 'export-secret' | 'sign-transaction' = 'export-secret',
+): Promise<string | null> {
+  assertWalletAuthorization(authorization, action);
+  const store = await getWalletVaultStore();
+  const located = store.vaults
+    .flatMap((vault) => vault.accounts.map((account) => ({ vault, account })))
+    .find(({ account }) => account.id === accountId);
+  if (!located) throw new Error('Wallet account not found.');
+  const { account, vault } = located;
+  if (account.sourceType === 'watch-only' || !account.sourceId) {
+    throw new Error('A watch-only wallet has no private key.');
+  }
+  const source = vault.sources.find((item) => item.id === account.sourceId);
+  if (!source) throw new Error('Wallet key source not found.');
+  if (source.type === 'private-key') return SecureStore.getItemAsync(secretKey(source.id));
+  if (account.sourceType !== 'mnemonic' || account.accountIndex === null) {
+    throw new Error('This account has no derivation path.');
+  }
+  const phrase = await SecureStore.getItemAsync(secretKey(source.id));
+  if (!phrase) throw new Error('Recovery phrase is unavailable. Restore this wallet.');
+  if (!account.derivationPaths[blockchain]) throw new Error('This wallet is not enabled for the selected blockchain.');
+  return derivePrivateKeyForChain(blockchain, phrase, account.accountIndex);
+}
+
 
 export async function getWalletVaultStore(): Promise<WalletVaultStore> {
   return (await readStore()) ?? initializeWalletVaultStore();
@@ -412,7 +441,7 @@ export async function addDerivedAccounts(
   if (targetChains.some((chain) => !enabledChains.includes(chain))) {
     throw new Error('This recovery phrase is not enabled for the selected blockchain.');
   }
-  const used = vault.accounts.filter((a) => a.sourceId === sourceId && a.accountIndex !== null).map((a) => a.accountIndex as number);
+  // Each chain has its own account-index sequence. A sibling chain's derived account must not advance this chain's index.\n  const used = vault.accounts.filter((a) => a.sourceId === sourceId && a.accountIndex !== null && (!blockchain || Boolean(a.derivationPaths[blockchain]))).map((a) => a.accountIndex as number);
   const first = used.length ? Math.max(...used) + 1 : 0;
   const created: WalletAccount[] = [];
   for (let i = 0; i < count; i += 1) {
