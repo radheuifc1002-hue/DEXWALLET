@@ -17,7 +17,7 @@ import {
   WalletAddresses,
 } from '../mobile/services/walletService';
 
-export type Blockchain = 'solana' | 'ethereum' | 'bnb' | 'polygon';
+export type Blockchain = 'solana' | 'ethereum' | 'bnb' | 'polygon' | 'arbitrum' | 'bitcoin' | 'tron';
 export type Network = 'mainnet' | 'testnet';
 
 export interface Token {
@@ -73,7 +73,10 @@ const NATIVE_TOKEN_DEFS: { blockchain: Blockchain; id: string; name: string; sym
   { blockchain: 'ethereum', id: 'eth', name: 'Ethereum', symbol: 'ETH' },
   { blockchain: 'solana', id: 'sol', name: 'Solana', symbol: 'SOL' },
   { blockchain: 'bnb', id: 'bnb', name: 'BNB', symbol: 'BNB' },
-  { blockchain: 'polygon', id: 'matic', name: 'Polygon', symbol: 'MATIC' },
+  { blockchain: 'polygon', id: 'matic', name: 'Polygon', symbol: 'POL' },
+  { blockchain: 'arbitrum', id: 'arbitrum', name: 'Arbitrum', symbol: 'ETH' },
+  { blockchain: 'bitcoin', id: 'bitcoin', name: 'Bitcoin', symbol: 'BTC' },
+  { blockchain: 'tron', id: 'tron', name: 'TRON', symbol: 'TRX' },
 ];
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
@@ -111,6 +114,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             solana: migratedActive.account.addresses.solana ?? '',
             bnb: migratedActive.account.addresses.bnb ?? '',
             polygon: migratedActive.account.addresses.polygon ?? '',
+            arbitrum: migratedActive.account.addresses.arbitrum ?? '',
+            bitcoin: migratedActive.account.addresses.bitcoin ?? '',
+            tron: migratedActive.account.addresses.tron ?? '',
           });
         }
         const parsedTimer = storedTimer === null ? 5 : Number(storedTimer);
@@ -139,6 +145,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             solana: activeAfterHydration.account.addresses.solana ?? '',
             bnb: activeAfterHydration.account.addresses.bnb ?? '',
             polygon: activeAfterHydration.account.addresses.polygon ?? '',
+            arbitrum: activeAfterHydration.account.addresses.arbitrum ?? '',
+            bitcoin: activeAfterHydration.account.addresses.bitcoin ?? '',
+            tron: activeAfterHydration.account.addresses.tron ?? '',
           });
         }
       } finally {
@@ -226,8 +235,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const initWallet = useCallback(async (mnemonic: string, config?: { name?: string; blockchains?: Blockchain[] }) => {
     const allAddresses = await deriveAddresses(mnemonic);
-    const selectedChains: Blockchain[] = Array.from(new Set<Blockchain>(config?.blockchains?.length ? config.blockchains : ['ethereum', 'bnb', 'polygon', 'solana']));
-    const addresses = { ethereum: selectedChains.includes('ethereum') ? allAddresses.ethereum : '', bnb: selectedChains.includes('bnb') ? allAddresses.bnb : '', polygon: selectedChains.includes('polygon') ? allAddresses.polygon : '', solana: selectedChains.includes('solana') ? allAddresses.solana : '' };
+    const selectedChains: Blockchain[] = Array.from(new Set<Blockchain>(config?.blockchains?.length ? config.blockchains : ['ethereum', 'bnb', 'polygon', 'arbitrum', 'solana', 'bitcoin', 'tron']));
+    const addresses = { ethereum: selectedChains.includes('ethereum') ? allAddresses.ethereum : '', bnb: selectedChains.includes('bnb') ? allAddresses.bnb : '', polygon: selectedChains.includes('polygon') ? allAddresses.polygon : '', arbitrum: selectedChains.includes('arbitrum') ? allAddresses.arbitrum : '', solana: selectedChains.includes('solana') ? allAddresses.solana : '', bitcoin: selectedChains.includes('bitcoin') ? allAddresses.bitcoin : '', tron: selectedChains.includes('tron') ? allAddresses.tron : '' };
     setSelectedBlockchain(selectedChains[0]);
     setWalletAddresses(addresses);
     await saveWalletToStorage(addresses, mnemonic);
