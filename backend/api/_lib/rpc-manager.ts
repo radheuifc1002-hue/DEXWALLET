@@ -13,7 +13,7 @@ const NETWORKS: Record<RpcChain, Partial<Record<RpcNetwork,string>>> = {
   solana: { mainnet: 'solana-mainnet', testnet: 'solana-devnet' },
   arbitrum: { mainnet: 'arb-mainnet', testnet: 'arb-sepolia' },
   bitcoin: { mainnet: 'bitcoin-mainnet', testnet: 'bitcoin-testnet' },
-  tron: { mainnet: 'tron-mainnet', testnet: 'tron-nile' },
+  tron: { mainnet: 'tron-mainnet', testnet: 'tron-testnet' },
 };
 const CHAIN_IDS: Partial<Record<RpcChain, Partial<Record<RpcNetwork,number>>>> = {
   ethereum: { mainnet: 1, testnet: 11155111 }, bnb: { mainnet: 56, testnet: 97 },
@@ -33,8 +33,9 @@ const READ_ONLY_METHODS = new Set([
   'getTransaction','getVersion',
   'getblockchaininfo','getblockhash','getblockheader','getblock','getrawtransaction','gettxout','estimatesmartfee',
   'wallet_getbalance','getaccount','getaccountresource','getnowblock','getblockbynum','gettransactionbyid','gettransactioninfobyid',
+  'wallet/getaccount','wallet/getaccountresource','wallet/getnowblock','wallet/getblockbynum','wallet/gettransactionbyid','wallet/gettransactioninfobyid',
 ]);
-const SIGNED_BROADCAST_METHODS = new Set(['eth_sendRawTransaction','sendTransaction']);
+const SIGNED_BROADCAST_METHODS = new Set(['eth_sendRawTransaction','sendTransaction','sendrawtransaction','sendrawtransaction']);
 const REQUEST_TIMEOUT_MS = 18_000;
 const MAX_FAILURES = 3;
 const BASE_COOLDOWN_MS = 5_000;
@@ -82,7 +83,7 @@ function getProviders(chain: RpcChain, network: RpcNetwork): Provider[] {
   const providers: Provider[] = [];
   const scoped = 'ALCHEMY_' + chain.toUpperCase() + '_' + network.toUpperCase() + '_API_KEY';
   const key = process.env[scoped] || process.env.ALCHEMY_API_KEY;
-  if (key && !['bitcoin','tron'].includes(chain)) providers.push({ name: 'alchemy', url: 'https://' + networkName + '.g.alchemy.com/v2/' + encodeURIComponent(key), priority: 10 });
+  if (key) providers.push({ name: 'alchemy', url: 'https://' + networkName + '.g.alchemy.com/v2/' + encodeURIComponent(key), priority: 10 });
   if (chain === 'bnb' && network === 'mainnet') {
     const chainstack = process.env.CHAINSTACK_BNB_MAINNET_RPC_URL;
     if (validHttpsUrl(chainstack)) providers.push({ name: 'chainstack', url: chainstack, priority: 20 });
