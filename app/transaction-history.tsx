@@ -24,7 +24,7 @@ type HistoryItem = {
   subtitle: string;
   amount: string;
   timestamp: number;
-  status: 'Confirmed' | 'Failed';
+  status: 'Confirmed' | 'Pending' | 'Failed';
   incoming: boolean;
   explorerUrl: string;
 };
@@ -56,7 +56,7 @@ const ADDRESS_EXPLORERS: Record<Blockchain, { mainnet: string; testnet: string }
   bnb: { mainnet: 'https://bscscan.com/address/', testnet: 'https://testnet.bscscan.com/address/' },
   polygon: { mainnet: 'https://polygonscan.com/address/', testnet: 'https://amoy.polygonscan.com/address/' },
   arbitrum: { mainnet: 'https://arbiscan.io/address/', testnet: 'https://sepolia.arbiscan.io/address/' },
-  bitcoin: { mainnet: 'https://mempool.space/address/', testnet: 'https://mempool.space/testnet/address/' },
+  bitcoin: { mainnet: 'https://mempool.space/address/', testnet: 'https://mempool.space/testnet4/address/' },
   tron: { mainnet: 'https://tronscan.org/#/address/', testnet: 'https://nile.tronscan.org/#/address/' },
   solana: { mainnet: 'https://solscan.io/account/', testnet: 'https://solscan.io/account/' },
 };
@@ -66,7 +66,7 @@ const EXPLORERS: Record<Blockchain, { mainnet: string; testnet: string }> = {
   bnb: { mainnet: 'https://bscscan.com/tx/', testnet: 'https://testnet.bscscan.com/tx/' },
   polygon: { mainnet: 'https://polygonscan.com/tx/', testnet: 'https://amoy.polygonscan.com/tx/' },
   arbitrum: { mainnet: 'https://arbiscan.io/tx/', testnet: 'https://sepolia.arbiscan.io/tx/' },
-  bitcoin: { mainnet: 'https://mempool.space/tx/', testnet: 'https://mempool.space/testnet/tx/' },
+  bitcoin: { mainnet: 'https://mempool.space/tx/', testnet: 'https://mempool.space/testnet4/tx/' },
   tron: { mainnet: 'https://tronscan.org/#/transaction/', testnet: 'https://nile.tronscan.org/#/transaction/' },
   solana: { mainnet: 'https://solscan.io/tx/', testnet: 'https://solscan.io/tx/' },
 };
@@ -246,7 +246,7 @@ export default function TransactionHistory() {
           const history = await fetchChainAssetHistory(selectedBlockchain, network, walletAddress);
           nextItems = history.rows.map((row) => ({
             id: row.id, hash: row.hash, title: row.title, subtitle: row.subtitle,
-            amount: row.amount, timestamp: row.timestamp, status: row.status === 'Failed' ? 'Failed' : 'Confirmed',
+            amount: row.amount, timestamp: row.timestamp, status: row.status,
             incoming: row.incoming, explorerUrl: row.explorerUrl,
           }));
           more = false;
@@ -384,7 +384,7 @@ export default function TransactionHistory() {
             <Text style={styles.loadMoreText}>{loadingMore ? 'Loading…' : 'Load older transactions'}</Text>
           </TouchableOpacity>
         ) : null}
-        {!loading && !error && items.length > 0 ? <Text style={styles.footerNote}>Tap any transaction to open its block explorer record. The list shows the latest 50 transfers returned by Alchemy.</Text> : null}
+        {!loading && !error && items.length > 0 ? <Text style={styles.footerNote}>Tap any transaction to open its block explorer record. The list shows the latest 50 transactions returned by the network history provider.</Text> : null}
       </ScrollView>
     </SafeAreaView>
   );
