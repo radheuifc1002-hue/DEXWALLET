@@ -49,3 +49,10 @@ test('Phase 4: vault persists derivation paths and versioned metadata per mnemon
   assert.match(vault,/deriveAddressForChain\(chain, mnemonic, accountIndex\)/);
   assert.match(vault,/sourceChains = source\.blockchains\?\.length/);
 });
+
+
+test('chain-scoped mnemonic sources persist only enabled chains and derive subsequent accounts on those chains',()=>{
+  assert.match(vault,/blockchains: selectedChains/);
+  assert.match(vault,/deriveAccountAddresses\\(phrase, index, sourceChains\\)/);
+  assert.match(vault,/sourceChains\\.map\\(\\(chain\\) => \\[chain, fullMetadata\\[chain\\]\\]\\)/);
+});
