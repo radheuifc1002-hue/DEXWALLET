@@ -325,13 +325,13 @@ export async function addMnemonicSource(
   authorization: WalletAuthorization,
   sourceName = 'Recovery Phrase',
   accountName = 'Main Wallet',
-  blockchains: Blockchain[] = ['ethereum', 'bnb', 'polygon', 'solana'],
+  blockchains: Blockchain[] = ['ethereum', 'bnb', 'polygon', 'arbitrum', 'solana', 'bitcoin', 'tron'],
 ): Promise<WalletVaultStore> {
   assertWalletAuthorization(authorization, 'import-secret');
   const mnemonic = mnemonicInput.trim().toLowerCase().replace(/\s+/g, ' ');
   if (!validateMnemonic(mnemonic)) throw new Error('Invalid recovery phrase.');
   const selectedChains = Array.from(new Set(blockchains));
-  if (!selectedChains.length || selectedChains.some((chain) => !['ethereum', 'bnb', 'polygon', 'solana'].includes(chain))) throw new Error('Select at least one supported blockchain.');
+  if (!selectedChains.length || selectedChains.some((chain) => !['ethereum', 'bnb', 'polygon', 'arbitrum', 'solana', 'bitcoin', 'tron'].includes(chain))) throw new Error('Select at least one supported blockchain.');
   const addressEntries = await Promise.all(selectedChains.map(async (chain) => [chain, await deriveAddressForChain(chain, mnemonic, 0)] as const));
   const addresses: Partial<WalletAddresses> = Object.fromEntries(addressEntries);
   const store = await getWalletVaultStore();
@@ -501,6 +501,18 @@ export async function addWatchOnlyAccount(
         throw new Error('Invalid Solana public address.');
       }
       addresses.solana = value;
+    } else if (chain === 'bitcoin' || chain === 'tron') {
+      let decoded: Uint8Array;
+      try { decoded = bs58.decode(value); } catch { throw new Error(`Invalid ${chain} address.`); }
+      if (decoded.length !== 25) throw new Error(`Invalid ${chain} address.`);
+      const payload = decoded.slice(0, 21);
+      const checksum = decoded.slice(21);
+      const { sha256 } = await import('@noble/hashes/sha2.js');
+      const expected = sha256(sha256(payload)).slice(0, 4);
+      if (checksum.some((byte, i) => byte !== expected[i]) || payload[0] !== (chain === 'bitcoin' ? 0x00 : 0x41)) {
+        throw new Error(`Invalid ${chain} address.`);
+      }
+      addresses[chain] = value;
     } else {
       if (!ethers.isAddress(value)) throw new Error(`Invalid ${chain} address.`);
       addresses[chain] = ethers.getAddress(value);
