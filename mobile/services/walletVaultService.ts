@@ -519,12 +519,12 @@ export async function addWatchOnlyAccount(
       const checksum = decoded.slice(21);
       const { sha256 } = await import('@noble/hashes/sha2.js');
       const expected = sha256(sha256(payload)).slice(0, 4);
-      const expectedPrefix = chain === 'bitcoin' ? [0x00, 0x6f] : [0x41];
+      const expectedPrefix = chain === 'bitcoin' ? [0x00, 0x05, 0x6f, 0xc4] : [0x41];
       if (checksum.some((byte, i) => byte !== expected[i]) || !expectedPrefix.includes(payload[0])) {
         throw new Error(`Invalid ${chain} address.`);
       }
       if (chain === 'bitcoin') {
-        if (payload[0] === 0x00) addresses.bitcoin = value;
+        if (payload[0] === 0x00 || payload[0] === 0x05) addresses.bitcoin = value;
         else addresses.bitcoinTestnet = value;
       } else addresses.tron = value;
     } else {
