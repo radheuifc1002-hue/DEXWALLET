@@ -9,7 +9,7 @@ import {
   Alert,
   TextInput,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,12 +18,14 @@ import type { Blockchain } from '../context/WalletContext';
 
 export default function GenerateSeed() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ chain?: string }>();
+  const initialChain = (['ethereum', 'bnb', 'polygon', 'solana'].includes(params.chain ?? '') ? params.chain : 'ethereum') as Blockchain;
   const [words, setWords] = useState<string[]>([]);
   const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState(false);
   const [walletName, setWalletName] = useState('My Wallet');
   const [hdWallet, setHdWallet] = useState(true);
-  const [chain, setChain] = useState<Blockchain>('ethereum');
+  const [chain, setChain] = useState<Blockchain>(initialChain);
   const chains: {id:Blockchain;label:string}[] = [{id:'ethereum',label:'Ethereum'},{id:'bnb',label:'BNB'},{id:'polygon',label:'Polygon'},{id:'solana',label:'Solana'}];
 
   useEffect(() => {
