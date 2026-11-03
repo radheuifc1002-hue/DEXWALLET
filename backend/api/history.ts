@@ -2,7 +2,7 @@ import { consumeRateLimit } from './_lib/rate-limit.js';
 import { randomUUID } from 'node:crypto';
 import { proxyRpc, type RpcChain, type RpcNetwork } from './_lib/rpc-manager.js';
 
-type Chain = Exclude<RpcChain, 'solana'>;
+type Chain = 'ethereum' | 'bnb' | 'polygon' | 'arbitrum';
 type Network = RpcNetwork;
 type Transfer = {
   hash?: string; from?: string; to?: string; value?: string | number | null; asset?: string | null;
@@ -16,11 +16,13 @@ const NETWORKS: Record<Chain, Partial<Record<Network,string>>> = {
   ethereum:{mainnet:'eth-mainnet',testnet:'eth-sepolia'},
   bnb:{mainnet:'bnb-mainnet',testnet:'bnb-testnet'},
   polygon:{mainnet:'polygon-mainnet',testnet:'polygon-amoy'},
+  arbitrum:{mainnet:'arb-mainnet',testnet:'arb-sepolia'},
 };
 const EXPLORERS: Record<Chain,Partial<Record<Network,string>>> = {
   ethereum:{mainnet:'https://etherscan.io/tx/',testnet:'https://sepolia.etherscan.io/tx/'},
   bnb:{mainnet:'https://bscscan.com/tx/',testnet:'https://testnet.bscscan.com/tx/'},
   polygon:{mainnet:'https://polygonscan.com/tx/',testnet:'https://amoy.polygonscan.com/tx/'},
+  arbitrum:{mainnet:'https://arbiscan.io/tx/',testnet:'https://sepolia.arbiscan.io/tx/'},
 };
 const MAX_ROWS = 50;
 const TRANSFER_PAGE_SIZE = 100;
