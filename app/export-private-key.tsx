@@ -7,11 +7,11 @@ import { Ionicons } from '@expo/vector-icons';
 import WalletAuthorizationModal from '../components/WalletAuthorizationModal';
 import type { WalletAuthorization } from '../mobile/services/walletSecurityService';
 import { useWallet } from '../context/WalletContext';
-import { getPrivateKeyForSource } from '../mobile/services/walletVaultService';
+import { getPrivateKeyForAccount } from '../mobile/services/walletVaultService';
 
 export default function ExportPrivateKey() {
   const router = useRouter();
-  const { activeWallet } = useWallet();
+  const { activeWallet, selectedBlockchain } = useWallet();
   const [authorizationVisible,setAuthorizationVisible] = useState(true);
   const [key,setKey] = useState('');
   const [error,setError] = useState('');
@@ -19,8 +19,8 @@ export default function ExportPrivateKey() {
   const [copied,setCopied] = useState(false);
   const handleAuthorized = async (authorization: WalletAuthorization) => {
     try {
-      if(!activeWallet?.sourceId||activeWallet.sourceType!=='private-key') throw new Error('The selected account is not a private-key wallet.');
-      const secret=await getPrivateKeyForSource(activeWallet.sourceId,authorization);
+      if(!activeWallet?.id) throw new Error('No wallet account is selected.');
+      const secret=await getPrivateKeyForAccount(activeWallet.id,selectedBlockchain,authorization);
       if(!secret) throw new Error('Private key unavailable.');
       setKey(secret);setError('');setAuthorizationVisible(false);Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch(e) { setError(e instanceof Error?e.message:'Unable to export private key.'); }
