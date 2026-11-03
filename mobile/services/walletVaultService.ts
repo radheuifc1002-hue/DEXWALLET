@@ -9,7 +9,7 @@ import {
   type WalletAddresses,
 } from './walletService';
 import type { Blockchain } from '../../context/WalletContext';
-import { deriveAddressForChain, deriveAddressFromPrivateKey, getDerivationMetadata, getAccountDerivationMetadata } from './chainAdapterRegistry';
+import { deriveAddressForChain, deriveAddressFromPrivateKey, deriveBitcoinAddress, getDerivationMetadata, getAccountDerivationMetadata } from './chainAdapterRegistry';
 import { assertWalletAuthorization, type WalletAuthorization } from './walletSecurityService';
 
 const STORE_KEY = 'xu_wallet_vault_store_v1';
@@ -248,7 +248,7 @@ export async function createInitialMnemonicVault(
   const selectedChains = Array.from(new Set(blockchains));
   if (!selectedChains.length || selectedChains.some((chain) => !['ethereum', 'bnb', 'polygon', 'arbitrum', 'solana', 'bitcoin', 'tron'].includes(chain))) throw new Error('Select at least one supported blockchain.');
   const metadata = getAccountDerivationMetadata(accountIndex);
-  const selectedAddresses = Object.fromEntries(selectedChains.map((chain) => [chain, addresses[chain]])) as Partial<WalletAddresses>;
+  const selectedAddresses = Object.fromEntries(selectedChains.map((chain) => [chain, addresses[chain]])) as Partial<WalletAddresses>;\n  if (selectedChains.includes('bitcoin')) selectedAddresses.bitcoinTestnet = addresses.bitcoinTestnet;
   const source: WalletKeySource = {
     id: sourceId,
     type: 'mnemonic',
@@ -378,7 +378,7 @@ export async function addMnemonicSource(
 
 async function deriveAccountAddresses(mnemonic: string, accountIndex: number, chains: Blockchain[]): Promise<Partial<WalletAddresses>> {
   const entries = await Promise.all(chains.map(async (chain) => [chain, await deriveAddressForChain(chain, mnemonic, accountIndex)] as const));
-  return Object.fromEntries(entries);
+  const result = Object.fromEntries(entries) as Partial<WalletAddresses>;\n  if (chains.includes('bitcoin')) result.bitcoinTestnet = await deriveBitcoinAddress(mnemonic, accountIndex, 'testnet');\n  return result;
 }
 
 export async function addDerivedAccounts(
