@@ -15,8 +15,8 @@ import WalletAuthorizationModal from '../components/WalletAuthorizationModal';
 import type { WalletAuthorization } from '../mobile/services/walletSecurityService';
 import { getCentralEvmChainId, serverRpcRequest } from '../mobile/services/serverRpc';
 
-const SYMBOL: Record<Blockchain, string> = { ethereum: 'ETH', bnb: 'BNB', polygon: 'POL', solana: 'SOL' };
-const LABEL: Record<Blockchain, string> = { ethereum: 'Ethereum', bnb: 'BNB Chain', polygon: 'Polygon', solana: 'Solana' };
+const SYMBOL: Record<Blockchain, string> = { ethereum: 'ETH', bnb: 'BNB', polygon: 'POL', arbitrum:'ETH', solana: 'SOL', bitcoin:'BTC', tron:'TRX' };
+const LABEL: Record<Blockchain, string> = { ethereum: 'Ethereum', bnb: 'BNB Chain', polygon: 'Polygon', arbitrum:'Arbitrum', solana: 'Solana', bitcoin:'Bitcoin', tron:'TRON' };
 const TOKEN_ABI = [
   'function balanceOf(address) view returns (uint256)',
   'function transfer(address,uint256) returns (bool)',
@@ -155,7 +155,7 @@ export default function Send() {
   const testnet = network === 'testnet';
   const rpc = useMemo(() => selectedBlockchain === 'solana' ? null : { chainId: getCentralEvmChainId(selectedBlockchain, network) }, [selectedBlockchain, network]);
   const nativeAsset: Token = useMemo(() => ({
-    id: selectedBlockchain === 'polygon' ? 'matic' : selectedBlockchain === 'solana' ? 'sol' : selectedBlockchain === 'bnb' ? 'bnb' : 'eth',
+    id: selectedBlockchain === 'polygon' ? 'matic' : selectedBlockchain === 'solana' ? 'sol' : selectedBlockchain === 'bnb' ? 'bnb' : selectedBlockchain === 'arbitrum' ? 'arbitrum' : 'eth',
     name: LABEL[selectedBlockchain],
     symbol,
     balance: 0,
