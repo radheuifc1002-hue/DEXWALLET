@@ -19,7 +19,7 @@ import type { Blockchain } from '../context/WalletContext';
 export default function GenerateSeed() {
   const router = useRouter();
   const params = useLocalSearchParams<{ chain?: string }>();
-  const initialChain = (['ethereum', 'bnb', 'polygon', 'solana'].includes(params.chain ?? '') ? params.chain : 'ethereum') as Blockchain;
+  const initialChain = (['ethereum', 'bnb', 'polygon', 'arbitrum', 'solana', 'bitcoin', 'tron'].includes(params.chain ?? '') ? params.chain : 'ethereum') as Blockchain;
   const [words, setWords] = useState<string[]>([]);
   const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -42,7 +42,7 @@ export default function GenerateSeed() {
 
   const handleContinue = async () => {
     await stagePendingMnemonic(words.join(' '));
-    await stagePendingWalletConfig({ name: walletName, blockchains: params.chain ? [chain] : ['ethereum', 'bnb', 'polygon', 'solana'] });
+    await stagePendingWalletConfig({ name: walletName, blockchains: params.chain ? [chain] : ['ethereum', 'bnb', 'polygon', 'arbitrum', 'solana', 'bitcoin', 'tron'] });
     Alert.alert(
       'Did you save your seed phrase?',
       'Without it, you cannot recover your wallet if you lose access.',
