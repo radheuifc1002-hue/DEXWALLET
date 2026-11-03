@@ -43,7 +43,9 @@ test('Phase 4: legacy Solana account zero and shared EVM derivation remain compa
 test('Phase 4: vault persists derivation paths and versioned metadata per mnemonic account',()=>{
   assert.match(vault,/derivationMetadata\?: Partial<Record<Blockchain/);
   assert.match(vault,/getAccountDerivationMetadata\(account\.accountIndex\)/);
-  assert.match(vault,/const derivationMetadata = getAccountDerivationMetadata\(index\)/);
+  assert.match(vault,/const fullMetadata = getAccountDerivationMetadata\(index\)/);
+  assert.match(vault,/sourceChains\.map\(\(chain\) => \[chain, fullMetadata\[chain\]\]\)/);
   assert.match(vault,/derivationMetadata, addresses/);
-  assert.match(vault,/deriveWalletAddresses\(mnemonic, accountIndex\)/);
+  assert.match(vault,/deriveAddressForChain\(chain, mnemonic, accountIndex\)/);
+  assert.match(vault,/sourceChains = source\.blockchains\?\.length/);
 });
