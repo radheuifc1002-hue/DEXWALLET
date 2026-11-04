@@ -153,7 +153,7 @@ export default function Send() {
   const address = walletAddresses?.[selectedBlockchain] || '';
   const symbol = SYMBOL[selectedBlockchain];
   const testnet = network === 'testnet';
-  const rpc = useMemo(() => ['solana','bitcoin','tron'].includes(selectedBlockchain) ? null : { chainId: getCentralEvmChainId(selectedBlockchain as Exclude<Blockchain,'solana'>, network) }, [selectedBlockchain, network]);
+  const rpc = useMemo(() => ['solana','bitcoin','tron'].includes(selectedBlockchain) ? null : { chainId: getCentralEvmChainId(selectedBlockchain as Exclude<Blockchain,'solana'|'bitcoin'|'tron'>, network) }, [selectedBlockchain, network]);
   const nativeAsset: Token = useMemo(() => ({
     id: selectedBlockchain === 'polygon' ? 'matic' : selectedBlockchain === 'solana' ? 'sol' : selectedBlockchain === 'bnb' ? 'bnb' : selectedBlockchain === 'arbitrum' ? 'arbitrum' : 'eth',
     name: LABEL[selectedBlockchain],
