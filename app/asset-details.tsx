@@ -17,7 +17,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { Blockchain, useWallet } from '../context/WalletContext';
 import { fetchSolanaAssetHistory } from '../mobile/services/solanaHistory';
-import { fetchEvmAssetHistory } from '../mobile/services/transactionHistory';
+import { fetchEvmAssetHistory, fetchIndexedChainHistory } from '../mobile/services/transactionHistory';
 
 type HistoryRow = {
   id: string;
@@ -70,7 +70,7 @@ function transactionExplorerUrl(chain: Blockchain, network: string, hash: string
       polygon: 'https://amoy.polygonscan.com/tx/',
       arbitrum: 'https://sepolia.arbiscan.io/tx/',
       solana: EXPLORERS.solana,
-      bitcoin: 'https://mempool.space/testnet/tx/',
+      bitcoin: 'https://mempool.space/testnet4/tx/',
       tron: 'https://nile.tronscan.org/#/transaction/',
     };
     return bases[chain] + hash;
@@ -131,12 +131,6 @@ export default function AssetDetails() {
       setRefreshing(false);
       return;
     }
-    if (chain === 'bitcoin' || chain === 'tron') {
-      if (!append) setRows([]);
-      setError('Transaction history indexing for this chain is not enabled yet.');
-      setLoading(false); setLoadingMore(false); setRefreshing(false);
-      return;
-    }
     if (append) setLoadingMore(true);
     else setLoading(true);
     setError('');
@@ -146,7 +140,22 @@ export default function AssetDetails() {
       let next: string | null = null;
       let complete = true;
       let warning = '';
-      if (chain === 'solana') {
+      if (chain === 'bitcoin' || chain === 'tron') {
+        const history = await fetchIndexedChainHistory({
+          chain,
+          network: network === 'testnet' ? 'testnet' : 'mainnet',
+          walletAddress,
+        });
+        result = history.rows.map((row) => ({
+          id: row.id, hash: row.hash, title: row.title,
+          detail: row.detail || row.subtitle || (row.incoming ? 'Incoming transfer' : 'Outgoing transfer'),
+          amount: row.amount, timestamp: row.timestamp, incoming: row.incoming,
+          failed: row.status.toLowerCase() === 'failed',
+          status: row.status.toLowerCase() === 'failed' ? 'failed' : row.status.toLowerCase() === 'confirmed' ? 'success' : 'unknown',
+          explorerUrl: row.explorerUrl,
+        }));
+        complete = history.complete;
+      } else if (chain === 'solana') {
         const history = await fetchSolanaAssetHistory({
           network: network === 'testnet' ? 'testnet' : 'mainnet',
           walletAddress,
