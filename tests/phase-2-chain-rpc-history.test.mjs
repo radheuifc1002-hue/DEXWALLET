@@ -65,6 +65,14 @@ test('Arbitrum is supported by the shared EVM transaction-history path', () => {
   assert.match(evmHistory, /alchemy_getAssetTransfers/);
 });
 
+test('Asset details enables Bitcoin and TRON history instead of displaying the disabled-indexing placeholder', () => {
+  const screen = read('app/asset-details.tsx');
+  const client = read('mobile/services/transactionHistory.ts');
+  assert.doesNotMatch(screen, /Transaction history indexing for this chain is not enabled yet/);
+  assert.match(screen, /fetchIndexedChainHistory/);
+  assert.match(client, /\/api\/chain-history/);
+});
+
 test('Generated HD wallet setup appends to the active vault instead of silently reusing the current account', () => {
   const setup = read('app/set-pin.tsx');
   assert.match(setup, /hasExistingAccount/);
