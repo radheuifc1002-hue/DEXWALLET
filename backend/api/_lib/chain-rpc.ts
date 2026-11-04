@@ -1,8 +1,16 @@
 import type { RpcNetwork } from './rpc-manager.js';
 type Chain='bitcoin'|'tron';
 type RpcBody={jsonrpc?:string;id?:string|number|null;method?:string;params?:unknown[]};
-const BTC:Record<RpcNetwork,string>={mainnet:'https://mempool.space/api',testnet:'https://mempool.space/testnet4/api'};
-const TRON:Record<RpcNetwork,string>={mainnet:'https://api.trongrid.io',testnet:'https://nile.trongrid.io'};
+const ALCHEMY_NETWORK: Record<Chain, Record<RpcNetwork, string>> = {
+ bitcoin: { mainnet: 'bitcoin-mainnet', testnet: 'bitcoin-testnet' },
+ tron: { mainnet: 'tron-mainnet', testnet: 'tron-testnet' },
+};
+function alchemyBase(chain: Chain, network: RpcNetwork): string {
+ const scoped = process.env['ALCHEMY_' + chain.toUpperCase() + '_' + network.toUpperCase() + '_API_KEY'];
+ const key = scoped || process.env.ALCHEMY_API_KEY;
+ if (!key) throw new Error('alchemy_api_key_not_configured');
+ return 'https://' + ALCHEMY_NETWORK[chain][network] + '.g.alchemy.com/v2/' + encodeURIComponent(key);
+}
 const TRON_CHAIN_ID:Record<RpcNetwork,number>={mainnet:728126428,testnet:3448148188};
 const BTC_READ=new Set(['getblockchaininfo','getblockcount','getblockhash','getblockheader','getrawtransaction','estimatesmartfee']);
 const BTC_WRITE=new Set(['sendrawtransaction']);
@@ -24,7 +32,7 @@ export async function proxyChainRpc(chain:Chain,network:RpcNetwork,body:unknown)
   if(chain==='bitcoin'){
    if(BTC_WRITE.has(method)){
     if(typeof params[0]!=='string'||!/^[0-9a-f]+$/i.test(params[0]))return failure(id,'A signed raw transaction hex string is required.',-32602,400);
-    const txid=await request(BTC[network]+'/tx',{method:'POST',headers:{'Content-Type':'text/plain'},body:params[0]});
+    const txid=await request(alchemyBase('bitcoin',network)+'/tx',{method:'POST',headers:{'Content-Type':'text/plain'},body:params[0]});
     return result(id,txid);
    }
    if(!BTC_READ.has(method))return failure(id,'Unsupported Bitcoin RPC method: '+method,-32601,400);
@@ -56,13 +64,12 @@ export async function proxyChainRpc(chain:Chain,network:RpcNetwork,body:unknown)
   if(method==='net_version')return result(id,String(TRON_CHAIN_ID[network]));
   if(method==='eth_chainId')return result(id,'0x'+TRON_CHAIN_ID[network].toString(16));
   if(TRON_EVM.has(method)){
-   const response=await request(TRON[network]+'/jsonrpc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id,method,params})});
+   const response=await request(alchemyBase('tron',network),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id,method,params})});
    if(response?.error)return failure(id,String(response.error.message||'TRON JSON-RPC error'),Number(response.error.code)||-32000);
    return result(id,response?.result);
   }
   const routes:Record<string,string>={getaccount:'/wallet/getaccount',getaccountresource:'/wallet/getaccountresource',getnowblock:'/wallet/getnowblock',getblockbynum:'/wallet/getblockbynum',gettransactionbyid:'/wallet/gettransactionbyid',gettransactioninfobyid:'/wallet/gettransactioninfobyid',broadcasttransaction:'/wallet/broadcasttransaction'};
-  const apiKey=process.env.TRONGRID_API_KEY;
-  const response=await request(TRON[network]+routes[method],{method:'POST',headers:{'Content-Type':'application/json',...(apiKey?{'TRON-PRO-API-KEY':apiKey}:{})},body:JSON.stringify(params[0]??{})});
+  const response=await request(alchemyBase('tron',network)+routes[method],{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(params[0]??{})});
   return result(id,response);
  }catch(error){return failure(id,error instanceof Error?error.message:'Upstream provider unavailable',-32000,502);}
 }
@@ -71,6 +78,6 @@ export async function probeChainRpc(chain:Chain,network:RpcNetwork):Promise<{nam
  try{
   if(chain==='bitcoin'){const height=await request(BTC[network]+'/blocks/tip/height');if(!Number.isFinite(Number(height)))throw new Error('Invalid Bitcoin tip height');}
   else{const key=process.env.TRONGRID_API_KEY;const block=await request(TRON[network]+'/wallet/getnowblock',{method:'POST',headers:{'Content-Type':'application/json',...(key?{'TRON-PRO-API-KEY':key}:{})},body:'{}'});if(!block?.block_header?.raw_data?.number)throw new Error('Invalid TRON block response');}
-  return{name:chain==='bitcoin'?'mempool.space':'TronGrid',configured:true,healthy:true,circuit:'closed',cooldownMs:0,latencyMs:Date.now()-started,consecutiveFailures:0,lastCheckedAt:Date.now()};
+  return{name:'alchemy',configured:true,healthy:true,circuit:'closed',cooldownMs:0,latencyMs:Date.now()-started,consecutiveFailures:0,lastCheckedAt:Date.now()};
  }catch(error){return{name:chain==='bitcoin'?'mempool.space':'TronGrid',configured:true,healthy:false,circuit:'closed',cooldownMs:0,latencyMs:null,consecutiveFailures:1,lastCheckedAt:Date.now(),lastFailure:error instanceof Error?error.message:'provider unavailable'};}
 }
