@@ -101,8 +101,25 @@ export default async function handler(req: any, res: any) {
   try {
     if (chain === 'bitcoin') {
       const indexed = await getJson(alchemyBitcoinUrl(network, address));
-      const txs = Array.isArray(indexed?.txs) ? indexed.txs : [];
-      const rows = txs.slice(0, 50).map((tx: any) => {
+      // Alchemy's address endpoint returns a numeric `txs` count and a `txids`
+      // array. Full transaction bodies must be fetched from /api/v2/tx/{txid}.
+      const txids = Array.isArray(indexed?.txids) ? indexed.txids.slice(0, 50).map(String) : [];
+      const txs: any[] = [];
+      for (let offset = 0; offset < txids.length; offset += 8) {
+        const batch = await Promise.all(txids.slice(offset, offset + 8).map(async (txid: string) => {
+          try {
+            return await getJson(alchemyBitcoinUrl(network, address).replace(
+              /\/api\/v2\/address\/[^?]+\?.*$/,
+              '/api/v2/tx/' + encodeURIComponent(txid),
+            ));
+          } catch (error) {
+            console.warn('bitcoin_history_tx_fetch_failed', txid, error instanceof Error ? error.message : 'unknown');
+            return null;
+          }
+        }));
+        txs.push(...batch.filter(Boolean));
+      }
+      const rows = txs.map((tx: any) => {
         const inputs = Array.isArray(tx?.vin) ? tx.vin : [];
         const outputs = Array.isArray(tx?.vout) ? tx.vout : [];
         const addresses = (entry: any): string[] => Array.isArray(entry?.addresses)
