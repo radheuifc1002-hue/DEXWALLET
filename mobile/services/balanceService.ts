@@ -45,9 +45,7 @@ export async function refreshWalletTokenBalances(addresses:Record<Blockchain,str
         }else if(token.blockchain==='tron'){
           const data=await serverChainDataRequest<{balanceSun:string}>('tron',network,address);
           balance=Number(ethers.formatUnits(BigInt(data.balanceSun),6));
-        }else if(token.blockchain==='bitcoin'||token.blockchain==='tron'){
-        return token;
-      }else if(token.blockchain==='solana'){
+        }else if(token.blockchain==='solana'){
           const result=await serverRpcRequest<{value:number}>('solana',network,'getBalance',[address,{commitment:'confirmed'}]);
           balance=Number(ethers.formatUnits(BigInt(result.value),9));
         }else{
