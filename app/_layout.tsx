@@ -67,7 +67,7 @@ function NavigationGuard() {
       router.replace('/onboarding');
     } else if (isWalletCreated && isLocked && !inPinLock) {
       router.replace('/pin-lock');
-    } else if (isWalletCreated && !isLocked && (inPinLock || (!inTabs && !inAuthFlow && s0 !== 'send' && s0 !== 'import-token' && s0 !== 'receive' && s0 !== 'transaction-history' && s0 !== 'asset-details' && s0 !== 'wallet-management' && s0 !== 'export-seed' && s0 !== 'change-pin'))) {
+    } else if (isWalletCreated && !isLocked && (inPinLock || (!inTabs && !inAuthFlow && s0 !== 'send' && s0 !== 'import-token' && s0 !== 'receive' && s0 !== 'transaction-history' && s0 !== 'asset-details' && s0 !== 'wallet-management' && s0 !== 'export-seed' && s0 !== 'export-private-key' && s0 !== 'change-pin'))) {
       router.replace('/(tabs)/home');
     }
   }, [isWalletCreated, isLocked, isLoading, segments, router]);
