@@ -2,10 +2,18 @@ import { consumeRateLimit } from './_lib/rate-limit.js';
 
 type Chain = 'bitcoin' | 'tron';
 type Network = 'mainnet' | 'testnet';
-const BTC_API: Record<Network, string> = {
-  mainnet: 'https://mempool.space/api',
-  testnet: 'https://mempool.space/testnet4/api',
+const BTC_NETWORK: Record<Network, string> = {
+  mainnet: 'bitcoin-mainnet',
+  // Alchemy's indexed UTXO REST API supports Testnet4 (not legacy Testnet3).
+  testnet: 'bitcoin-testnet4',
 };
+function alchemyBitcoinUrl(network: Network, address: string): string {
+  const scoped = process.env['ALCHEMY_BITCOIN_' + network.toUpperCase() + '_API_KEY'];
+  const key = scoped || process.env.ALCHEMY_API_KEY;
+  if (!key) throw new Error('history_provider_not_configured');
+  return 'https://' + BTC_NETWORK[network] + '.g.alchemy.com/v2/' + encodeURIComponent(key)
+    + '/api/v2/address/' + encodeURIComponent(address) + '?details=txs&page=1&pageSize=50';
+}
 const BTC_EXPLORER: Record<Network, string> = {
   mainnet: 'https://mempool.space/tx/',
   testnet: 'https://mempool.space/testnet4/tx/',
@@ -92,41 +100,45 @@ export default async function handler(req: any, res: any) {
 
   try {
     if (chain === 'bitcoin') {
-      const txs = await getJson(BTC_API[network] + '/address/' + encodeURIComponent(address) + '/txs') as any[];
-      const rows = (Array.isArray(txs) ? txs : []).slice(0, 50).map((tx: any) => {
+      const indexed = await getJson(alchemyBitcoinUrl(network, address));
+      const txs = Array.isArray(indexed?.txs) ? indexed.txs : [];
+      const rows = txs.slice(0, 50).map((tx: any) => {
         const inputs = Array.isArray(tx?.vin) ? tx.vin : [];
         const outputs = Array.isArray(tx?.vout) ? tx.vout : [];
+        const addresses = (entry: any): string[] => Array.isArray(entry?.addresses)
+          ? entry.addresses.map(String) : entry?.address ? [String(entry.address)] : [];
         let sent = 0n;
         for (const input of inputs) {
-          if (input?.prevout?.scriptpubkey_address === address) sent += BigInt(input?.prevout?.value || 0);
+          if (addresses(input).includes(address)) sent += BigInt(String(input?.value || '0'));
         }
         let received = 0n;
         for (const output of outputs) {
-          if (output?.scriptpubkey_address === address) received += BigInt(output?.value || 0);
+          if (addresses(output).includes(address)) received += BigInt(String(output?.value || '0'));
         }
         const delta = received - sent;
         const incoming = delta >= 0n;
-        const hash = String(tx?.txid || '');
+        const hash = String(tx?.txid || tx?.hash || '');
         const other = incoming
-          ? inputs.find((input: any) => input?.prevout?.scriptpubkey_address && input.prevout.scriptpubkey_address !== address)?.prevout?.scriptpubkey_address
-          : outputs.find((output: any) => output?.scriptpubkey_address && output.scriptpubkey_address !== address)?.scriptpubkey_address;
-        const confirmed = Boolean(tx?.status?.confirmed);
+          ? inputs.flatMap(addresses).find((item: string) => item !== address)
+          : outputs.flatMap(addresses).find((item: string) => item !== address);
+        const confirmed = Number(tx?.confirmations || 0) > 0 || Number(tx?.blockHeight || 0) > 0;
+        const timestamp = Number(tx?.blockTime || tx?.blocktime || tx?.time || 0);
         return {
           id: hash, hash, title: incoming ? 'Received BTC' : 'Sent BTC',
           subtitle: other ? (incoming ? 'From ' : 'To ') + short(String(other)) : 'Bitcoin transaction',
           amount: (incoming ? '+' : '-') + btc(delta < 0n ? -delta : delta) + ' BTC',
-          timestamp: confirmed ? Number(tx.status.block_time || 0) : 0,
+          timestamp: confirmed ? timestamp : 0,
           status: confirmed ? 'Confirmed' : 'Pending', incoming,
           explorerUrl: BTC_EXPLORER[network] + hash,
         };
       }).filter((row: any) => row.hash);
       return res.status(200).json({
         chain, network, walletAddress: address, rows, limit: 50,
-        complete: rows.length < 50, source: 'mempool-space',
+        complete: rows.length < 50, source: 'alchemy-utxo-indexer',
       });
     }
 
-    const headers: Record<string, string> = process.env.TRONGRID_API_KEY
+    // Alchemy provides TRON node RPC, but not a documented address-history indexer.\n    // Keep the address-activity query on TronGrid until Alchemy exposes that data API.\n    const headers: Record<string, string> = process.env.TRONGRID_API_KEY
       ? { 'TRON-PRO-API-KEY': process.env.TRONGRID_API_KEY }
       : {};
     const addressHex = tronAddressHex(address);
