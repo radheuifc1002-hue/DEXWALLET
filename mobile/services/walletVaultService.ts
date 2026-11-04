@@ -441,7 +441,8 @@ export async function addDerivedAccounts(
   if (targetChains.some((chain) => !enabledChains.includes(chain))) {
     throw new Error('This recovery phrase is not enabled for the selected blockchain.');
   }
-  // Each chain has its own account-index sequence. A sibling chain's derived account must not advance this chain's index.\n  const used = vault.accounts.filter((a) => a.sourceId === sourceId && a.accountIndex !== null && (!blockchain || Boolean(a.derivationPaths[blockchain]))).map((a) => a.accountIndex as number);
+  // Each chain has its own account-index sequence. A sibling chain's derived account must not advance this chain's index.
+  const used = vault.accounts.filter((a) => a.sourceId === sourceId && a.accountIndex !== null && (!blockchain || Boolean(a.derivationPaths[blockchain]))).map((a) => a.accountIndex as number);
   const first = used.length ? Math.max(...used) + 1 : 0;
   const created: WalletAccount[] = [];
   for (let i = 0; i < count; i += 1) {
