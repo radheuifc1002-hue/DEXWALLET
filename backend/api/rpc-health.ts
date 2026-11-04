@@ -1,8 +1,9 @@
 import { consumeRateLimit } from './_lib/rate-limit.js';
 import { randomUUID } from 'node:crypto';
 import { probeRpcProviders, type RpcChain, type RpcNetwork } from './_lib/rpc-manager.js';
+import { probeChainRpc } from './_lib/chain-rpc.js';
 
-const CHAINS = new Set<RpcChain>(['ethereum','bnb','polygon','solana']);
+const CHAINS = new Set<RpcChain>(['ethereum','bnb','polygon','arbitrum','solana','bitcoin','tron']);
 const NETWORKS = new Set<RpcNetwork>(['mainnet','testnet']);
 
 export default async function handler(req: any, res: any) {
@@ -20,7 +21,9 @@ export default async function handler(req: any, res: any) {
   const chain = String(req.query?.chain || '').toLowerCase() as RpcChain;
   const network = String(req.query?.network || '').toLowerCase() as RpcNetwork;
   if (!CHAINS.has(chain) || !NETWORKS.has(network)) return res.status(400).json({error:{code:'unsupported_network',requestId}});
-  const providers = await probeRpcProviders(chain,network);
+  const providers = chain === 'bitcoin' || chain === 'tron'
+    ? [await probeChainRpc(chain,network)]
+    : await probeRpcProviders(chain,network);
   const healthy=providers.some(provider=>provider.healthy);
   return res.status(healthy?200:503).json({status:healthy?'healthy':providers.length?'degraded':'not_configured',chain,network,providers,requestId,
     note:'Providers are actively probed for this request. Circuit and latency history is local to this serverless function instance.'});

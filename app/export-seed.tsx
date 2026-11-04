@@ -11,37 +11,30 @@ import {
 import { useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
-import * as SecureStore from 'expo-secure-store';
 import { Ionicons } from '@expo/vector-icons';
 import { useWallet } from '../context/WalletContext';
-import PinPad from '../components/PinPad';
+import { getMnemonicForSource } from '../mobile/services/walletVaultService';
+import WalletAuthorizationModal from '../components/WalletAuthorizationModal';
+import type { WalletAuthorization } from '../mobile/services/walletSecurityService';
 
 export default function ExportSeed() {
   const router = useRouter();
-  const { seedPhrase, pin } = useWallet();
+  const { activeWallet } = useWallet();
+  const [seedPhrase, setSeedPhrase] = useState<string[]>([]);
   const [step, setStep] = useState<'pin' | 'reveal'>('pin');
-  const [enteredPin, setEnteredPin] = useState('');
+  const [authorizationVisible, setAuthorizationVisible] = useState(true);
   const [error, setError] = useState('');
   const [hidden, setHidden] = useState(true);
   const [copied, setCopied] = useState(false);
 
-  const PIN_LENGTH = 6;
-
-  const handlePin = async (p: string) => {
-    setEnteredPin(p);
-    if (p.length !== PIN_LENGTH) return;
-    const storedPin = await SecureStore.getItemAsync('xu_wallet_pin');
-    if (p === storedPin) {
+  const handleAuthorized = async (authorization: WalletAuthorization) => {
+    try {
+      if (!activeWallet?.sourceId || activeWallet.sourceType !== 'mnemonic') throw new Error('The selected account does not have a recovery phrase.');
+      const phrase = await getMnemonicForSource(activeWallet.sourceId, authorization);
+      if (!phrase) throw new Error('Recovery phrase is unavailable.');
+      setSeedPhrase(phrase.split(' ')); setStep('reveal'); setAuthorizationVisible(false);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setStep('reveal');
-    } else {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      setError('Incorrect PIN. Try again.');
-      setTimeout(() => {
-        setEnteredPin('');
-        setError('');
-      }, 800);
-    }
+    } catch (error) { setError(error instanceof Error ? error.message : 'Unable to load recovery phrase.'); }
   };
 
   const handleCopy = async () => {
@@ -66,12 +59,7 @@ export default function ExportSeed() {
           <Ionicons name="lock-closed" size={40} color="#6C4CF1" style={{ marginBottom: 16 }} />
           <Text style={styles.title}>Verify Your Identity</Text>
           <Text style={styles.subtitle}>Enter your PIN to view your seed phrase</Text>
-          <PinPad
-            value={enteredPin}
-            onChange={handlePin}
-            maxLength={PIN_LENGTH}
-            errorMsg={error}
-          />
+          {error ? <Text style={styles.dangerText}>{error}</Text> : null}
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.scroll}>
@@ -115,6 +103,7 @@ export default function ExportSeed() {
           )}
         </ScrollView>
       )}
+      <WalletAuthorizationModal visible={authorizationVisible && step==='pin'} action="export-secret" title="Verify to export recovery phrase" onCancel={()=>{setAuthorizationVisible(false);router.back();}} onAuthorized={handleAuthorized}/>
     </SafeAreaView>
   );
 }

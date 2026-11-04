@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 export type RpcNetwork = 'mainnet' | 'testnet';
-export type RpcChain = 'ethereum' | 'bnb' | 'polygon' | 'solana';
+export type RpcChain = 'ethereum' | 'bnb' | 'polygon' | 'arbitrum' | 'solana' | 'bitcoin' | 'tron';
 type Provider = { name: string; url: string; priority: number };
 type ProviderHealth = { failures: number; openUntil: number; latencyMs: number; lastFailure?: string; lastCheckedAt?: number };
 type RpcRequest = { jsonrpc: '2.0'; id: string | number | null; method: string; params?: unknown[] };
@@ -11,10 +11,14 @@ const NETWORKS: Record<RpcChain, Partial<Record<RpcNetwork,string>>> = {
   bnb: { mainnet: 'bnb-mainnet', testnet: 'bnb-testnet' },
   polygon: { mainnet: 'polygon-mainnet', testnet: 'polygon-amoy' },
   solana: { mainnet: 'solana-mainnet', testnet: 'solana-devnet' },
+  arbitrum: { mainnet: 'arb-mainnet', testnet: 'arb-sepolia' },
+  bitcoin: { mainnet: 'bitcoin-mainnet', testnet: 'bitcoin-testnet' },
+  tron: { mainnet: 'tron-mainnet', testnet: 'tron-testnet' },
 };
 const CHAIN_IDS: Partial<Record<RpcChain, Partial<Record<RpcNetwork,number>>>> = {
   ethereum: { mainnet: 1, testnet: 11155111 }, bnb: { mainnet: 56, testnet: 97 },
   polygon: { mainnet: 137, testnet: 80002 },
+  arbitrum: { mainnet: 42161, testnet: 421614 },
 };
 const READ_ONLY_METHODS = new Set([
   'alchemy_getAssetTransfers','eth_chainId','eth_blockNumber','eth_call','eth_estimateGas','eth_gasPrice',
@@ -27,8 +31,11 @@ const READ_ONLY_METHODS = new Set([
   'getMinimumBalanceForRentExemption','getMultipleAccounts','getProgramAccounts',
   'getSignatureStatuses','getSignaturesForAddress','getSlot','getTokenAccountBalance','getTokenAccountsByOwner',
   'getTransaction','getVersion',
+  'getblockchaininfo','getblockhash','getblockheader','getblock','getrawtransaction','gettxout','estimatesmartfee',
+  'wallet_getbalance','getaccount','getaccountresource','getnowblock','getblockbynum','gettransactionbyid','gettransactioninfobyid',
+  'wallet/getaccount','wallet/getaccountresource','wallet/getnowblock','wallet/getblockbynum','wallet/gettransactionbyid','wallet/gettransactioninfobyid',
 ]);
-const SIGNED_BROADCAST_METHODS = new Set(['eth_sendRawTransaction','sendTransaction']);
+const SIGNED_BROADCAST_METHODS = new Set(['eth_sendRawTransaction','sendTransaction','sendrawtransaction','wallet/broadcasttransaction','broadcasttransaction']);
 const REQUEST_TIMEOUT_MS = 18_000;
 const MAX_FAILURES = 3;
 const BASE_COOLDOWN_MS = 5_000;
@@ -239,7 +246,7 @@ export async function probeRpcProviders(chain: RpcChain, network: RpcNetwork): P
     const key=providerKey(chain,network,provider),controller=new AbortController();
     const timeout=setTimeout(()=>controller.abort(),6_000),started=Date.now();
     try{
-      const method=chain==='solana'?'getHealth':'eth_chainId';
+      const method=chain==='solana'?'getHealth':chain==='bitcoin'?'getblockchaininfo':chain==='tron'?'net_version':'eth_chainId';
       const response=await fetch(provider.url,{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},
         body:JSON.stringify({jsonrpc:'2.0',id:'dexwallet-health',method,params:[]}),signal:controller.signal});
       if(!response.ok)throw new Error('HTTP '+response.status);
@@ -247,8 +254,11 @@ export async function probeRpcProviders(chain: RpcChain, network: RpcNetwork): P
       if(payload.error||payload.result===undefined)throw new Error('Invalid health response');
       if(chain==='solana'&&payload.result!=='ok')throw new Error('Solana health response was not ok');
       if(chain!=='solana'){
-        const expected=getRpcChainId(chain,network),actual=Number(BigInt(String(payload.result)));
-        if(expected!==undefined&&actual!==expected)throw new Error('Wrong chain ID '+actual+' (expected '+expected+')');
+        const expected=getRpcChainId(chain,network);
+        if(expected!==undefined) {
+          const actual=Number(BigInt(String((payload.result as any)?.chainId??payload.result)));
+          if(actual!==expected)throw new Error('Wrong chain ID '+actual+' (expected '+expected+')');
+        }
       }
       markSuccess(key,Date.now()-started);
     }catch(error){markFailure(key,error);}

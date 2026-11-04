@@ -3,7 +3,7 @@ name: Build standalone Android APK
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/phase-1-universal-hd-engine, feature/phase-2-seven-chain-wallet]
     paths:
       - "app/**"
       - "assets/**"
@@ -13,6 +13,7 @@ on:
       - "services/**"
       - "mobile/**"
       - "backend/api/**"
+      - "tests/**"
       - "index.js"
       - "package.json"
       - "package-lock.json"
@@ -103,6 +104,12 @@ jobs:
           key: node-modules-v1-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json') }}
 
 
+      - name: Run seven-chain RPC and history regression checks
+        run: node --test tests/phase-2-chain-rpc-history.test.mjs
+
+      - name: Type-check backend API routes
+        run: npx tsc --noEmit -p backend/tsconfig.json
+
       - name: Generate Android icon and splash PNG assets
         run: |
           set -euo pipefail
@@ -132,9 +139,10 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: android
-          key: android-project-v3-${{ runner.os }}-${{ hashFiles('package.json', 'app.json', 'babel.config.cjs', 'assets/icon.svg', 'assets/splash.svg') }}
+          key: android-project-v3-${{ runner.os }}-${{ hashFiles('package.json', 'app.json', 'babel.config.cjs', 'assets/icon.svg', 'assets/splash.svg') }}-${{ github.run_id }}
           restore-keys: |
             android-project-v3-${{ runner.os }}-${{ hashFiles('package.json', 'app.json', 'babel.config.cjs', 'assets/icon.svg', 'assets/splash.svg') }}
+            android-project-v3-${{ runner.os }}-${{ hashFiles('package.json', 'app.json', 'babel.config.cjs', 'assets/icon.svg', 'assets/splash.svg') }}-
 
       - name: Check whether Android project was restored
         id: android-project-state
@@ -165,10 +173,10 @@ jobs:
             ~/.gradle/wrapper
             android/app/.cxx
             node_modules/*/android/.cxx
-          key: android-release-v3-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          key: android-release-v3-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.run_id }}
           restore-keys: |
             android-release-v3-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-            android-release-v2-${{ runner.os }}-
+            android-release-v3-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
             android-release-v2-${{ runner.os }}-
 
       - name: Restore native module Gradle outputs
@@ -176,9 +184,10 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: node_modules/**/android/build
-          key: android-module-build-v2-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json') }}
+          key: android-module-build-v2-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json') }}-${{ github.run_id }}
           restore-keys: |
             android-module-build-v2-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json') }}
+            android-module-build-v2-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json') }}-
       # Expo/Metro normally keeps its transformer cache under the ephemeral
       # system temp directory. Persist it so unchanged modules are not transformed
       # from scratch inside every Gradle release build.
@@ -186,10 +195,11 @@ jobs:
         id: metro-transform-cache
         uses: actions/cache/restore@v4
         with:
-          path: ${{ runner.temp }}/metro-cache
-          key: metro-transform-v2-${{ runner.os }}-${{ hashFiles('package-lock.json', 'babel.config.cjs', 'metro.config.cjs') }}
+          path: ${{ runner.temp }}/metro-cache-restore
+          key: metro-transform-v2-${{ runner.os }}-${{ hashFiles('package-lock.json', 'babel.config.cjs', 'metro.config.cjs') }}-${{ github.run_id }}
           restore-keys: |
             metro-transform-v2-${{ runner.os }}-${{ hashFiles('package-lock.json', 'babel.config.cjs', 'metro.config.cjs') }}
+            metro-transform-v2-${{ runner.os }}-${{ hashFiles('package-lock.json', 'babel.config.cjs', 'metro.config.cjs') }}-
 
       # GitHub-hosted runners install the pinned NDK freshly each run. Its
       # toolchain files therefore look newer than cached build.ninja files,
@@ -244,14 +254,18 @@ jobs:
         timeout-minutes: 55
         env:
           EXPO_ROUTER_APP_ROOT: app
-          EXPO_METRO_CACHE_OUTPUT_DIR: ${{ runner.temp }}/metro-cache
+          EXPO_METRO_CACHE_RESTORE_DIR: ${{ runner.temp }}/metro-cache-restore
+          EXPO_METRO_CACHE_OUTPUT_DIR: ${{ runner.temp }}/metro-cache-output
           CMAKE_BUILD_PARALLEL_LEVEL: "4"
           NODE_ENV: production
           GRADLE_OPTS: "-Dorg.gradle.workers.max=4 -Dorg.gradle.parallel=true -Dorg.gradle.caching=true"
         run: |
           set -euo pipefail
-          mkdir -p "$EXPO_METRO_CACHE_OUTPUT_DIR"
+          mkdir -p "$EXPO_METRO_CACHE_RESTORE_DIR" "$EXPO_METRO_CACHE_OUTPUT_DIR"
           chmod +x gradlew
+          # Force Metro to regenerate the release JS bundle from the checked-out source.
+          # Cached Android build outputs can otherwise make a release APK contain an older JS bundle.
+          ./gradlew --max-workers=4 --stacktrace --info :app:createBundleReleaseJsAndAssets --rerun-tasks
           ./gradlew --max-workers=4 --parallel --stacktrace --info --profile --build-cache -PreactNativeArchitectures=arm64-v8a assembleRelease -x lintVitalAnalyzeRelease -x lintVitalRelease
           METRO_CACHE_FILES=$(find "$EXPO_METRO_CACHE_OUTPUT_DIR" -type f | wc -l)
           echo "Metro transform cache files: $METRO_CACHE_FILES"
@@ -278,7 +292,7 @@ jobs:
         if: ${{ always() && steps.android-build.outcome == 'success' && steps.metro-transform-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4
         with:
-          path: ${{ runner.temp }}/metro-cache
+          path: ${{ runner.temp }}/metro-cache-output
           key: ${{ steps.metro-transform-cache.outputs.cache-primary-key }}
 
       - name: Save complete Android project and build outputs

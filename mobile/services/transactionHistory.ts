@@ -7,7 +7,7 @@ export type EvmHistoryRow = {
 export type EvmHistoryResult = { rows:EvmHistoryRow[]; complete:boolean; warning?:string };
 
 type Options = {
-  chain: Exclude<Blockchain, 'solana'>;
+  chain: Exclude<Blockchain, 'solana'|'bitcoin'|'tron'>;
   network: 'mainnet' | 'testnet';
   walletAddress: string;
   contractAddress: string;
@@ -50,6 +50,41 @@ export async function fetchEvmAssetHistory(options: Options): Promise<EvmHistory
       complete: Boolean(payload.complete),
       ...(typeof payload.warning === 'string' ? { warning: payload.warning } : {}),
     };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+
+export type IndexedChainHistoryRow = {
+  id: string; hash: string; title: string; subtitle?: string; detail?: string;
+  amount: string; timestamp: number; incoming: boolean; status: string; explorerUrl: string;
+};
+export type IndexedChainHistoryResult = { rows: IndexedChainHistoryRow[]; complete: boolean; source?: string };
+
+export async function fetchIndexedChainHistory(options: {
+  chain: 'bitcoin' | 'tron';
+  network: 'mainnet' | 'testnet';
+  walletAddress: string;
+}): Promise<IndexedChainHistoryResult> {
+  if (!options.walletAddress) throw new Error('Wallet address is missing for this network.');
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 25000);
+  try {
+    const response = await fetch('https://dexwallet-api.vercel.app/api/chain-history', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(options),
+      signal: controller.signal,
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      const code = String(payload?.error?.code || '');
+      if (code === 'history_provider_not_configured') throw new Error('Bitcoin history provider is not configured on the server.');
+      throw new Error('Transaction history is temporarily unavailable. Please try again.');
+    }
+    if (!Array.isArray(payload?.rows)) throw new Error('The history service returned an invalid response.');
+    return { rows: payload.rows as IndexedChainHistoryRow[], complete: Boolean(payload.complete), source: String(payload.source || '') };
   } finally {
     clearTimeout(timeout);
   }

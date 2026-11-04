@@ -2,7 +2,7 @@ name: Mobile quality gates
 
 on:
   pull_request:
-    branches: [main, infra/phase-2-rpc-health-failover, infra/phase-2-generic-history]
+    branches: [main, infra/phase-2-rpc-health-failover, infra/phase-2-generic-history, feature/phase-1-universal-hd-engine]
     paths:
       - "app/**"
       - "context/**"
@@ -17,7 +17,7 @@ on:
       - "tsconfig.json"
       - ".github/workflows/mobile-quality.yml"
   push:
-    branches: [main, infra/phase-2-rpc-health-failover, infra/phase-2-generic-history]
+    branches: [main, infra/phase-2-rpc-health-failover, infra/phase-2-generic-history, feature/phase-1-universal-hd-engine]
     paths:
       - "app/**"
       - "context/**"

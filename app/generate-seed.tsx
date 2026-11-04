@@ -7,26 +7,30 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
+  TextInput,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
-import { generateMnemonic } from '../mobile/services/walletService';
-import { useWallet } from '../context/WalletContext';
+import { generateMnemonic, stagePendingMnemonic, stagePendingWalletConfig } from '../mobile/services/walletService';
+import type { Blockchain } from '../context/WalletContext';
 
 export default function GenerateSeed() {
   const router = useRouter();
-  const { setSeedPhrase } = useWallet();
+  const params = useLocalSearchParams<{ chain?: string }>();
+  const initialChain = (['ethereum', 'bnb', 'polygon', 'arbitrum', 'solana', 'bitcoin', 'tron'].includes(params.chain ?? '') ? params.chain : 'ethereum') as Blockchain;
   const [words, setWords] = useState<string[]>([]);
   const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [walletName, setWalletName] = useState('My Wallet');
+  const chain = initialChain;
 
   useEffect(() => {
     const mnemonic = generateMnemonic();
     const w = mnemonic.split(' ');
     setWords(w);
-    setSeedPhrase(w);
+    void stagePendingMnemonic(mnemonic);
   }, []);
 
   const handleCopy = async () => {
@@ -36,7 +40,9 @@ export default function GenerateSeed() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
+    await stagePendingMnemonic(words.join(' '));
+    await stagePendingWalletConfig({ name: walletName, blockchains: params.chain ? [chain] : ['ethereum', 'bnb', 'polygon', 'arbitrum', 'solana', 'bitcoin', 'tron'] });
     Alert.alert(
       'Did you save your seed phrase?',
       'Without it, you cannot recover your wallet if you lose access.',
@@ -56,6 +62,7 @@ export default function GenerateSeed() {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
+        <TextInput style={styles.nameInput} value={walletName} onChangeText={setWalletName} placeholder="Wallet name" placeholderTextColor="#9B97B2" />
         <View style={styles.iconWrap}>
           <Ionicons name="key" size={40} color="#6C4CF1" />
         </View>
@@ -121,6 +128,7 @@ export default function GenerateSeed() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFFFFF' },
+  nameInput:{width:'100%',borderWidth:1,borderColor:'#E8E4F3',borderRadius:12,padding:13,color:'#211B35',marginBottom:12},selectionRow:{width:'100%',flexDirection:'row',flexWrap:'wrap',gap:8,justifyContent:'center',marginBottom:12},selectionChip:{borderWidth:1,borderColor:'#E8E4F3',borderRadius:10,paddingHorizontal:12,paddingVertical:9},selectionChipActive:{backgroundColor:'#6C4CF1',borderColor:'#6C4CF1'},selectionText:{fontSize:12,color:'#777286',fontWeight:'600'},selectionTextActive:{color:'#FFFFFF'},
   scroll: { padding: 24, alignItems: 'center', paddingBottom: 40 },
   iconWrap: {
     width: 72,

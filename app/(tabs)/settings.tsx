@@ -14,6 +14,8 @@ import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useWallet } from '../../context/WalletContext';
 import { SafeAreaView as SafeAreaContextView } from 'react-native-safe-area-context';
+import WalletAuthorizationModal from '../../components/WalletAuthorizationModal';
+import type { WalletAuthorization } from '../../mobile/services/walletSecurityService';
 
 export default function Settings() {
   const router = useRouter();
@@ -26,6 +28,7 @@ export default function Settings() {
     setIsLocked,
   } = useWallet();
   const [bioToggling, setBioToggling] = useState(false);
+  const [removeAuthorizationVisible, setRemoveAuthorizationVisible] = useState(false);
   const handleBioToggle = async (val: boolean) => {
     setBioToggling(true);
     try {
@@ -68,12 +71,17 @@ export default function Settings() {
           text: 'Remove Wallet',
           style: 'destructive',
           onPress: async () => {
-            await resetWallet();
-            router.replace('/onboarding');
+            setRemoveAuthorizationVisible(true);
           },
         },
       ]
     );
+  };
+
+  const confirmRemoveWallet = async (authorization: WalletAuthorization) => {
+    await resetWallet(authorization);
+    setRemoveAuthorizationVisible(false);
+    router.replace('/onboarding');
   };
 
   const LOCK_OPTIONS = [1, 5, 15, 30, 0];
@@ -146,6 +154,23 @@ export default function Settings() {
         </View>
 
         <Text style={styles.sectionLabel}>Wallet</Text>
+        <TouchableOpacity
+          style={styles.manageWalletCard}
+          onPress={() => router.push('/wallet-management')}
+          activeOpacity={0.82}
+        >
+          <View style={styles.manageWalletIcon}>
+            <Ionicons name="wallet-outline" size={22} color="#D63384" />
+          </View>
+          <View style={styles.manageWalletCopy}>
+            <Text style={styles.manageWalletTitle}>Manage Wallet</Text>
+            <Text style={styles.manageWalletSubtitle}>Create, import and manage your wallets</Text>
+          </View>
+          <View style={styles.manageWalletArrow}>
+            <Ionicons name="chevron-forward" size={18} color="#D63384" />
+          </View>
+        </TouchableOpacity>
+
         <View style={styles.card}>
           <TouchableOpacity
             style={styles.row}
@@ -193,6 +218,7 @@ export default function Settings() {
 
         <Text style={styles.version}>XU Wallet v1.0.0</Text>
       </ScrollView>
+      <WalletAuthorizationModal visible={removeAuthorizationVisible} action="delete-account" title="Verify PIN to remove wallet" onAuthorized={confirmRemoveWallet} onCancel={() => setRemoveAuthorizationVisible(false)} />
     </SafeAreaContextView>
   );
 }
@@ -220,6 +246,36 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     marginBottom: 20,
     overflow: 'hidden',
+  },
+  manageWalletCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 15,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#F1C5DA',
+    backgroundColor: '#FFF7FB',
+    marginBottom: 18,
+    gap: 12,
+  },
+  manageWalletIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 15,
+    backgroundColor: '#FCE7F3',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  manageWalletCopy: { flex: 1, gap: 4 },
+  manageWalletTitle: { color: '#211B35', fontSize: 15, fontWeight: '800' },
+  manageWalletSubtitle: { color: '#777286', fontSize: 11, lineHeight: 16 },
+  manageWalletArrow: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    backgroundColor: '#FCE7F3',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   dangerCard: {
     borderWidth: 1,

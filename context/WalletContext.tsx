@@ -2,20 +2,22 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { AppState, AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { refreshWalletTokenBalances } from '../mobile/services/balanceService';
-import { initializeWalletVaultStore, clearWalletVaultStore, setActiveWalletAccount as persistActiveWalletAccount, type WalletVaultStore, type WalletAccount, type WalletVault } from '../mobile/services/walletVaultService';
+import { openWalletSession, closeWalletSession } from '../mobile/services/walletSessionService';
+import { assertWalletAuthorization, type WalletAuthorization } from '../mobile/services/walletSecurityService';
+import { initializeWalletVaultStore, createInitialMnemonicVault, clearWalletVaultStore, setActiveWalletAccount as persistActiveWalletAccount, type WalletVaultStore, type WalletAccount, type WalletVault } from '../mobile/services/walletVaultService';
 import {
   deriveAddresses,
   saveWalletToStorage,
   loadWalletFromStorage,
   clearWalletFromStorage,
   savePin,
-  getPin,
+  verifyPin,
   getBiometricEnabled,
   saveBiometricEnabled,
   WalletAddresses,
 } from '../mobile/services/walletService';
 
-export type Blockchain = 'solana' | 'ethereum' | 'bnb' | 'polygon';
+export type Blockchain = 'solana' | 'ethereum' | 'bnb' | 'polygon' | 'arbitrum' | 'bitcoin' | 'tron';
 export type Network = 'mainnet' | 'testnet';
 
 export interface Token {
@@ -33,10 +35,8 @@ export interface Token {
 interface WalletContextType {
   isWalletCreated: boolean;
   setIsWalletCreated: (value: boolean) => void;
-  pin: string | null;
+  verifyPin: (candidate: string) => Promise<boolean>;
   setPin: (value: string) => Promise<void>;
-  seedPhrase: string[];
-  setSeedPhrase: (value: string[]) => void;
   selectedBlockchain: Blockchain;
   setSelectedBlockchain: (value: Blockchain) => void;
   network: Network;
@@ -45,7 +45,7 @@ interface WalletContextType {
   addToken: (token: Token) => void;
   walletAddress: string;
   walletAddresses: WalletAddresses | null;
-  initWallet: (mnemonic: string) => Promise<void>;
+  initWallet: (mnemonic: string, config?: { name?: string; blockchains?: Blockchain[] }) => Promise<void>;
   isLoadingBalances: boolean;
   refreshBalances: () => void;
   biometricEnabled: boolean;
@@ -54,7 +54,7 @@ interface WalletContextType {
   setAutoLockTimer: (value: number) => void;
   isLocked: boolean;
   setIsLocked: (value: boolean) => void;
-  resetWallet: () => Promise<void>;
+  resetWallet: (authorization: WalletAuthorization) => Promise<void>;
   isLoading: boolean;
   walletVaultStore: WalletVaultStore | null;
   refreshWalletVaultStore: () => Promise<void>;
@@ -73,13 +73,14 @@ const NATIVE_TOKEN_DEFS: { blockchain: Blockchain; id: string; name: string; sym
   { blockchain: 'ethereum', id: 'eth', name: 'Ethereum', symbol: 'ETH' },
   { blockchain: 'solana', id: 'sol', name: 'Solana', symbol: 'SOL' },
   { blockchain: 'bnb', id: 'bnb', name: 'BNB', symbol: 'BNB' },
-  { blockchain: 'polygon', id: 'matic', name: 'Polygon', symbol: 'MATIC' },
+  { blockchain: 'polygon', id: 'matic', name: 'Polygon', symbol: 'POL' },
+  { blockchain: 'arbitrum', id: 'arbitrum', name: 'Arbitrum', symbol: 'ETH' },
+  { blockchain: 'bitcoin', id: 'bitcoin', name: 'Bitcoin', symbol: 'BTC' },
+  { blockchain: 'tron', id: 'tron', name: 'TRON', symbol: 'TRX' },
 ];
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [isWalletCreated, setIsWalletCreated] = useState(false);
-  const [pin, setPinState] = useState<string | null>(null);
-  const [seedPhrase, setSeedPhrase] = useState<string[]>([]);
   const [selectedBlockchain, setSelectedBlockchain] = useState<Blockchain>('ethereum');
   const [network, setNetwork] = useState<Network>('mainnet');
   const [tokens, setTokens] = useState<Token[]>([]);
@@ -95,8 +96,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const init = async () => {
       try {
-        const [storedPin, { addresses, created, mnemonic }, bio, storedTimer, storedBackgroundAt, storedCustomTokens] = await Promise.all([
-          getPin(),
+        const [{ addresses, created }, bio, storedTimer, storedBackgroundAt, storedCustomTokens] = await Promise.all([
           loadWalletFromStorage(),
           getBiometricEnabled(),
           AsyncStorage.getItem(AUTO_LOCK_TIMER_KEY),
@@ -114,6 +114,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             solana: migratedActive.account.addresses.solana ?? '',
             bnb: migratedActive.account.addresses.bnb ?? '',
             polygon: migratedActive.account.addresses.polygon ?? '',
+            arbitrum: migratedActive.account.addresses.arbitrum ?? '',
+            bitcoin: migratedActive.account.addresses.bitcoin ?? '',
+            bitcoinTestnet: migratedActive.account.addresses.bitcoinTestnet ?? '',
+            tron: migratedActive.account.addresses.tron ?? '',
           });
         }
         const parsedTimer = storedTimer === null ? 5 : Number(storedTimer);
@@ -121,15 +125,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         setAutoLockTimerState(timer);
         const backgroundAt = storedBackgroundAt ? Number(storedBackgroundAt) : null;
         lastBackgroundAt.current = Number.isFinite(backgroundAt) ? backgroundAt : null;
-        setPinState(storedPin);
         setBiometricEnabledState(bio);
         if (created && addresses) {
           setIsWalletCreated(true);
-          if (mnemonic) setSeedPhrase(mnemonic.split(' '));
           const customTokens = storedCustomTokens ? JSON.parse(storedCustomTokens) as Token[] : [];
           setTokens([...NATIVE_TOKEN_DEFS.map((d) => ({ ...d, balance: 0, balanceUSD: 0 })), ...customTokens]);
           const elapsedMs = lastBackgroundAt.current === null ? Number.POSITIVE_INFINITY : Date.now() - lastBackgroundAt.current;
-          setIsLockedState(timer > 0 && lastBackgroundAt.current !== null && Number.isFinite(elapsedMs) && elapsedMs >= 0 && elapsedMs >= timer * 60 * 1000);
+          const shouldLock = timer > 0 && lastBackgroundAt.current !== null && Number.isFinite(elapsedMs) && elapsedMs >= 0 && elapsedMs >= timer * 60 * 1000;
+          setIsLockedState(shouldLock);
+          if (shouldLock) closeWalletSession(); else openWalletSession();
           lastBackgroundAt.current = null;
           await AsyncStorage.removeItem(BACKGROUND_AT_KEY).catch(() => {});
         }
@@ -142,6 +146,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             solana: activeAfterHydration.account.addresses.solana ?? '',
             bnb: activeAfterHydration.account.addresses.bnb ?? '',
             polygon: activeAfterHydration.account.addresses.polygon ?? '',
+            arbitrum: activeAfterHydration.account.addresses.arbitrum ?? '',
+            bitcoin: activeAfterHydration.account.addresses.bitcoin ?? '',
+            bitcoinTestnet: activeAfterHydration.account.addresses.bitcoinTestnet ?? '',
+            tron: activeAfterHydration.account.addresses.tron ?? '',
           });
         }
       } finally {
@@ -182,6 +190,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         elapsedMs >= autoLockTimer * 60 * 1000
       ) {
         setIsLockedState(true);
+        closeWalletSession();
       }
 
       lastBackgroundAt.current = null;
@@ -192,6 +201,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const setIsLocked = useCallback((value: boolean) => {
     setIsLockedState(value);
+    if (value) closeWalletSession(); else openWalletSession();
     if (!value) {
       lastBackgroundAt.current = null;
       void AsyncStorage.removeItem(BACKGROUND_AT_KEY).catch(() => {});
@@ -208,9 +218,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     ]);
   }, []);
 
+  const verifyPinAndOpenSession = useCallback(async (candidate: string) => {
+    const valid = await verifyPin(candidate);
+    if (valid) openWalletSession();
+    return valid;
+  }, []);
+
   const setPin = useCallback(async (value: string) => {
     await savePin(value);
-    setPinState(value);
   }, []);
 
   const setBiometricEnabled = useCallback(async (value: boolean) => {
@@ -218,15 +233,23 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setBiometricEnabledState(value);
   }, []);
 
-  const walletAddress = walletAddresses ? walletAddresses[selectedBlockchain] ?? '' : '';
+  const walletAddress = walletAddresses ? (selectedBlockchain === 'bitcoin' && network === 'testnet' ? walletAddresses.bitcoinTestnet ?? '' : walletAddresses[selectedBlockchain] ?? '') : '';
 
-  const initWallet = useCallback(async (mnemonic: string) => {
-    const addresses = await deriveAddresses(mnemonic);
+  const initWallet = useCallback(async (mnemonic: string, config?: { name?: string; blockchains?: Blockchain[] }) => {
+    const allAddresses = await deriveAddresses(mnemonic);
+    const selectedChains: Blockchain[] = Array.from(new Set<Blockchain>(config?.blockchains?.length ? config.blockchains : ['ethereum', 'bnb', 'polygon', 'arbitrum', 'solana', 'bitcoin', 'tron']));
+    const addresses = { ethereum: selectedChains.includes('ethereum') ? allAddresses.ethereum : '', bnb: selectedChains.includes('bnb') ? allAddresses.bnb : '', polygon: selectedChains.includes('polygon') ? allAddresses.polygon : '', arbitrum: selectedChains.includes('arbitrum') ? allAddresses.arbitrum : '', solana: selectedChains.includes('solana') ? allAddresses.solana : '', bitcoin: selectedChains.includes('bitcoin') ? allAddresses.bitcoin : '', bitcoinTestnet: selectedChains.includes('bitcoin') ? allAddresses.bitcoinTestnet : '', tron: selectedChains.includes('tron') ? allAddresses.tron : '' };
+    setSelectedBlockchain(selectedChains[0]);
     setWalletAddresses(addresses);
     await saveWalletToStorage(addresses, mnemonic);
-    const vaultStore = await initializeWalletVaultStore();
+    let vaultStore = await initializeWalletVaultStore();
+    // App startup initializes an empty vault index before onboarding. In that
+    // case the old init path persisted addresses but never created a vault
+    // account. Materialize the first mnemonic-backed account now.
+    if (!vaultStore.activeAccountId) {
+      vaultStore = await createInitialMnemonicVault(mnemonic, addresses, config?.name || 'My Wallet', selectedChains);
+    }
     setWalletVaultStore(vaultStore);
-    setSeedPhrase(mnemonic.split(' '));
     const native = NATIVE_TOKEN_DEFS.map((d) => ({ ...d, balance: 0, balanceUSD: 0 }));
     const storedCustom = await AsyncStorage.getItem(CUSTOM_TOKENS_KEY);
     const custom = storedCustom ? JSON.parse(storedCustom) as Token[] : [];
@@ -241,7 +264,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     if (!walletAddresses || isLocked || !isWalletCreated) return;
     setIsLoadingBalances(true);
     try {
-      const refreshed = await refreshWalletTokenBalances(walletAddresses, tokens, network);
+      const addressesForNetwork = network === 'testnet' ? { ...walletAddresses, bitcoin: walletAddresses.bitcoinTestnet ?? '' } : walletAddresses;
+      const refreshed = await refreshWalletTokenBalances(addressesForNetwork, tokens, network);
       setTokens((current) => current.map((token) => refreshed.find((item) => item.id === token.id) || token));
     } finally {
       setIsLoadingBalances(false);
@@ -273,6 +297,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         solana: active.account.addresses.solana ?? '',
         bnb: active.account.addresses.bnb ?? '',
         polygon: active.account.addresses.polygon ?? '',
+        arbitrum: active.account.addresses.arbitrum ?? '',
+        bitcoin: active.account.addresses.bitcoin ?? '',
+        bitcoinTestnet: active.account.addresses.bitcoinTestnet ?? '',
+        tron: active.account.addresses.tron ?? '',
       });
     } else {
       setWalletAddresses(null);
@@ -290,22 +318,26 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       solana: account.addresses.solana ?? '',
       bnb: account.addresses.bnb ?? '',
       polygon: account.addresses.polygon ?? '',
+      arbitrum: account.addresses.arbitrum ?? '',
+      bitcoin: account.addresses.bitcoin ?? '',
+      bitcoinTestnet: account.addresses.bitcoinTestnet ?? '',
+      tron: account.addresses.tron ?? '',
     });
     setTokens((current) => current.map((token) => ({ ...token, balance: 0, balanceUSD: 0 })));
   }, []);
 
-  const resetWallet = useCallback(async () => {
+  const resetWallet = useCallback(async (authorization: WalletAuthorization) => {
+    await clearWalletVaultStore(authorization);
     await clearWalletFromStorage();
-    await clearWalletVaultStore();
+    closeWalletSession();
     setWalletVaultStore(null);
     await AsyncStorage.removeItem(CUSTOM_TOKENS_KEY);
-    setPinState(null);
-    setSeedPhrase([]);
     setWalletAddresses(null);
     setTokens([]);
     setIsWalletCreated(false);
     setBiometricEnabledState(false);
-    setIsLocked(false);
+    setIsLockedState(false);
+    closeWalletSession();
   }, []);
 
   return (
@@ -313,10 +345,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       value={{
         isWalletCreated,
         setIsWalletCreated,
-        pin,
+        verifyPin: verifyPinAndOpenSession,
         setPin,
-        seedPhrase,
-        setSeedPhrase,
         selectedBlockchain,
         setSelectedBlockchain,
         network,

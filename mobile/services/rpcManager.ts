@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export type RpcNetwork = 'mainnet' | 'testnet';
-export type EvmChain = 'ethereum' | 'bnb' | 'polygon';
+export type EvmChain = 'ethereum' | 'bnb' | 'polygon' | 'arbitrum';
 export type RpcChain = EvmChain | 'solana';
 
 type EvmEndpoint = { chainId: number; endpoints: string[] };
@@ -25,7 +25,7 @@ type RpcHealthStore = Record<string, EndpointHealth>;
 type RpcEndpoint = { url: string; chainId?: number };
 
 const CONFIG_URL = 'https://dexwallet-api.vercel.app/api/rpc-config';
-const CACHE_KEY = '@xuwallet/rpc-config-v1';
+const CACHE_KEY = '@xuwallet/rpc-config-v2';
 const HEALTH_KEY = '@xuwallet/rpc-health-v1';
 const REQUEST_TIMEOUT_MS = 4500;
 const FAILURE_COOLDOWN_MS = 60_000;
@@ -37,10 +37,11 @@ const EXPECTED_CHAIN_IDS: Record<EvmChain, Record<RpcNetwork, number>> = {
   ethereum: { mainnet: 1, testnet: 11155111 },
   bnb: { mainnet: 56, testnet: 97 },
   polygon: { mainnet: 137, testnet: 80002 },
+  arbitrum: { mainnet: 42161, testnet: 421614 },
 };
 
 const DEFAULT_CONFIG: RpcConfig = {
-  version: 1,
+  version: 2,
   chains: {
     ethereum: {
       mainnet: { chainId: 1, endpoints: ['https://dexwallet-api.vercel.app/api/rpc?chain=ethereum&network=mainnet'] },
@@ -53,6 +54,10 @@ const DEFAULT_CONFIG: RpcConfig = {
     polygon: {
       mainnet: { chainId: 137, endpoints: ['https://dexwallet-api.vercel.app/api/rpc?chain=polygon&network=mainnet'] },
       testnet: { chainId: 80002, endpoints: ['https://dexwallet-api.vercel.app/api/rpc?chain=polygon&network=testnet'] }
+    },
+    arbitrum: {
+      mainnet: { chainId: 42161, endpoints: ['https://dexwallet-api.vercel.app/api/rpc?chain=arbitrum&network=mainnet'] },
+      testnet: { chainId: 421614, endpoints: ['https://dexwallet-api.vercel.app/api/rpc?chain=arbitrum&network=testnet'] }
     },
     solana: {
       mainnet: { endpoints: ['https://dexwallet-api.vercel.app/api/rpc?chain=solana&network=mainnet'] },
@@ -88,10 +93,10 @@ function isValidEndpoint(value: unknown): value is string {
 function sanitizeConfig(input: unknown): RpcConfig | null {
   if (!input || typeof input !== 'object') return null;
   const value = input as Partial<RpcConfig>;
-  if (value.version !== 1 || !value.chains || typeof value.chains !== 'object') return null;
+  if (value.version !== 2 || !value.chains || typeof value.chains !== 'object') return null;
 
-  const chains: RpcChain[] = ['ethereum', 'bnb', 'polygon', 'solana'];
-  const result = { version: 1, chains: {} } as RpcConfig;
+  const chains: RpcChain[] = ['ethereum', 'bnb', 'polygon', 'arbitrum', 'solana'];
+  const result = { version: 2, chains: {} } as RpcConfig;
   for (const chain of chains) {
     const candidate = value.chains[chain];
     if (!candidate) return null;

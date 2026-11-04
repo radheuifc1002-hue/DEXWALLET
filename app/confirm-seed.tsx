@@ -10,15 +10,21 @@ import {
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
-import { useWallet } from '../context/WalletContext';
+import { getPendingMnemonic } from '../mobile/services/walletService';
 
 export default function ConfirmSeed() {
   const router = useRouter();
-  const { seedPhrase } = useWallet();
+  const [seedPhrase, setSeedPhrase] = useState<string[]>([]);
 
   const testIndices = [2, 5, 8, 11];
   const [selected, setSelected] = useState<Record<number, string>>({});
   const [shuffled, setShuffled] = useState<string[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+    void getPendingMnemonic().then((phrase) => { if (mounted && phrase) setSeedPhrase(phrase.split(' ')); });
+    return () => { mounted = false; };
+  }, []);
 
   useEffect(() => {
     // Wait for the mnemonic before building choices; a one-time initializer

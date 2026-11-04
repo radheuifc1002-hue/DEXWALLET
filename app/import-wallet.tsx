@@ -15,12 +15,19 @@ import { useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
-import { validateMnemonic } from '../mobile/services/walletService';
+import { validateMnemonic, stagePendingMnemonic, stagePendingWalletConfig, stagePendingPrivateKey } from '../mobile/services/walletService';
+import type { Blockchain } from '../context/WalletContext';
 
 export default function ImportWallet() {
   const router = useRouter();
   const [mnemonic, setMnemonic] = useState('');
+  const [method,setMethod]=useState<'phrase'|'private'>('phrase');
+  const [privateKey,setPrivateKey]=useState('');
   const [error, setError] = useState('');
+  const [walletName,setWalletName]=useState('Imported Wallet');
+  const [hdWallet,setHdWallet]=useState(true);
+  const [chain,setChain]=useState<Blockchain>('ethereum');
+  const chains:{id:Blockchain;label:string}[]=[{id:'ethereum',label:'Ethereum'},{id:'bnb',label:'BNB'},{id:'polygon',label:'Polygon'},{id:'arbitrum',label:'Arbitrum'},{id:'solana',label:'Solana'},{id:'bitcoin',label:'Bitcoin'},{id:'tron',label:'TRON'}];
 
   const handlePaste = async () => {
     const text = await Clipboard.getStringAsync();
@@ -29,13 +36,14 @@ export default function ImportWallet() {
   };
 
   const handleContinue = () => {
+    if(method==='private') { void stagePendingPrivateKey(privateKey,chain,walletName).then(()=>router.push('/set-pin')).catch(()=>setError('Unable to securely prepare private-key import.')); return; }
     const cleaned = mnemonic.trim().toLowerCase().replace(/\s+/g, ' ');
     if (!validateMnemonic(cleaned)) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       setError('Invalid seed phrase. Check for typos and try again.');
       return;
     }
-    router.push({ pathname: '/set-pin', params: { mnemonic: cleaned } });
+    void Promise.all([stagePendingMnemonic(cleaned),stagePendingWalletConfig({name:walletName,blockchains:hdWallet?chains.map(item=>item.id):[chain]})]).then(() => router.push('/set-pin')).catch(() => setError('Unable to securely prepare wallet import. Please try again.'));
   };
 
   const wordCount = mnemonic.trim() ? mnemonic.trim().split(/\s+/).length : 0;
@@ -59,10 +67,14 @@ export default function ImportWallet() {
           </View>
 
           <Text style={styles.title}>Import Wallet</Text>
-          <Text style={styles.subtitle}>
-            Enter your 12-word seed phrase separated by spaces.
-          </Text>
+          <TextInput style={styles.walletNameInput} value={walletName} onChangeText={setWalletName} placeholder="Wallet name" placeholderTextColor="#9B97B2" />
+          <View style={styles.chainRow}><TouchableOpacity style={[styles.chainChip,method==='phrase'&&styles.chainChipActive]} onPress={()=>setMethod('phrase')}><Text style={[styles.chainText,method==='phrase'&&styles.chainTextActive]}>Recovery phrase</Text></TouchableOpacity><TouchableOpacity style={[styles.chainChip,method==='private'&&styles.chainChipActive]} onPress={()=>{setMethod('private');setHdWallet(false);}}><Text style={[styles.chainText,method==='private'&&styles.chainTextActive]}>Private key</Text></TouchableOpacity></View>
+          {method==='phrase'?<><Text style={styles.chainHeading}>Blockchain access</Text>
+          <View style={styles.chainRow}><TouchableOpacity style={[styles.chainChip,hdWallet&&styles.chainChipActive]} onPress={()=>setHdWallet(true)}><Text style={[styles.chainText,hdWallet&&styles.chainTextActive]}>HD Wallet · All 7</Text></TouchableOpacity><TouchableOpacity style={[styles.chainChip,!hdWallet&&styles.chainChipActive]} onPress={()=>setHdWallet(false)}><Text style={[styles.chainText,!hdWallet&&styles.chainTextActive]}>Single chain</Text></TouchableOpacity></View>
+          {!hdWallet?<View style={styles.chainRow}>{chains.map(item=><TouchableOpacity key={item.id} style={[styles.chainChip,chain===item.id&&styles.chainChipActive]} onPress={()=>setChain(item.id)}><Text style={[styles.chainText,chain===item.id&&styles.chainTextActive]}>{item.label}</Text></TouchableOpacity>)}</View>:null}</>:<><Text style={styles.chainHeading}>Private-key blockchain</Text><View style={styles.chainRow}>{chains.map(item=><TouchableOpacity key={item.id} style={[styles.chainChip,chain===item.id&&styles.chainChipActive]} onPress={()=>setChain(item.id)}><Text style={[styles.chainText,chain===item.id&&styles.chainTextActive]}>{item.label}</Text></TouchableOpacity>)}</View><TextInput style={styles.input} value={privateKey} onChangeText={setPrivateKey} placeholder="Enter private key" placeholderTextColor="#9B97B2" autoCapitalize="none" autoCorrect={false} secureTextEntry/></>}
+          <Text style={styles.subtitle}>{method==='phrase'?'Enter your 12- or 24-word recovery phrase separated by spaces.':'Import one chain-specific private key. EVM keys work across Ethereum, BNB, Polygon and Arbitrum; Bitcoin, TRON and Solana use their own address formats.'}</Text>
 
+          {method==='phrase'?<>
           <View style={[styles.inputCard, error ? styles.inputCardError : null]}>
             <TextInput
               style={styles.input}
@@ -82,26 +94,27 @@ export default function ImportWallet() {
           </View>
 
           <View style={styles.meta}>
-            <Text style={styles.metaText}>{wordCount} / 12 words</Text>
+            <Text style={styles.metaText}>{wordCount} words · 12 or 24 required</Text>
             <TouchableOpacity onPress={handlePaste} style={styles.pasteBtn}>
               <Ionicons name="clipboard-outline" size={16} color="#6C4CF1" />
               <Text style={styles.pasteBtnText}>Paste</Text>
             </TouchableOpacity>
           </View>
+          </>:null}
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
           <View style={styles.warning}>
             <Ionicons name="shield-checkmark-outline" size={18} color="#6C4CF1" />
             <Text style={styles.warningText}>
-              Your phrase stays on your device. We never store or transmit it.
+              Your recovery phrase or private key stays in secure device storage and is not sent to a server.
             </Text>
           </View>
 
           <TouchableOpacity
-            style={[styles.continueBtn, wordCount !== 12 && styles.continueBtnDisabled]}
+            style={[styles.continueBtn, (method==='phrase'?![12,24].includes(wordCount):!privateKey.trim()) && styles.continueBtnDisabled]}
             onPress={handleContinue}
-            disabled={wordCount !== 12}
+            disabled={method==='phrase'?!([12, 24].includes(wordCount)):!privateKey.trim()}
             activeOpacity={0.85}
           >
             <Text style={styles.continueBtnText}>Continue</Text>
@@ -113,22 +126,23 @@ export default function ImportWallet() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' },
-  scroll: { padding: 24, paddingBottom: 40 },
+  container: { flex: 1, backgroundColor: '#F8F7FC' },
+  walletNameInput:{backgroundColor:'#FFFFFF',borderWidth:1,borderColor:'#E8E4F3',borderRadius:14,padding:14,color:'#211B35',marginBottom:16,fontSize:14},chainHeading:{fontSize:13,fontWeight:'800',color:'#211B35',marginBottom:9},chainRow:{flexDirection:'row',flexWrap:'wrap',gap:8,marginBottom:14},chainChip:{backgroundColor:'#FFFFFF',borderWidth:1,borderColor:'#E8E4F3',borderRadius:12,paddingHorizontal:13,paddingVertical:10},chainChipActive:{backgroundColor:'#6C4CF1',borderColor:'#6C4CF1'},chainText:{fontSize:12,color:'#777286',fontWeight:'700'},chainTextActive:{color:'#FFFFFF'},
+  scroll: { padding: 22, paddingBottom: 40 },
   back: { marginBottom: 20 },
   backText: { color: '#6C4CF1', fontSize: 16 },
   iconWrap: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: '#FFFFFF',
+    width: 62,
+    height: 62,
+    borderRadius: 20,
+    backgroundColor: '#F0ECFF',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
   },
   title: {
-    fontSize: 28,
-    fontWeight: '800',
+    fontSize: 27,
+    fontWeight: '900',
     color: '#211B35',
     marginBottom: 8,
   },
@@ -140,11 +154,11 @@ const styles = StyleSheet.create({
   },
   inputCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: '#E8E4F3',
-    padding: 4,
-    minHeight: 120,
+    padding: 6,
+    minHeight: 132,
   },
   inputCardError: {
     borderColor: '#EF4444',
@@ -180,8 +194,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 8,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    backgroundColor: '#F1EDFF',
+    borderRadius: 14,
     padding: 14,
     marginTop: 8,
     marginBottom: 24,
@@ -197,7 +211,7 @@ const styles = StyleSheet.create({
   continueBtn: {
     backgroundColor: '#6C4CF1',
     borderRadius: 16,
-    height: 56,
+    height: 58,
     alignItems: 'center',
     justifyContent: 'center',
   },

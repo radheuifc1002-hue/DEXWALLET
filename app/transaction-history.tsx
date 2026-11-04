@@ -13,7 +13,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useWallet, Blockchain } from '../context/WalletContext';
-import { getEvmRpcConfig, getSolanaRpcEndpoint } from '../mobile/services/rpcManager';
+import { fetchEvmAssetHistory } from '../mobile/services/transactionHistory';
+import { fetchChainAssetHistory } from '../mobile/services/chainHistory';
+import { serverRpcRequest } from '../mobile/services/serverRpc';
 
 type HistoryItem = {
   id: string;
@@ -22,7 +24,7 @@ type HistoryItem = {
   subtitle: string;
   amount: string;
   timestamp: number;
-  status: 'Confirmed' | 'Failed';
+  status: 'Confirmed' | 'Pending' | 'Failed';
   incoming: boolean;
   explorerUrl: string;
 };
@@ -33,20 +35,29 @@ const CHAIN_NAMES: Record<Blockchain, string> = {
   ethereum: 'Ethereum',
   bnb: 'BNB Chain',
   polygon: 'Polygon',
+  arbitrum: 'Arbitrum',
   solana: 'Solana',
+  bitcoin: 'Bitcoin',
+  tron: 'TRON',
 };
 
 const NATIVE_SYMBOLS: Record<Blockchain, string> = {
   ethereum: 'ETH',
   bnb: 'BNB',
   polygon: 'POL',
+  arbitrum: 'ETH',
   solana: 'SOL',
+  bitcoin: 'BTC',
+  tron: 'TRX',
 };
 
 const ADDRESS_EXPLORERS: Record<Blockchain, { mainnet: string; testnet: string }> = {
   ethereum: { mainnet: 'https://etherscan.io/address/', testnet: 'https://sepolia.etherscan.io/address/' },
   bnb: { mainnet: 'https://bscscan.com/address/', testnet: 'https://testnet.bscscan.com/address/' },
   polygon: { mainnet: 'https://polygonscan.com/address/', testnet: 'https://amoy.polygonscan.com/address/' },
+  arbitrum: { mainnet: 'https://arbiscan.io/address/', testnet: 'https://sepolia.arbiscan.io/address/' },
+  bitcoin: { mainnet: 'https://mempool.space/address/', testnet: 'https://mempool.space/testnet4/address/' },
+  tron: { mainnet: 'https://tronscan.org/#/address/', testnet: 'https://nile.tronscan.org/#/address/' },
   solana: { mainnet: 'https://solscan.io/account/', testnet: 'https://solscan.io/account/' },
 };
 
@@ -54,6 +65,9 @@ const EXPLORERS: Record<Blockchain, { mainnet: string; testnet: string }> = {
   ethereum: { mainnet: 'https://etherscan.io/tx/', testnet: 'https://sepolia.etherscan.io/tx/' },
   bnb: { mainnet: 'https://bscscan.com/tx/', testnet: 'https://testnet.bscscan.com/tx/' },
   polygon: { mainnet: 'https://polygonscan.com/tx/', testnet: 'https://amoy.polygonscan.com/tx/' },
+  arbitrum: { mainnet: 'https://arbiscan.io/tx/', testnet: 'https://sepolia.arbiscan.io/tx/' },
+  bitcoin: { mainnet: 'https://mempool.space/tx/', testnet: 'https://mempool.space/testnet4/tx/' },
+  tron: { mainnet: 'https://tronscan.org/#/transaction/', testnet: 'https://nile.tronscan.org/#/transaction/' },
   solana: { mainnet: 'https://solscan.io/tx/', testnet: 'https://solscan.io/tx/' },
 };
 
@@ -105,22 +119,6 @@ function cursorQuery(cursor: any): string {
   const entries = Object.entries(cursor).filter((entry) => entry[1] !== null && entry[1] !== undefined);
   return entries.length ? '?' + entries.map(([key, value]) => encodeURIComponent(key) + '=' + encodeURIComponent(String(value))).join('&') : '';
 }
-
-async function fetchSolanaSignatures(address: string, network: 'mainnet' | 'testnet', before?: string) {
-  const endpoint = getSolanaRpcEndpoint(network);
-  const config: any = { limit: PAGE_SIZE, commitment: 'confirmed' };
-  if (before) config.before = before;
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getSignaturesForAddress', params: [address, config] }),
-  });
-  if (!response.ok) throw new Error('Solana RPC returned HTTP ' + response.status + '.');
-  const json = await response.json();
-  if (json.error) throw new Error(json.error.message || 'Unable to load Solana history.');
-  return Array.isArray(json.result) ? json.result : [];
-}
-
 
 async function fetchAlchemyTransfers(endpoint: string, address: string): Promise<any[]> {
   const request = async (direction: 'fromAddress' | 'toAddress') => {
@@ -229,7 +227,7 @@ export default function TransactionHistory() {
 
       if (selectedBlockchain === 'solana') {
         const before = reset ? undefined : beforeSignature || undefined;
-        const signatures = await fetchSolanaSignatures(walletAddress, network, before);
+        const signatures = await serverRpcRequest<any[]>('solana', network, 'getSignaturesForAddress', [walletAddress, { limit: PAGE_SIZE, commitment: 'confirmed', ...(before ? { before } : {}) }]);
         nextItems = signatures.map((entry: any) => ({
           id: String(entry.signature),
           hash: String(entry.signature),
@@ -244,12 +242,26 @@ export default function TransactionHistory() {
         more = signatures.length === PAGE_SIZE;
         if (signatures.length) setBeforeSignature(String(signatures[signatures.length - 1].signature));
       } else {
-        const rpcConfig = getEvmRpcConfig(selectedBlockchain, network);
-        const transfers = await fetchAlchemyTransfers(rpcConfig.rpc, walletAddress);
-        nextItems = transfers.map((transfer: any) =>
-          mapAlchemyTransfer(transfer, walletAddress, selectedBlockchain, network)
-        );
-        more = false;
+        if (selectedBlockchain === 'bitcoin' || selectedBlockchain === 'tron') {
+          const history = await fetchChainAssetHistory(selectedBlockchain, network, walletAddress);
+          nextItems = history.rows.map((row) => ({
+            id: row.id, hash: row.hash, title: row.title, subtitle: row.subtitle,
+            amount: row.amount, timestamp: row.timestamp, status: row.status,
+            incoming: row.incoming, explorerUrl: row.explorerUrl,
+          }));
+          more = false;
+        } else {
+          const history = await fetchEvmAssetHistory({
+            chain: selectedBlockchain, network, walletAddress, contractAddress: '',
+            isNative: true, name: CHAIN_NAMES[selectedBlockchain], symbol: NATIVE_SYMBOLS[selectedBlockchain], limit: PAGE_SIZE,
+          });
+          nextItems = history.rows.map((row) => ({
+            id: row.id, hash: row.hash, title: row.title, subtitle: row.detail, amount: row.amount,
+            timestamp: row.timestamp, status: row.status === 'failed' ? 'Failed' : 'Confirmed',
+            incoming: row.incoming, explorerUrl: row.explorerUrl,
+          }));
+          more = false;
+        }
       }
 
       setItems((current) => {
@@ -372,7 +384,7 @@ export default function TransactionHistory() {
             <Text style={styles.loadMoreText}>{loadingMore ? 'Loading…' : 'Load older transactions'}</Text>
           </TouchableOpacity>
         ) : null}
-        {!loading && !error && items.length > 0 ? <Text style={styles.footerNote}>Tap any transaction to open its block explorer record. The list shows the latest 50 transfers returned by Alchemy.</Text> : null}
+        {!loading && !error && items.length > 0 ? <Text style={styles.footerNote}>Tap any transaction to open its block explorer record. The list shows the latest 50 transactions returned by the network history provider.</Text> : null}
       </ScrollView>
     </SafeAreaView>
   );

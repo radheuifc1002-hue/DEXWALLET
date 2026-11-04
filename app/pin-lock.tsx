@@ -17,7 +17,7 @@ import PinPad from '../components/PinPad';
 
 export default function PinLock() {
   const router = useRouter();
-  const { pin, biometricEnabled, setIsLocked } = useWallet();
+  const { verifyPin: checkPin, biometricEnabled, setIsLocked } = useWallet();
   const [entered, setEntered] = useState('');
   const [error, setError] = useState('');
   const [attempts, setAttempts] = useState(0);
@@ -83,8 +83,8 @@ export default function PinLock() {
     }
   };
 
-  const verifyPin = (p: string) => {
-    if (p === pin) {
+  const verifyPin = async (p: string) => {
+    if (await checkPin(p)) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       unlock();
     } else {

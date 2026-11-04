@@ -5,14 +5,18 @@ import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { ethers } from 'ethers';
 import bs58 from 'bs58';
+import * as ed from '@noble/ed25519';
 import { Buffer } from 'buffer';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { useWallet, Blockchain, Token } from '../context/WalletContext';
-import { getMnemonic, signSolanaMessage, deriveAddresses } from '../mobile/services/walletService';
+import { signSolanaMessage, signSolanaMessageWithPrivateKey } from '../mobile/services/walletService';
+import { getMnemonicForSource, getPrivateKeyForSource } from '../mobile/services/walletVaultService';
+import WalletAuthorizationModal from '../components/WalletAuthorizationModal';
+import type { WalletAuthorization } from '../mobile/services/walletSecurityService';
 import { getCentralEvmChainId, serverRpcRequest } from '../mobile/services/serverRpc';
 
-const SYMBOL: Record<Blockchain, string> = { ethereum: 'ETH', bnb: 'BNB', polygon: 'POL', solana: 'SOL' };
-const LABEL: Record<Blockchain, string> = { ethereum: 'Ethereum', bnb: 'BNB Chain', polygon: 'Polygon', solana: 'Solana' };
+const SYMBOL: Record<Blockchain, string> = { ethereum: 'ETH', bnb: 'BNB', polygon: 'POL', arbitrum:'ETH', solana: 'SOL', bitcoin:'BTC', tron:'TRX' };
+const LABEL: Record<Blockchain, string> = { ethereum: 'Ethereum', bnb: 'BNB Chain', polygon: 'Polygon', arbitrum:'Arbitrum', solana: 'Solana', bitcoin:'Bitcoin', tron:'TRON' };
 const TOKEN_ABI = [
   'function balanceOf(address) view returns (uint256)',
   'function transfer(address,uint256) returns (bool)',
@@ -145,13 +149,13 @@ type Review = {
 export default function Send() {
   const router = useRouter();
   const routeParams = useLocalSearchParams<{ assetId?: string; contractAddress?: string }>();
-  const { selectedBlockchain, network, walletAddresses, isLocked, activeWallet, tokens } = useWallet();
+  const { selectedBlockchain, network, walletAddresses, isLocked, activeWallet, activeVault, tokens } = useWallet();
   const address = walletAddresses?.[selectedBlockchain] || '';
   const symbol = SYMBOL[selectedBlockchain];
   const testnet = network === 'testnet';
-  const rpc = useMemo(() => selectedBlockchain === 'solana' ? null : { chainId: getCentralEvmChainId(selectedBlockchain, network) }, [selectedBlockchain, network]);
+  const rpc = useMemo(() => ['solana','bitcoin','tron'].includes(selectedBlockchain) ? null : { chainId: getCentralEvmChainId(selectedBlockchain as Exclude<Blockchain,'solana'>, network) }, [selectedBlockchain, network]);
   const nativeAsset: Token = useMemo(() => ({
-    id: selectedBlockchain === 'polygon' ? 'matic' : selectedBlockchain === 'solana' ? 'sol' : selectedBlockchain === 'bnb' ? 'bnb' : 'eth',
+    id: selectedBlockchain === 'polygon' ? 'matic' : selectedBlockchain === 'solana' ? 'sol' : selectedBlockchain === 'bnb' ? 'bnb' : selectedBlockchain === 'arbitrum' ? 'arbitrum' : 'eth',
     name: LABEL[selectedBlockchain],
     symbol,
     balance: 0,
@@ -174,6 +178,7 @@ export default function Send() {
   const [hash, setHash] = useState('');
   const [pendingConfirmation, setPendingConfirmation] = useState(false);
   const [error, setError] = useState('');
+  const [authorizationVisible, setAuthorizationVisible] = useState(false);
 
   useEffect(() => {
     setSelectedAsset(nativeAsset);
@@ -198,20 +203,25 @@ export default function Send() {
   const decimals = isNative ? (selectedBlockchain === 'solana' ? 9 : 18) : (selectedAsset.decimals ?? 18);
   const assetSymbol = selectedAsset.symbol;
 
-  const getMnemonicForOriginalWallet = async () => {
-    if (!activeWallet || activeWallet.sourceType !== 'mnemonic') {
-      throw new Error('Sending is currently enabled for the original recovery-phrase wallet only. Watch-only and imported-key wallets cannot sign yet.');
+  const getSigningMaterial = async (authorization: WalletAuthorization) => {
+    if (!activeWallet?.sourceId || activeWallet.sourceType === 'watch-only') {
+      throw new Error('Watch-only wallets cannot sign transactions.');
     }
-    const mnemonic = await getMnemonic();
-    if (!mnemonic) throw new Error('Wallet secret unavailable. Restore your original wallet.');
-    const derived = await deriveAddresses(mnemonic);
-    const activeAddress = activeWallet.addresses[selectedBlockchain];
-    const derivedAddress = derived[selectedBlockchain];
-    const matches = selectedBlockchain === 'solana'
-      ? derivedAddress === activeAddress
-      : Boolean(activeAddress && derivedAddress && derivedAddress.toLowerCase() === activeAddress.toLowerCase());
-    if (!matches) throw new Error('This wallet uses a different recovery phrase. Multi-wallet signing will be added separately; select the original wallet for now.');
-    return mnemonic;
+    if (activeWallet.sourceType === 'mnemonic') {
+      if (!Number.isInteger(activeWallet.accountIndex) || (activeWallet.accountIndex as number) < 0) {
+        throw new Error('The selected recovery account has no valid derivation index.');
+      }
+      const mnemonic = await getMnemonicForSource(activeWallet.sourceId, authorization, 'sign-transaction');
+      if (!mnemonic) throw new Error('Recovery phrase is unavailable. Restore this wallet.');
+      return { mnemonic, privateKey: null as string | null, accountIndex: activeWallet.accountIndex as number };
+    }
+    const privateKey = await getPrivateKeyForSource(activeWallet.sourceId, authorization, 'sign-transaction');
+    if (!privateKey) throw new Error('Imported private key is unavailable.');
+    const importedSource = activeVault?.sources.find((source) => source.id === activeWallet.sourceId);
+    if (importedSource?.blockchain !== selectedBlockchain) {
+      throw new Error('The imported private key does not belong to the selected blockchain.');
+    }
+    return { mnemonic: null as string | null, privateKey, accountIndex: null as number | null };
   };
 
   const loadBalance = useCallback(async () => {
@@ -295,12 +305,14 @@ export default function Send() {
   const prepare = async () => {
     setError('');
     if (isLocked) { setError('Unlock your wallet before sending.'); return; }
+    if (selectedBlockchain === 'bitcoin' || selectedBlockchain === 'tron') { setError('Transfers for Bitcoin and TRON are not enabled in this build yet. You can create, import and receive to these wallets.'); return; }
     if (!address) { setError('No wallet address is available for the selected blockchain.'); return; }
     if (!to.trim()) { setError('Enter a recipient address.'); return; }
     if (!cleanAmount(amount)) { setError('Enter a valid amount greater than zero.'); return; }
     setPreparing(true);
     try {
-      await getMnemonicForOriginalWallet();
+      if (!activeWallet || activeWallet.sourceType === 'watch-only' || !activeWallet.sourceId) throw new Error('Select a signing-enabled wallet before sending.');
+      if (activeWallet.addresses[selectedBlockchain]?.toLowerCase() !== address.toLowerCase()) throw new Error('Selected wallet address does not match the active address.');
       if (selectedBlockchain === 'solana') {
         const recipientBytes = bs58.decode(to.trim());
         if (recipientBytes.length !== 32) throw new Error('Enter a valid Solana address.');
@@ -502,21 +514,30 @@ export default function Send() {
 
   const send = async () => {
     if (!review || sending) return;
+    if (!activeWallet?.sourceId || activeWallet.sourceType === 'watch-only') { setError('Watch-only wallets cannot sign transactions.'); return; }
+    setAuthorizationVisible(true);
+  };
+
+  const performSend = async (authorization: WalletAuthorization) => {
+    if (!review || sending) return;
+    setAuthorizationVisible(false);
     setSending(true);
     setError('');
     let submittedHash = '';
     try {
-      const mnemonic = await getMnemonicForOriginalWallet();
+      const signingMaterial = await getSigningMaterial(authorization);
       let txHash = '';
       if (selectedBlockchain === 'solana') {
         if (!review.solMessage || !review.blockhash || review.lastValidBlockHeight === undefined) throw new Error('Transaction review expired. Review again.');
-        const [currentBlockHeight, actualWalletAddress] = await Promise.all([
-          solRpc<number>(network, 'getBlockHeight', [{ commitment: 'confirmed' }]),
-          Promise.resolve((await deriveAddresses(mnemonic)).solana),
-        ]);
-        if (actualWalletAddress !== address) throw new Error('Signing account does not match the active Solana address.');
+        const currentBlockHeight = await solRpc<number>(network, 'getBlockHeight', [{ commitment: 'confirmed' }]);
         if (currentBlockHeight > review.lastValidBlockHeight) throw new Error('Solana transaction review expired. Please review the transfer again.');
-        const signature = await signSolanaMessage(review.solMessage);
+        const signature = signingMaterial.mnemonic
+          ? await signSolanaMessage(review.solMessage, signingMaterial.mnemonic, signingMaterial.accountIndex ?? 0)
+          : await signSolanaMessageWithPrivateKey(review.solMessage, signingMaterial.privateKey ?? '');
+        const expectedPublicKey = signingMaterial.mnemonic
+          ? await (await import('../mobile/services/chainAdapterRegistry')).getChainAdapter('solana').deriveAddress(signingMaterial.mnemonic, signingMaterial.accountIndex ?? 0)
+          : bs58.encode(await ed.getPublicKeyAsync((() => { const raw = bs58.decode(signingMaterial.privateKey ?? ''); return raw.length === 64 ? raw.slice(0, 32) : raw; })()));
+        if (expectedPublicKey !== address) throw new Error('Signing key does not match the selected Solana account.');
         if (signature.length !== 64) throw new Error('The wallet returned an invalid Solana signature.');
         const expectedSignature = bs58.encode(Uint8Array.from(signature));
         const raw = Uint8Array.from([...shortvec(1), ...signature, ...review.solMessage]);
@@ -543,8 +564,10 @@ export default function Send() {
         ]);
         if (Number(BigInt(actualChainId)) !== rpc.chainId) throw new Error('Network changed. Transaction cancelled.');
         if (Number(BigInt(currentNonce)) !== Number(review.evmTx.nonce)) throw new Error('Wallet nonce changed during review. Please review the transaction again.');
-        const signer = ethers.HDNodeWallet.fromPhrase(mnemonic);
-        if (signer.address.toLowerCase() !== address.toLowerCase()) throw new Error('Signing account does not match the original wallet address.');
+        const signer = signingMaterial.mnemonic
+          ? ethers.HDNodeWallet.fromPhrase(signingMaterial.mnemonic, '', `m/44'/60'/0'/0/${signingMaterial.accountIndex ?? 0}`)
+          : new ethers.Wallet(signingMaterial.privateKey ?? '');
+        if (signer.address.toLowerCase() !== address.toLowerCase()) throw new Error('Signing key does not match the selected EVM account.');
         const signed = await signer.signTransaction(review.evmTx);
         txHash = await serverRpcRequest<string>(selectedBlockchain, network, 'eth_sendRawTransaction', [signed]);
         if (!/^0x[a-fA-F0-9]{64}$/.test(txHash)) throw new Error('RPC returned an invalid transaction hash.');
@@ -650,7 +673,7 @@ export default function Send() {
 
           <Text style={s.label}>Recipient address</Text>
           <View style={s.inputCard}>
-            <TextInput value={to} onChangeText={(v) => { setTo(v); setReview(null); }} placeholder={selectedBlockchain === 'solana' ? 'Solana address' : '0x recipient address'} placeholderTextColor="#A09AAC" autoCapitalize="none" autoCorrect={false} style={s.input} />
+            <TextInput value={to} onChangeText={(v) => { setTo(v); setReview(null); }} placeholder={selectedBlockchain === 'solana' ? 'Solana address' : selectedBlockchain === 'bitcoin' ? 'Bitcoin address' : selectedBlockchain === 'tron' ? 'TRON address' : '0x recipient address'} placeholderTextColor="#A09AAC" autoCapitalize="none" autoCorrect={false} style={s.input} />
             <TouchableOpacity onPress={() => { setTo(''); setReview(null); }}><Ionicons name="close-circle" size={19} color="#9A95A8" /></TouchableOpacity>
           </View>
 
@@ -712,6 +735,7 @@ export default function Send() {
             </View>
           </View>
         </Modal>
+        <WalletAuthorizationModal visible={authorizationVisible} action="sign-transaction" title="Verify PIN to send transaction" onAuthorized={performSend} onCancel={() => setAuthorizationVisible(false)} />
       </KeyboardAvoidingView>
     </SafeAreaView>
   );

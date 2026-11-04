@@ -17,7 +17,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { Blockchain, useWallet } from '../context/WalletContext';
 import { fetchSolanaAssetHistory } from '../mobile/services/solanaHistory';
-import { fetchEvmAssetHistory } from '../mobile/services/transactionHistory';
+import { fetchEvmAssetHistory, fetchIndexedChainHistory } from '../mobile/services/transactionHistory';
 
 type HistoryRow = {
   id: string;
@@ -36,19 +36,28 @@ const CHAIN_LABELS: Record<Blockchain, string> = {
   ethereum: 'Ethereum',
   bnb: 'BNB Chain',
   polygon: 'Polygon',
+  arbitrum: 'Arbitrum',
   solana: 'Solana',
+  bitcoin: 'Bitcoin',
+  tron: 'TRON',
 };
 const CHAIN_SYMBOLS: Record<Blockchain, string> = {
   ethereum: 'ETH',
   bnb: 'BNB',
   polygon: 'POL',
+  arbitrum: 'ETH',
   solana: 'SOL',
+  bitcoin: 'BTC',
+  tron: 'TRX',
 };
 const EXPLORERS: Record<Blockchain, string> = {
   ethereum: 'https://etherscan.io/tx/',
   bnb: 'https://bscscan.com/tx/',
   polygon: 'https://polygonscan.com/tx/',
+  arbitrum: 'https://arbiscan.io/tx/',
   solana: 'https://solscan.io/tx/',
+  bitcoin: 'https://mempool.space/tx/',
+  tron: 'https://tronscan.org/#/transaction/',
 };
 const MAX_HISTORY = 50;
 
@@ -59,7 +68,10 @@ function transactionExplorerUrl(chain: Blockchain, network: string, hash: string
       ethereum: 'https://sepolia.etherscan.io/tx/',
       bnb: 'https://testnet.bscscan.com/tx/',
       polygon: 'https://amoy.polygonscan.com/tx/',
+      arbitrum: 'https://sepolia.arbiscan.io/tx/',
       solana: EXPLORERS.solana,
+      bitcoin: 'https://mempool.space/testnet4/tx/',
+      tron: 'https://nile.tronscan.org/#/transaction/',
     };
     return bases[chain] + hash;
   }
@@ -92,7 +104,7 @@ export default function AssetDetails() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [historyWarning, setHistoryWarning] = useState('');
 
-  const chain = (['ethereum', 'bnb', 'polygon', 'solana'].includes(params.blockchain)
+  const chain = (['ethereum', 'bnb', 'polygon', 'arbitrum', 'solana', 'bitcoin', 'tron'].includes(params.blockchain)
     ? params.blockchain
     : 'ethereum') as Blockchain;
   const name = String(params.name || 'Asset');
@@ -128,7 +140,22 @@ export default function AssetDetails() {
       let next: string | null = null;
       let complete = true;
       let warning = '';
-      if (chain === 'solana') {
+      if (chain === 'bitcoin' || chain === 'tron') {
+        const history = await fetchIndexedChainHistory({
+          chain,
+          network: network === 'testnet' ? 'testnet' : 'mainnet',
+          walletAddress,
+        });
+        result = history.rows.map((row) => ({
+          id: row.id, hash: row.hash, title: row.title,
+          detail: row.detail || row.subtitle || (row.incoming ? 'Incoming transfer' : 'Outgoing transfer'),
+          amount: row.amount, timestamp: row.timestamp, incoming: row.incoming,
+          failed: row.status.toLowerCase() === 'failed',
+          status: row.status.toLowerCase() === 'failed' ? 'failed' : row.status.toLowerCase() === 'confirmed' ? 'success' : 'unknown',
+          explorerUrl: row.explorerUrl,
+        }));
+        complete = history.complete;
+      } else if (chain === 'solana') {
         const history = await fetchSolanaAssetHistory({
           network: network === 'testnet' ? 'testnet' : 'mainnet',
           walletAddress,
