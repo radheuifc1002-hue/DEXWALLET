@@ -52,12 +52,22 @@ test('Bitcoin address history uses Alchemy indexed UTXO API', () => {
   assert.match(history, /alchemy-utxo-indexer/);
 });
 
-test('TRON balance and native plus TRC20 history use TronGrid indexed APIs', () => {
-  assert.match(balances, /\/v1\/accounts\//);
-  assert.match(history, /\/transactions\/trc20/);
-  assert.match(history, /Alchemy provides TRON node RPC/);
+test('Bitcoin balance and history use Alchemy UTXO indexed APIs', () => {
+  assert.match(balances, /bitcoin-testnet4/);
+  assert.match(balances, /api\\/v2\\/address\\//);
+  assert.match(history, /bitcoin-testnet4/);
+  assert.match(history, /api\\/v2\\/address\\//);
+  assert.match(history, /alchemy-utxo-indexer/);
+});
+
+test('TRON node and balance use Alchemy while address history uses TronGrid indexing', () => {
+  assert.match(balances, /tron-mainnet/);
+  assert.match(balances, /wallet\\/getaccount/);
+  assert.match(history, /\\/transactions\\/trc20/);
   assert.match(history, /trongrid-v1/);
-  assert.match(history, /ownerHex/);
+  assert.match(history, /Alchemy provides TRON node RPC/);
+  assert.match(rpc, /tron-mainnet/);
+  assert.match(rpc, /alchemyBase\\('tron',network\\)/);
 });
 
 test('Arbitrum is supported by the shared EVM transaction-history path', () => {
