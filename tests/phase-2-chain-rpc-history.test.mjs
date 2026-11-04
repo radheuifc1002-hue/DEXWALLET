@@ -54,7 +54,7 @@ test('Bitcoin balances and history use network-specific indexed APIs', () => {
 
 test('TRON balance and native plus TRC20 history use TronGrid indexed APIs', () => {
   assert.match(balances, /\/v1\/accounts\//);
-  assert.match(history, /\/transactions\/trc20/);
+  assert.match(history, /\/transactions\/trc20/);\n  assert.match(history, /Alchemy provides TRON node RPC/);
   assert.match(history, /trongrid-v1/);
   assert.match(history, /ownerHex/);
 });
