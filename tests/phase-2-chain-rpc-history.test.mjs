@@ -31,25 +31,25 @@ test('Bitcoin and TRON mobile RPC requests are routed through the server gateway
   assert.doesNotMatch(client, /mempool\.space|trongrid\.io|ALCHEMY_API_KEY/);
 });
 
-test('Bitcoin RPC adapter uses mainnet and Testnet4 services, with signed broadcast only', () => {
-  assert.match(rpc, /https:\/\/mempool\.space\/api/);
-  assert.match(rpc, /https:\/\/mempool\.space\/testnet4\/api/);
+test('Bitcoin RPC adapter routes standard JSON-RPC through Alchemy', () => {
+  assert.match(rpc, /bitcoin-mainnet/);
+  assert.match(rpc, /bitcoin-testnet/);
+  assert.match(rpc, /alchemyBase\('bitcoin',network\)/);
   assert.match(rpc, /sendrawtransaction/);
   assert.match(rpc, /Unsupported Bitcoin RPC method/);
 });
 
-test('TRON RPC adapter uses TronGrid mainnet and Nile, and probes the actual provider', () => {
-  assert.match(rpc, /https:\/\/api\.trongrid\.io/);
-  assert.match(rpc, /https:\/\/nile\.trongrid\.io/);
-  assert.match(rpc, /TRON-PRO-API-KEY/);
+test('TRON RPC adapter routes node methods through Alchemy', () => {
+  assert.match(rpc, /tron-mainnet/);
+  assert.match(rpc, /tron-testnet/);
+  assert.match(rpc, /alchemyBase\('tron',network\)/);
   assert.match(health, /probeChainRpc/);
 });
 
-test('Bitcoin balances and history use network-specific indexed APIs', () => {
-  assert.match(balances, /mempool\.space\/testnet4\/api/);
-  assert.match(balances, /chain_stats/);
-  assert.ok(history.includes("'/address/'") && history.includes("'/txs'"));
-  assert.match(history, /mempool-space/);
+test('Bitcoin address history uses Alchemy indexed UTXO API', () => {
+  assert.match(history, /bitcoin-testnet4/);
+  assert.match(history, /api\/v2\/address\//);
+  assert.match(history, /alchemy-utxo-indexer/);
 });
 
 test('TRON balance and native plus TRC20 history use TronGrid indexed APIs', () => {
