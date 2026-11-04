@@ -45,9 +45,7 @@ export async function refreshWalletTokenBalances(addresses:Record<Blockchain,str
         }else if(token.blockchain==='tron'){
           const data=await serverChainDataRequest<{balanceSun:string}>('tron',network,address);
           balance=Number(ethers.formatUnits(BigInt(data.balanceSun),6));
-        }else if(token.blockchain==='bitcoin'||token.blockchain==='tron'){
-        return token;
-      }else if(token.blockchain==='solana'){
+        }else if(token.blockchain==='solana'){
           const result=await serverRpcRequest<{value:number}>('solana',network,'getBalance',[address,{commitment:'confirmed'}]);
           balance=Number(ethers.formatUnits(BigInt(result.value),9));
         }else{
@@ -60,8 +58,11 @@ export async function refreshWalletTokenBalances(addresses:Record<Blockchain,str
         const raw=rows.reduce((sum:bigint,row:any)=>sum+BigInt(row?.account?.data?.parsed?.info?.tokenAmount?.amount||'0'),0n);
         const decimals=Number(rows[0]?.account?.data?.parsed?.info?.tokenAmount?.decimals??token.decimals??0);
         balance=Number(ethers.formatUnits(raw,decimals));
-      }else{
+      }else if(token.blockchain==='ethereum'||token.blockchain==='bnb'||token.blockchain==='polygon'||token.blockchain==='arbitrum'){
         balance=await evmTokenBalance(token.blockchain,network,token.contractAddress,address);
+      }else{
+        // Bitcoin and TRON token balance adapters are not implemented here yet.
+        return token;
       }
       if(!Number.isFinite(balance))throw new Error('invalid_balance');
       return {...token,balance,balanceUSD:token.contractAddress ? 0 : balance*priceMap[token.blockchain]};
