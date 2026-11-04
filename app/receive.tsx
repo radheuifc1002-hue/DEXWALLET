@@ -12,7 +12,7 @@ import QRCode from 'react-native-qrcode-svg';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
-import { useWallet } from '../context/WalletContext';
+import { useWallet, type Blockchain } from '../context/WalletContext';
 
 const CHAIN_SYMBOLS: Record<string, string> = {
   ethereum: 'ETH',

@@ -319,7 +319,7 @@ export default function Browser() {
       if (isLocked) throw Object.assign(new Error('Unlock XU Wallet before using DApps.'), {code:4100});
       if (!chains[selectedBlockchain]) throw Object.assign(new Error('EIP-1193 supports Ethereum, BNB Chain and Polygon only.'), {code:4200});
       const cfg = chains[selectedBlockchain];
-      const evmChain = selectedBlockchain as Exclude<Blockchain, 'solana'>;
+      const evmChain = selectedBlockchain as Exclude<Blockchain, 'solana' | 'bitcoin' | 'tron'>;
       const chainId = getCentralEvmChainId(evmChain, network);
       const provider = new ethers.JsonRpcProvider(getCentralRpcUrl(evmChain, network), chainId, { staticNetwork: true });
       const address = walletAddresses?.[selectedBlockchain];
