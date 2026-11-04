@@ -138,7 +138,9 @@ export default async function handler(req: any, res: any) {
       });
     }
 
-    // Alchemy provides TRON node RPC, but not a documented address-history indexer.\n    // Keep the address-activity query on TronGrid until Alchemy exposes that data API.\n    const headers: Record<string, string> = process.env.TRONGRID_API_KEY
+    // Alchemy provides TRON node RPC, but not a documented address-history indexer.
+    // Keep the address-activity query on TronGrid until Alchemy exposes that data API.
+    const headers: Record<string, string> = process.env.TRONGRID_API_KEY
       ? { 'TRON-PRO-API-KEY': process.env.TRONGRID_API_KEY }
       : {};
     const addressHex = tronAddressHex(address);
