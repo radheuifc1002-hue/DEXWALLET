@@ -30,54 +30,30 @@ export async function proxyChainRpc(chain:Chain,network:RpcNetwork,body:unknown)
  if(req.jsonrpc!=='2.0'||!method)return failure(id,'Invalid JSON-RPC request',-32600,400);
  try{
   if(chain==='bitcoin'){
-   if(BTC_WRITE.has(method)){
-    if(typeof params[0]!=='string'||!/^[0-9a-f]+$/i.test(params[0]))return failure(id,'A signed raw transaction hex string is required.',-32602,400);
-    const txid=await request(alchemyBase('bitcoin',network)+'/tx',{method:'POST',headers:{'Content-Type':'text/plain'},body:params[0]});
-    return result(id,txid);
-   }
-   if(!BTC_READ.has(method))return failure(id,'Unsupported Bitcoin RPC method: '+method,-32601,400);
-   if(method==='getblockcount')return result(id,Number(await request(BTC[network]+'/blocks/tip/height')));
-   if(method==='getblockhash'){
-    const height=Number(params[0]);if(!Number.isSafeInteger(height)||height<0)return failure(id,'Invalid block height',-32602,400);
-    return result(id,await request(BTC[network]+'/block-height/'+height));
-   }
-   if(method==='getblockchaininfo'){
-    const [height,mempool]=await Promise.all([request(BTC[network]+'/blocks/tip/height'),request(BTC[network]+'/mempool')]);
-    return result(id,{chain:network==='mainnet'?'main':'test',blocks:Number(height),headers:Number(height),verificationprogress:1,initialblockdownload:false,size_on_disk:0,mempool:{size:Number(mempool?.count||0)}});
-   }
-   if(method==='getblockheader'){
-    const hash=String(params[0]||'');if(!/^[0-9a-f]{64}$/i.test(hash))return failure(id,'Invalid block hash',-32602,400);
-    const verbose=params[1]!==false;
-    return result(id,verbose?await request(BTC[network]+'/block/'+hash):await request(BTC[network]+'/block/'+hash+'/header'));
-   }
-   if(method==='getrawtransaction'){
-    const txid=String(params[0]||'');if(!/^[0-9a-f]{64}$/i.test(txid))return failure(id,'Invalid transaction id',-32602,400);
-    const verbose=params[1]!==false;
-    return result(id,verbose?await request(BTC[network]+'/tx/'+txid):await request(BTC[network]+'/tx/'+txid+'/hex'));
-   }
-   const fees=await request(BTC[network]+'/v1/fees/recommended');
-   const target=Math.max(1,Math.min(1008,Number(params[0]||6)));
-   const rate=target<=1?fees.fastestFee:target<=3?fees.halfHourFee:target<=6?fees.hourFee:fees.economyFee;
-   return result(id,{feerate:Number(rate)*0.00001,blocks:target});
+   if(!BTC_READ.has(method)&&!BTC_WRITE.has(method))return failure(id,'Unsupported Bitcoin RPC method: '+method,-32601,400);
+   if(BTC_WRITE.has(method)&&(typeof params[0]!=='string'||!/^[0-9a-f]+$/i.test(params[0])))return failure(id,'A signed raw transaction hex string is required.',-32602,400);
+   const payload=await request(alchemyBase('bitcoin',network),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(req)});
+   if(payload?.error)return failure(id,String(payload.error.message||'Bitcoin RPC error'),Number(payload.error.code)||-32000,200);
+   return {status:200,body:JSON.stringify({...payload,id}),provider:'alchemy',attempts:1,requestId:'alchemy'};
   }
   if(!TRON_READ.has(method)&&!TRON_WRITE.has(method)&&!TRON_EVM.has(method))return failure(id,'Unsupported TRON RPC method: '+method,-32601,400);
   if(method==='net_version')return result(id,String(TRON_CHAIN_ID[network]));
-  if(method==='eth_chainId')return result(id,'0x'+TRON_CHAIN_ID[network].toString(16));
-  if(TRON_EVM.has(method)){
-   const response=await request(alchemyBase('tron',network),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id,method,params})});
-   if(response?.error)return failure(id,String(response.error.message||'TRON JSON-RPC error'),Number(response.error.code)||-32000);
-   return result(id,response?.result);
+  const base=alchemyBase('tron',network);
+  if(method.startsWith('eth_')){
+   const payload=await request(base,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(req)});
+   if(payload?.error)return failure(id,String(payload.error.message||'TRON RPC error'),Number(payload.error.code)||-32000,200);
+   return {status:200,body:JSON.stringify({...payload,id}),provider:'alchemy',attempts:1,requestId:'alchemy'};
   }
   const routes:Record<string,string>={getaccount:'/wallet/getaccount',getaccountresource:'/wallet/getaccountresource',getnowblock:'/wallet/getnowblock',getblockbynum:'/wallet/getblockbynum',gettransactionbyid:'/wallet/gettransactionbyid',gettransactioninfobyid:'/wallet/gettransactioninfobyid',broadcasttransaction:'/wallet/broadcasttransaction'};
-  const response=await request(alchemyBase('tron',network)+routes[method],{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(params[0]??{})});
-  return result(id,response);
+  const payload=await request(base+routes[method],{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(params[0]??{})});
+  return result(id,payload);
  }catch(error){return failure(id,error instanceof Error?error.message:'Upstream provider unavailable',-32000,502);}
 }
 export async function probeChainRpc(chain:Chain,network:RpcNetwork):Promise<{name:string;configured:boolean;healthy:boolean;circuit:'closed'|'open';cooldownMs:number;latencyMs:number|null;consecutiveFailures:number;lastCheckedAt:number;lastFailure?:string}>{
  const started=Date.now();
  try{
-  if(chain==='bitcoin'){const height=await request(BTC[network]+'/blocks/tip/height');if(!Number.isFinite(Number(height)))throw new Error('Invalid Bitcoin tip height');}
-  else{const key=process.env.TRONGRID_API_KEY;const block=await request(TRON[network]+'/wallet/getnowblock',{method:'POST',headers:{'Content-Type':'application/json',...(key?{'TRON-PRO-API-KEY':key}:{})},body:'{}'});if(!block?.block_header?.raw_data?.number)throw new Error('Invalid TRON block response');}
+  if(chain==='bitcoin'){const payload=await request(alchemyBase('bitcoin',network),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'getblockcount',params:[]})});if(payload?.error||!Number.isFinite(Number(payload?.result)))throw new Error('Invalid Bitcoin Alchemy health response');}
+  else{const block=await request(alchemyBase('tron',network)+'/wallet/getnowblock',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});if(!block?.block_header?.raw_data?.number)throw new Error('Invalid TRON block response');}
   return{name:'alchemy',configured:true,healthy:true,circuit:'closed',cooldownMs:0,latencyMs:Date.now()-started,consecutiveFailures:0,lastCheckedAt:Date.now()};
- }catch(error){return{name:chain==='bitcoin'?'mempool.space':'TronGrid',configured:true,healthy:false,circuit:'closed',cooldownMs:0,latencyMs:null,consecutiveFailures:1,lastCheckedAt:Date.now(),lastFailure:error instanceof Error?error.message:'provider unavailable'};}
+ }catch(error){return{name:'alchemy',configured:true,healthy:false,circuit:'closed',cooldownMs:0,latencyMs:null,consecutiveFailures:1,lastCheckedAt:Date.now(),lastFailure:error instanceof Error?error.message:'provider unavailable'};}
 }
