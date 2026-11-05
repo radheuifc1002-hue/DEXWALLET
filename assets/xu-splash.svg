@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
+<defs><radialGradient id="glow"><stop stop-color="#E9E3FF"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient><linearGradient id="p" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#8065F6"/><stop offset="1" stop-color="#5636D8"/></linearGradient></defs>
+<rect width="1080" height="1920" fill="#fff"/><circle cx="540" cy="820" r="520" fill="url(#glow)"/>
+<circle cx="540" cy="790" r="210" fill="url(#p)"/><circle cx="540" cy="790" r="185" fill="none" stroke="#C9BEFF" stroke-width="6"/>
+<path d="M407 700h46l75 87-75 94h-46l76-94zM514 700h142v41h-97v34h84v40h-84v26h97v40H514z" fill="#fff"/>
+<text x="540" y="1165" text-anchor="middle" font-family="Arial,sans-serif" font-size="76" font-weight="700" letter-spacing="5" fill="#271F45">XU WALLET</text>
+<text x="540" y="1235" text-anchor="middle" font-family="Arial,sans-serif" font-size="34" fill="#716691">Your Keys. Your Crypto.</text>
+<rect x="470" y="1295" width="140" height="8" rx="4" fill="#6C4CF1"/>
+</svg>
