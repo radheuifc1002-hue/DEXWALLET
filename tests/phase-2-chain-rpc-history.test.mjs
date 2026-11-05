@@ -50,6 +50,8 @@ test('Bitcoin address history uses Alchemy indexed UTXO API', () => {
   assert.match(history, /bitcoin-testnet4/);
   assert.match(history, /api\/v2\/address\//);
   assert.match(history, /alchemy-utxo-indexer/);
+  assert.match(history, /details=txids/);
+  assert.match(history, /bitcoin_utxo_access_not_enabled/);
 });
 
 test('Bitcoin balance and history use Alchemy UTXO indexed APIs', () => {
@@ -60,11 +62,15 @@ test('Bitcoin balance and history use Alchemy UTXO indexed APIs', () => {
   assert.match(history, /alchemy-utxo-indexer/);
 });
 
-test('TRON node and balance use Alchemy while address history uses TronGrid indexing', () => {
+test('TRON node and balance use Alchemy; TronGrid discovers address history and Alchemy enriches mainnet tx details', () => {
   assert.match(balances, /tron-mainnet/);
   assert.match(balances, /wallet\/getaccount/);
   assert.match(history, /\/transactions\/trc20/);
   assert.match(history, /trongrid-v1/);
+  assert.match(history, /tron-mainnet/);
+  assert.match(history, /wallet\/gettransactionbyid/);
+  assert.match(history, /walletsolidity\/gettransactioninfobyid/);
+  assert.match(history, /trongrid-index\+alchemy-tx-detail/);
   assert.match(history, /Alchemy provides TRON node RPC/);
   assert.match(rpc, /tron-mainnet/);
   assert.match(rpc, /alchemyBase\('tron',network\)/);
