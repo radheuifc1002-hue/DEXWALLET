@@ -4,11 +4,14 @@ type Chain = 'bitcoin' | 'tron';
 type Network = 'mainnet' | 'testnet';
 const BTC_API: Record<Network, string> = {
   mainnet: 'https://mempool.space/api',
-  // DEXWALLET Bitcoin testnet uses Testnet4.
   testnet: 'https://mempool.space/testnet4/api',
 };
-function bitcoinAddressHistoryUrl(network: Network, address: string, afterTxid?: string): string {
-  const base = BTC_API[network] + '/address/' + encodeURIComponent(address) + '/txs';
+const BTC_FALLBACK_API: Record<Network, string> = {
+  mainnet: 'https://blockstream.info/api',
+  testnet: 'https://blockstream.info/testnet4/api',
+};
+function bitcoinAddressHistoryUrl(network: Network, address: string, afterTxid?: string, fallback = false): string {
+  const base = (fallback ? BTC_FALLBACK_API : BTC_API)[network] + '/address/' + encodeURIComponent(address) + '/txs';
   return afterTxid ? base + '/chain/' + encodeURIComponent(afterTxid) : base;
 }
 const BTC_EXPLORER: Record<Network, string> = {
@@ -18,6 +21,10 @@ const BTC_EXPLORER: Record<Network, string> = {
 const TRON_API: Record<Network, string> = {
   mainnet: 'https://api.trongrid.io',
   testnet: 'https://nile.trongrid.io',
+};
+const TRONSCAN_API: Record<Network, string> = {
+  mainnet: 'https://apilist.tronscanapi.com',
+  testnet: 'https://nileapi.tronscan.org',
 };
 const TRON_EXPLORER: Record<Network, string> = {
   mainnet: 'https://tronscan.org/#/transaction/',
@@ -152,15 +159,26 @@ export default async function handler(req: any, res: any) {
       // Fetch the first page, then continue confirmed-history pagination until
       // we have at most 50 unique transactions.
       const seen = new Map<string, any>();
-      const firstPage = await getJson(bitcoinAddressHistoryUrl(network, address));
-      for (const tx of Array.isArray(firstPage) ? firstPage : []) {
+      let indexer: 'mempool.space' | 'blockstream-esplora' = 'mempool.space';
+      let firstPage: any;
+      try {
+        firstPage = await getJson(bitcoinAddressHistoryUrl(network, address));
+        if (!Array.isArray(firstPage)) throw new Error('mempool_invalid_history_response');
+      } catch (primaryError) {
+        console.warn('bitcoin_mempool_indexer_failed_using_blockstream_fallback',
+          primaryError instanceof Error ? primaryError.message : 'unknown');
+        firstPage = await getJson(bitcoinAddressHistoryUrl(network, address, undefined, true));
+        if (!Array.isArray(firstPage)) throw new Error('blockstream_invalid_history_response');
+        indexer = 'blockstream-esplora';
+      }
+      for (const tx of firstPage) {
         const txid = String(tx?.txid || '');
         if (txid) seen.set(txid, tx);
       }
       const firstConfirmed = [...seen.values()].filter((tx: any) => tx?.status?.confirmed);
       let cursor = String(firstConfirmed[firstConfirmed.length - 1]?.txid || '');
       for (let page = 0; page < 3 && seen.size < 50 && cursor; page++) {
-        const batch = await getJson(bitcoinAddressHistoryUrl(network, address, cursor));
+        const batch = await getJson(bitcoinAddressHistoryUrl(network, address, cursor, indexer === 'blockstream-esplora'));
         if (!Array.isArray(batch) || batch.length === 0) break;
         const before = seen.size;
         for (const tx of batch) {
@@ -212,7 +230,8 @@ export default async function handler(req: any, res: any) {
       return res.status(200).json({
         chain, network, walletAddress: address, rows, limit: 50,
         complete: rows.length < 50,
-        source: 'mempool-space-esplora-indexer',
+        source: indexer === 'mempool.space' ? 'mempool-space-esplora-indexer' : 'blockstream-esplora-fallback',
+        providers: { primary: 'mempool.space', used: indexer },
       });
     }
 
@@ -226,9 +245,67 @@ export default async function handler(req: any, res: any) {
       + '/transactions?limit=50&order_by=block_timestamp,desc&only_confirmed=false';
     const tokenUrl = TRON_API[network] + '/v1/accounts/' + encodeURIComponent(address)
       + '/transactions/trc20?limit=50&order_by=block_timestamp,desc';
-    const [nativePayload, tokenPayload] = await Promise.all([
-      getJson(accountUrl, headers), getJson(tokenUrl, headers),
-    ]);
+    let nativePayload: any;
+    let tokenPayload: any;
+    let tronIndexer: 'trongrid' | 'tronscan' = 'trongrid';
+    try {
+      [nativePayload, tokenPayload] = await Promise.all([
+        getJson(accountUrl, headers), getJson(tokenUrl, headers),
+      ]);
+      if (!Array.isArray(nativePayload?.data) || !Array.isArray(tokenPayload?.data)) {
+        throw new Error('trongrid_invalid_history_response');
+      }
+    } catch (primaryError) {
+      console.warn('tron_trongrid_indexer_failed_using_tronscan_fallback',
+        primaryError instanceof Error ? primaryError.message : 'unknown');
+      const scanBase = TRONSCAN_API[network];
+      const scanHeaders: Record<string, string> = process.env.TRONSCAN_API_KEY
+        ? { 'TRON-PRO-API-KEY': process.env.TRONSCAN_API_KEY }
+        : {};
+      const [scanNative, scanTokens] = await Promise.all([
+        getJson(scanBase + '/api/transaction?sort=-timestamp&count=false&limit=50&start=0&address=' + encodeURIComponent(address), scanHeaders),
+        getJson(scanBase + '/api/token_trc20/transfers?limit=50&start=0&relatedAddress=' + encodeURIComponent(address), scanHeaders),
+      ]);
+      const scanNativeRows = Array.isArray(scanNative?.data) ? scanNative.data : [];
+      const scanTokenRows = Array.isArray(scanTokens?.token_transfers) ? scanTokens.token_transfers : [];
+      if (!Array.isArray(scanNative?.data) || !Array.isArray(scanTokens?.token_transfers)) {
+        throw new Error('tronscan_invalid_history_response');
+      }
+      nativePayload = {
+        data: scanNativeRows.map((tx: any) => ({
+          txID: String(tx?.hash || ''),
+          block_timestamp: Number(tx?.timestamp || 0),
+          blockNumber: Number(tx?.block || 0),
+          ret: [{ contractRet: String(tx?.contractRet || tx?.result || '') }],
+          raw_data: { contract: [{
+            type: Number(tx?.contractType) === 1 ? 'TransferContract' : String(tx?.contractType || ''),
+            parameter: { value: {
+              owner_address: tronAddressHex(String(tx?.ownerAddress || '')),
+              to_address: tronAddressHex(String(tx?.toAddress || tx?.contractData?.to_address || '')),
+              amount: String(tx?.contractData?.amount ?? tx?.amount ?? '0'),
+            } },
+          }] },
+        })),
+        meta: {},
+      };
+      tokenPayload = {
+        data: scanTokenRows.map((tx: any) => ({
+          transaction_id: String(tx?.transaction_id || ''),
+          from: String(tx?.from_address || ''),
+          to: String(tx?.to_address || ''),
+          contract_address: String(tx?.contract_address || ''),
+          value: String(tx?.quant || '0'),
+          block_timestamp: Number(tx?.block_ts || 0),
+          confirmed: Boolean(tx?.confirmed),
+          token_info: {
+            symbol: String(tx?.tokenInfo?.tokenAbbr || 'TRC20'),
+            decimals: Number(tx?.tokenInfo?.tokenDecimal ?? 6),
+          },
+        })),
+        meta: {},
+      };
+      tronIndexer = 'tronscan';
+    }
 
     // TronGrid supplies address -> txID discovery (Alchemy has no documented
     // address-history indexer). Enrich known mainnet txIDs using Alchemy's
@@ -328,8 +405,8 @@ export default async function handler(req: any, res: any) {
     return res.status(200).json({
       chain, network, walletAddress: address, rows, limit: 50,
       complete: !nativePayload?.meta?.fingerprint && !tokenPayload?.meta?.fingerprint,
-      source: 'trongrid-index+alchemy-primary-trongrid-fallback',
-      providers: { preferred: alchemyBase ? 'alchemy' : 'trongrid', alchemyDetailFailures, tronGridDetailFallbacks },
+      source: tronIndexer === 'trongrid' ? 'trongrid-index+alchemy-primary-trongrid-fallback' : 'tronscan-index-fallback',
+      providers: { indexer: tronIndexer, preferred: alchemyBase ? 'alchemy' : 'trongrid', alchemyDetailFailures, tronGridDetailFallbacks },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'unknown';
