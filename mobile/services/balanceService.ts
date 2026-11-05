@@ -68,8 +68,12 @@ export async function refreshWalletTokenBalances(addresses:Record<Blockchain,str
         const raw=BigInt('0x'+result.constant_result[0]);
         balance=Number(ethers.formatUnits(raw,token.decimals??0));
       }else if(token.blockchain==='solana'){
-        const results=await Promise.all(['TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA','TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb'].map(programId=>serverRpcRequest<any>('solana',network,'getTokenAccountsByOwner',[address,{programId},{encoding:'jsonParsed',commitment:'confirmed'}])));
-        const rows=results.flatMap(result=>(Array.isArray(result?.value)?result.value:[]).filter((row:any)=>row?.account?.data?.parsed?.info?.mint===token.contractAddress));
+        const mint=await serverRpcRequest<any>('solana',network,'getAccountInfo',[token.contractAddress,{encoding:'base64',commitment:'confirmed'}]);
+        const programId=String(mint?.value?.owner||'');
+        if(!['TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA','TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb'].includes(programId))throw new Error('unsupported_spl_mint');
+        const filter=programId==='TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb'?{programId}:{mint:token.contractAddress};
+        const result=await serverRpcRequest<any>('solana',network,'getTokenAccountsByOwner',[address,filter,{encoding:'jsonParsed',commitment:'confirmed'}]);
+        const rows=(Array.isArray(result?.value)?result.value:[]).filter((row:any)=>row?.account?.data?.parsed?.info?.mint===token.contractAddress);
         const raw=rows.reduce((sum:bigint,row:any)=>sum+BigInt(row?.account?.data?.parsed?.info?.tokenAmount?.amount||'0'),0n);
         const decimals=Number(rows[0]?.account?.data?.parsed?.info?.tokenAmount?.decimals??token.decimals??0);
         balance=Number(ethers.formatUnits(raw,decimals));
