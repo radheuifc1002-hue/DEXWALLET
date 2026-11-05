@@ -127,3 +127,24 @@ test('Full asset page keeps every token and ranks native first then by USD value
   assert.match(assets, /b\.balanceUSD \|\| 0/);
   assert.doesNotMatch(assets, /visible\.slice\(0, 5\)/);
 });
+
+
+test('Token import supports ERC-20, SPL Token, Token-2022 and TRC-20 through the backend', () => {
+  const screen = read('app/import-token.tsx');
+  const rpcAdapter = read('backend/api/_lib/chain-rpc.ts');
+  const balances = read('mobile/services/balanceService.ts');
+  assert.match(screen, /TOKEN_2022_PROGRAM/);
+  assert.match(screen, /getTokenAccountsByOwner/);
+  assert.match(screen, /triggerconstantcontract/);
+  assert.match(rpcAdapter, /triggerconstantcontract/);
+  assert.match(balances, /TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb/);
+  assert.match(balances, /triggerconstantcontract/);
+  assert.match(screen, /eth_call/);
+});
+
+test('Bitcoin does not display a custom-token import action', () => {
+  const home = read('app/(tabs)/home.tsx');
+  const assets = read('app/assets.tsx');
+  assert.match(home, /selectedBlockchain !== 'bitcoin'/);
+  assert.match(assets, /selectedBlockchain !== 'bitcoin'/);
+});
