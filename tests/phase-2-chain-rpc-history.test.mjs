@@ -60,14 +60,14 @@ test('Bitcoin address history uses public Mempool.space Esplora indexing', () =>
 });
 
 test('Bitcoin balance and history both use Esplora address indexing with provider fallback', () => {
-  assert.match(balances, /mempool\\.space\\/testnet4\\/api/);
-  assert.match(balances, /blockstream\\.info\\/testnet4\\/api/);
-  assert.match(balances, /chain_stats\\?\\.funded_txo_sum/);
-  assert.match(balances, /chain_stats\\?\\.spent_txo_sum/);
-  assert.match(balances, /mempool_stats\\?\\.funded_txo_sum/);
-  assert.match(balances, /mempool_stats\\?\\.spent_txo_sum/);
-  assert.match(balances, /bitcoin_mempool_balance_failed_using_blockstream_fallback/);
-  assert.doesNotMatch(balances, /api\\/v2\\/address\\//);
+  assert.ok(balances.includes('https://mempool.space/testnet4/api'));
+  assert.ok(balances.includes('https://blockstream.info/testnet4/api'));
+  assert.ok(balances.includes('chain_stats?.funded_txo_sum'));
+  assert.ok(balances.includes('chain_stats?.spent_txo_sum'));
+  assert.ok(balances.includes('mempool_stats?.funded_txo_sum'));
+  assert.ok(balances.includes('mempool_stats?.spent_txo_sum'));
+  assert.ok(balances.includes('bitcoin_mempool_balance_failed_using_blockstream_fallback'));
+  assert.ok(!balances.includes('/api/v2/address/'));
   assert.match(history, /mempool-space-esplora-indexer/);
   assert.match(history, /blockstream-esplora-fallback/);
 });
