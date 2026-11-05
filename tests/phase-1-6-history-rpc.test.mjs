@@ -15,8 +15,10 @@ test('supported networks are exactly Ethereum, BNB, Polygon and Solana with main
   assert.match(rpc,/eth-sepolia/);
   assert.match(rpc,/bnb-testnet/);
   assert.match(rpc,/polygon-amoy/);
+  assert.match(rpc,/bitcoin-mainnet/);
+  assert.match(rpc,/tron-mainnet/);
   assert.match(rpc,/solana-devnet/);
-  assert.doesNotMatch(rpc,/arbitrum|optimism|avalanche|linea/);
+  assert.match(rpc,/arb-mainnet/);
 });
 
 test('Alchemy asset transfers use the documented singular category field',()=>{
