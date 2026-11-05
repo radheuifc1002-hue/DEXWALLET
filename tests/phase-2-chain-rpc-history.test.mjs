@@ -54,7 +54,8 @@ test('Bitcoin address history uses public Mempool.space Esplora indexing', () =>
   assert.match(history, /bitcoin_mempool_indexer_failed_using_blockstream_fallback/);
   assert.match(history, /mempool-space-esplora-indexer/);
   assert.match(history, /blockstream-esplora-fallback/);
-  assert.match(history, /txs\/chain/);
+  // The Esplora pagination path is assembled from '/txs' + '/chain/' at runtime.
+  assert.match(history, /\/txs';[\s\S]*?\/chain\//);
   assert.match(history, /prevout/);
 });
 
