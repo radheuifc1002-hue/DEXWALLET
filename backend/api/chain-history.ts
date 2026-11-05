@@ -39,6 +39,26 @@ function alchemyTronBase(network: Network): string | null {
   if (!key || network !== 'mainnet') return null;
   return 'https://' + TRON_ALCHEMY_NETWORK[network] + '.g.alchemy.com/v2/' + encodeURIComponent(key);
 }
+async function tronGridPost(network: Network, path: string, txid: string, headers: Record<string, string>): Promise<any> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
+  try {
+    const response = await fetch(TRON_API[network] + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...headers },
+      body: JSON.stringify({ value: txid }),
+      signal: controller.signal,
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || data?.Error || data?.error) {
+      throw new Error('trongrid_tx_http_' + response.status);
+    }
+    return data;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function alchemyTronPost(base: string, path: string, txid: string): Promise<any> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 12000);
@@ -207,21 +227,46 @@ export default async function handler(req: any, res: any) {
       ...(Array.isArray(nativePayload?.data) ? nativePayload.data : []).map((tx: any) => String(tx?.txID || tx?.txid || '')),
       ...(Array.isArray(tokenPayload?.data) ? tokenPayload.data : []).map((tx: any) => String(tx?.transaction_id || '')),
     ].filter((txid: string) => /^[a-fA-F0-9]{64}$/.test(txid)))].slice(0, 10);
-    const alchemyDetails = new Map<string, { transaction: any; info: any }>();
-    if (alchemyBase) {
-      for (let offset = 0; offset < discoveredTxids.length; offset += 5) {
-        const batch = await Promise.all(discoveredTxids.slice(offset, offset + 5).map(async (txid) => {
+    const transactionDetails = new Map<string, { transaction: any; info: any; source: 'alchemy' | 'trongrid' }>();
+    let alchemyDetailFailures = 0;
+    let tronGridDetailFallbacks = 0;
+    for (let offset = 0; offset < discoveredTxids.length; offset += 5) {
+      const batch = discoveredTxids.slice(offset, offset + 5);
+      await Promise.all(batch.map(async (txid) => {
+        // Alchemy is the preferred transaction/receipt provider. Fall back to
+        // TronGrid's node endpoints for the same txID if Alchemy is unavailable,
+        // rejects the method, times out, or returns an empty response.
+        if (alchemyBase) {
           try {
             const [transaction, info] = await Promise.all([
               alchemyTronPost(alchemyBase, '/wallet/gettransactionbyid', txid),
               alchemyTronPost(alchemyBase, '/walletsolidity/gettransactioninfobyid', txid),
             ]);
-            alchemyDetails.set(txid, { transaction, info });
+            if (transaction?.txID || info?.id || info?.blockNumber || info?.receipt) {
+              transactionDetails.set(txid, { transaction, info, source: 'alchemy' });
+              return;
+            }
+            throw new Error('alchemy_tron_empty_transaction_detail');
           } catch (error) {
-            console.warn('tron_alchemy_detail_failed', txid, error instanceof Error ? error.message : 'unknown');
+            alchemyDetailFailures++;
+            console.warn('tron_alchemy_detail_failed_using_trongrid_fallback', txid,
+              error instanceof Error ? error.message : 'unknown');
           }
-        }));
-      }
+        }
+        try {
+          tronGridDetailFallbacks++;
+          const [transaction, info] = await Promise.all([
+            tronGridPost(network, '/wallet/gettransactionbyid', txid, headers),
+            tronGridPost(network, '/walletsolidity/gettransactioninfobyid', txid, headers),
+          ]);
+          if (transaction?.txID || info?.id || info?.blockNumber || info?.receipt) {
+            transactionDetails.set(txid, { transaction, info, source: 'trongrid' });
+          }
+        } catch (error) {
+          console.warn('tron_trongrid_detail_fallback_failed', txid,
+            error instanceof Error ? error.message : 'unknown');
+        }
+      }));
     }
 
     const nativeRows = (Array.isArray(nativePayload?.data) ? nativePayload.data : []).map((tx: any) => {
@@ -234,10 +279,10 @@ export default async function handler(req: any, res: any) {
       if (ownerHex !== addressHex && recipientHex !== addressHex) return null;
       const amount = BigInt(String(value?.amount || 0));
       const hash = String(tx?.txID || tx?.txid || '');
-      const alchemy = alchemyDetails.get(hash);
-      const timestamp = Math.floor(Number(alchemy?.info?.blockTimeStamp || tx?.block_timestamp || tx?.raw_data?.timestamp || 0) / 1000);
-      const confirmed = Boolean(alchemy?.info?.blockNumber || tx?.blockNumber || tx?.block_number || (Array.isArray(tx?.ret) && tx.ret.length));
-      const success = String(alchemy?.info?.receipt?.result || alchemy?.transaction?.ret?.[0]?.contractRet || tx?.ret?.[0]?.contractRet || '') === 'SUCCESS';
+      const detail = transactionDetails.get(hash);
+      const timestamp = Math.floor(Number(detail?.info?.blockTimeStamp || tx?.block_timestamp || tx?.raw_data?.timestamp || 0) / 1000);
+      const confirmed = Boolean(detail?.info?.blockNumber || tx?.blockNumber || tx?.block_number || (Array.isArray(tx?.ret) && tx.ret.length));
+      const success = String(alchemy?.info?.receipt?.result || detail?.transaction?.ret?.[0]?.contractRet || tx?.ret?.[0]?.contractRet || '') === 'SUCCESS';
       return {
         id: hash + ':native', hash,
         title: incoming ? 'Received TRX' : 'Sent TRX',
@@ -261,8 +306,8 @@ export default async function handler(req: any, res: any) {
         title: (incoming ? 'Received ' : 'Sent ') + symbol,
         subtitle: (incoming ? 'From ' : 'To ') + short(incoming ? from : to),
         amount: (incoming ? '+' : '-') + tokenUnits(tx?.value, decimals) + ' ' + symbol,
-        timestamp: Math.floor(Number(alchemyDetails.get(hash)?.info?.blockTimeStamp || tx?.block_timestamp || 0) / 1000),
-        status: alchemyDetails.get(hash)?.info?.receipt?.result === 'SUCCESS' || tx?.confirmed ? 'Confirmed' : 'Pending', incoming,
+        timestamp: Math.floor(Number(transactionDetails.get(hash)?.info?.blockTimeStamp || tx?.block_timestamp || 0) / 1000),
+        status: transactionDetails.get(hash)?.info?.receipt?.result === 'SUCCESS' || tx?.confirmed ? 'Confirmed' : 'Pending', incoming,
         explorerUrl: TRON_EXPLORER[network] + hash,
       };
     }).filter((row: any) => row.hash);
@@ -272,7 +317,8 @@ export default async function handler(req: any, res: any) {
     return res.status(200).json({
       chain, network, walletAddress: address, rows, limit: 50,
       complete: !nativePayload?.meta?.fingerprint && !tokenPayload?.meta?.fingerprint,
-      source: alchemyBase ? 'trongrid-index+alchemy-tx-detail' : 'trongrid-v1',
+      source: 'trongrid-index+alchemy-primary-trongrid-fallback',
+      providers: { preferred: alchemyBase ? 'alchemy' : 'trongrid', alchemyDetailFailures, tronGridDetailFallbacks },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'unknown';
