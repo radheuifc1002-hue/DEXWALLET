@@ -154,43 +154,43 @@ export default async function handler(req: any, res: any) {
 
   try {
     if (chain === 'bitcoin') {
-      // Mempool.space/Esplora is the address-history indexer. It returns full
-      // transaction bodies, so no Alchemy UTXO/indexing entitlement is needed.
-      // Fetch the first page, then continue confirmed-history pagination until
-      // we have at most 50 unique transactions.
-      const seen = new Map<string, any>();
-      let indexer: 'mempool.space' | 'blockstream-esplora' = 'mempool.space';
-      let firstPage: any;
-      try {
-        firstPage = await getJson(bitcoinAddressHistoryUrl(network, address));
-        if (!Array.isArray(firstPage)) throw new Error('mempool_invalid_history_response');
-      } catch (primaryError) {
-        console.warn('bitcoin_mempool_indexer_failed_using_blockstream_fallback',
-          primaryError instanceof Error ? primaryError.message : 'unknown');
-        firstPage = await getJson(bitcoinAddressHistoryUrl(network, address, undefined, true));
-        if (!Array.isArray(firstPage)) throw new Error('blockstream_invalid_history_response');
-        indexer = 'blockstream-esplora';
-      }
-      for (const tx of firstPage) {
-        const txid = String(tx?.txid || '');
-        if (txid) seen.set(txid, tx);
-      }
-      const firstConfirmed = [...seen.values()].filter((tx: any) => tx?.status?.confirmed);
-      let cursor = String(firstConfirmed[firstConfirmed.length - 1]?.txid || '');
-      for (let page = 0; page < 3 && seen.size < 50 && cursor; page++) {
-        const batch = await getJson(bitcoinAddressHistoryUrl(network, address, cursor, indexer === 'blockstream-esplora'));
-        if (!Array.isArray(batch) || batch.length === 0) break;
-        const before = seen.size;
-        for (const tx of batch) {
+      // Mempool.space is primary; retry the complete history read on Blockstream
+      // if any page fails so results never mix providers or pagination cursors.
+      const loadBitcoinHistory = async (fallback: boolean): Promise<any[]> => {
+        const seen = new Map<string, any>();
+        const firstPage = await getJson(bitcoinAddressHistoryUrl(network, address, undefined, fallback));
+        if (!Array.isArray(firstPage)) throw new Error('bitcoin_indexer_invalid_history_response');
+        for (const tx of firstPage) {
           const txid = String(tx?.txid || '');
           if (txid) seen.set(txid, tx);
         }
-        const confirmedBatch = batch.filter((tx: any) => tx?.status?.confirmed);
-        const nextCursor = String(confirmedBatch[confirmedBatch.length - 1]?.txid || '');
-        if (seen.size === before || !nextCursor || nextCursor === cursor) break;
-        cursor = nextCursor;
+        const confirmedFirstPage = [...seen.values()].filter((tx: any) => tx?.status?.confirmed);
+        let cursor = String(confirmedFirstPage[confirmedFirstPage.length - 1]?.txid || '');
+        for (let page = 0; page < 3 && seen.size < 50 && cursor; page++) {
+          const batch = await getJson(bitcoinAddressHistoryUrl(network, address, cursor, fallback));
+          if (!Array.isArray(batch) || batch.length === 0) break;
+          const before = seen.size;
+          for (const tx of batch) {
+            const txid = String(tx?.txid || '');
+            if (txid) seen.set(txid, tx);
+          }
+          const confirmedBatch = batch.filter((tx: any) => tx?.status?.confirmed);
+          const nextCursor = String(confirmedBatch[confirmedBatch.length - 1]?.txid || '');
+          if (seen.size === before || !nextCursor || nextCursor === cursor) break;
+          cursor = nextCursor;
+        }
+        return [...seen.values()].slice(0, 50);
+      };
+      let indexer: 'mempool.space' | 'blockstream-esplora' = 'mempool.space';
+      let txs: any[];
+      try {
+        txs = await loadBitcoinHistory(false);
+      } catch (primaryError) {
+        console.warn('bitcoin_mempool_indexer_failed_using_blockstream_fallback',
+          primaryError instanceof Error ? primaryError.message : 'unknown');
+        txs = await loadBitcoinHistory(true);
+        indexer = 'blockstream-esplora';
       }
-      const txs = [...seen.values()].slice(0, 50);
       const rows = txs.map((tx: any) => {
         const inputs = Array.isArray(tx?.vin) ? tx.vin : [];
         const outputs = Array.isArray(tx?.vout) ? tx.vout : [];
@@ -221,9 +221,7 @@ export default async function handler(req: any, res: any) {
           subtitle: other ? (incoming ? 'From ' : 'To ') + short(other) : 'Bitcoin transaction',
           amount: (incoming ? '+' : '-') + btc(amount) + ' BTC',
           fee: btc(BigInt(String(tx?.fee || '0'))) + ' BTC',
-          timestamp,
-          status: confirmed ? 'Confirmed' : 'Pending',
-          incoming,
+          timestamp, status: confirmed ? 'Confirmed' : 'Pending', incoming,
           explorerUrl: BTC_EXPLORER[network] + hash,
         };
       }).filter((row: any) => row.hash);
@@ -231,7 +229,7 @@ export default async function handler(req: any, res: any) {
         chain, network, walletAddress: address, rows, limit: 50,
         complete: rows.length < 50,
         source: indexer === 'mempool.space' ? 'mempool-space-esplora-indexer' : 'blockstream-esplora-fallback',
-        providers: { primary: 'mempool.space', used: indexer },
+        providers: { primary: 'mempool.space', fallback: 'blockstream-esplora', used: indexer },
       });
     }
 
@@ -280,8 +278,8 @@ export default async function handler(req: any, res: any) {
           raw_data: { contract: [{
             type: Number(tx?.contractType) === 1 ? 'TransferContract' : String(tx?.contractType || ''),
             parameter: { value: {
-              owner_address: tronAddressHex(String(tx?.ownerAddress || '')),
-              to_address: tronAddressHex(String(tx?.toAddress || tx?.contractData?.to_address || '')),
+              owner_address: /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(String(tx?.ownerAddress || '')) ? tronAddressHex(String(tx.ownerAddress)) : '',
+              to_address: /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(String(tx?.toAddress || tx?.contractData?.to_address || '')) ? tronAddressHex(String(tx.toAddress || tx.contractData.to_address)) : '',
               amount: String(tx?.contractData?.amount ?? tx?.amount ?? '0'),
             } },
           }] },
