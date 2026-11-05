@@ -55,7 +55,9 @@ export default function ImportToken() {
         } catch {}
         found = { id: `custom-${selectedBlockchain}-${value}`, name, symbol, balance, balanceUSD: 0, contractAddress: value, decimals, blockchain: selectedBlockchain };
       } else {
-        const chainId=getCentralEvmChainId(selectedBlockchain,network);
+        if (!['ethereum','bnb','polygon','arbitrum'].includes(selectedBlockchain)) throw new Error('Custom token import is supported only on EVM chains and Solana.');
+        const evmChain = selectedBlockchain as Exclude<Blockchain,'solana'|'bitcoin'|'tron'>;
+        const chainId=getCentralEvmChainId(evmChain,network);
         if (!ethers.isAddress(value)) throw new Error('Enter a valid token contract address.');
         const checksumAddress = ethers.getAddress(value);
         const [actualChainId, bytecode] = await Promise.all([
