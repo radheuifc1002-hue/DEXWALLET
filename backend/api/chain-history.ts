@@ -282,7 +282,7 @@ export default async function handler(req: any, res: any) {
       const detail = transactionDetails.get(hash);
       const timestamp = Math.floor(Number(detail?.info?.blockTimeStamp || tx?.block_timestamp || tx?.raw_data?.timestamp || 0) / 1000);
       const confirmed = Boolean(detail?.info?.blockNumber || tx?.blockNumber || tx?.block_number || (Array.isArray(tx?.ret) && tx.ret.length));
-      const success = String(alchemy?.info?.receipt?.result || detail?.transaction?.ret?.[0]?.contractRet || tx?.ret?.[0]?.contractRet || '') === 'SUCCESS';
+      const success = String(detail?.info?.receipt?.result || detail?.transaction?.ret?.[0]?.contractRet || tx?.ret?.[0]?.contractRet || '') === 'SUCCESS';
       return {
         id: hash + ':native', hash,
         title: incoming ? 'Received TRX' : 'Sent TRX',
