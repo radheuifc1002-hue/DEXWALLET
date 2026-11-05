@@ -2,17 +2,14 @@ import { consumeRateLimit } from './_lib/rate-limit.js';
 
 type Chain = 'bitcoin' | 'tron';
 type Network = 'mainnet' | 'testnet';
-const BTC_NETWORK: Record<Network, string> = {
-  mainnet: 'bitcoin-mainnet',
-  // Alchemy's indexed UTXO REST API supports Testnet4 (not legacy Testnet3).
-  testnet: 'bitcoin-testnet4',
+const BTC_API: Record<Network, string> = {
+  mainnet: 'https://mempool.space/api',
+  // DEXWALLET Bitcoin testnet uses Testnet4.
+  testnet: 'https://mempool.space/testnet4/api',
 };
-function alchemyBitcoinUrl(network: Network, address: string): string {
-  const scoped = process.env['ALCHEMY_BITCOIN_' + network.toUpperCase() + '_API_KEY'];
-  const key = scoped || process.env.ALCHEMY_API_KEY;
-  if (!key) throw new Error('history_provider_not_configured');
-  return 'https://' + BTC_NETWORK[network] + '.g.alchemy.com/v2/' + encodeURIComponent(key)
-    + '/api/v2/address/' + encodeURIComponent(address) + '?details=txids&page=1&pageSize=50';
+function bitcoinAddressHistoryUrl(network: Network, address: string, afterTxid?: string): string {
+  const base = BTC_API[network] + '/address/' + encodeURIComponent(address) + '/txs';
+  return afterTxid ? base + '/chain/' + encodeURIComponent(afterTxid) : base;
 }
 const BTC_EXPLORER: Record<Network, string> = {
   mainnet: 'https://mempool.space/tx/',
@@ -150,58 +147,70 @@ export default async function handler(req: any, res: any) {
 
   try {
     if (chain === 'bitcoin') {
-      const indexed = await getJson(alchemyBitcoinUrl(network, address));
-      // Alchemy's address endpoint returns a numeric `txs` count and a `txids`
-      // array. Full transaction bodies must be fetched from /api/v2/tx/{txid}.
-      const txids = Array.isArray(indexed?.txids) ? indexed.txids.slice(0, 50).map(String) : [];
-      const txs: any[] = [];
-      for (let offset = 0; offset < txids.length; offset += 8) {
-        const batch = await Promise.all(txids.slice(offset, offset + 8).map(async (txid: string) => {
-          try {
-            return await getJson(alchemyBitcoinUrl(network, address).replace(
-              /\/api\/v2\/address\/[^?]+\?.*$/,
-              '/api/v2/tx/' + encodeURIComponent(txid),
-            ));
-          } catch (error) {
-            console.warn('bitcoin_history_tx_fetch_failed', txid, error instanceof Error ? error.message : 'unknown');
-            return null;
-          }
-        }));
-        txs.push(...batch.filter(Boolean));
+      // Mempool.space/Esplora is the address-history indexer. It returns full
+      // transaction bodies, so no Alchemy UTXO/indexing entitlement is needed.
+      // Fetch the first page, then continue confirmed-history pagination until
+      // we have at most 50 unique transactions.
+      const seen = new Map<string, any>();
+      const firstPage = await getJson(bitcoinAddressHistoryUrl(network, address));
+      for (const tx of Array.isArray(firstPage) ? firstPage : []) {
+        const txid = String(tx?.txid || '');
+        if (txid) seen.set(txid, tx);
       }
+      let cursor = [...seen.keys()].filter(Boolean).at(-1) || '';
+      for (let page = 0; page < 3 && seen.size < 50 && cursor; page++) {
+        const batch = await getJson(bitcoinAddressHistoryUrl(network, address, cursor));
+        if (!Array.isArray(batch) || batch.length === 0) break;
+        const before = seen.size;
+        for (const tx of batch) {
+          const txid = String(tx?.txid || '');
+          if (txid) seen.set(txid, tx);
+        }
+        const nextCursor = String(batch[batch.length - 1]?.txid || '');
+        if (seen.size === before || !nextCursor || nextCursor === cursor) break;
+        cursor = nextCursor;
+      }
+      const txs = [...seen.values()].slice(0, 50);
       const rows = txs.map((tx: any) => {
         const inputs = Array.isArray(tx?.vin) ? tx.vin : [];
         const outputs = Array.isArray(tx?.vout) ? tx.vout : [];
-        const addresses = (entry: any): string[] => Array.isArray(entry?.addresses)
-          ? entry.addresses.map(String) : entry?.address ? [String(entry.address)] : [];
         let sent = 0n;
         for (const input of inputs) {
-          if (addresses(input).includes(address)) sent += BigInt(String(input?.value || '0'));
+          if (String(input?.prevout?.scriptpubkey_address || '') === address) {
+            sent += BigInt(String(input?.prevout?.value || '0'));
+          }
         }
         let received = 0n;
         for (const output of outputs) {
-          if (addresses(output).includes(address)) received += BigInt(String(output?.value || '0'));
+          if (String(output?.scriptpubkey_address || '') === address) {
+            received += BigInt(String(output?.value || '0'));
+          }
         }
         const delta = received - sent;
-        const incoming = delta >= 0n;
-        const hash = String(tx?.txid || tx?.hash || '');
+        const incoming = sent === 0n || delta >= 0n;
+        const amount = incoming ? received : sent - received;
+        const hash = String(tx?.txid || '');
         const other = incoming
-          ? inputs.flatMap(addresses).find((item: string) => item !== address)
-          : outputs.flatMap(addresses).find((item: string) => item !== address);
-        const confirmed = Number(tx?.confirmations || 0) > 0 || Number(tx?.blockHeight || 0) > 0;
-        const timestamp = Number(tx?.blockTime || tx?.blocktime || tx?.time || 0);
+          ? inputs.map((input: any) => String(input?.prevout?.scriptpubkey_address || '')).find((item: string) => item && item !== address)
+          : outputs.map((output: any) => String(output?.scriptpubkey_address || '')).find((item: string) => item && item !== address);
+        const confirmed = Boolean(tx?.status?.confirmed);
+        const timestamp = confirmed ? Number(tx?.status?.block_time || 0) : 0;
         return {
-          id: hash, hash, title: incoming ? 'Received BTC' : 'Sent BTC',
-          subtitle: other ? (incoming ? 'From ' : 'To ') + short(String(other)) : 'Bitcoin transaction',
-          amount: (incoming ? '+' : '-') + btc(delta < 0n ? -delta : delta) + ' BTC',
-          timestamp: confirmed ? timestamp : 0,
-          status: confirmed ? 'Confirmed' : 'Pending', incoming,
+          id: hash, hash,
+          title: incoming ? 'Received BTC' : 'Sent BTC',
+          subtitle: other ? (incoming ? 'From ' : 'To ') + short(other) : 'Bitcoin transaction',
+          amount: (incoming ? '+' : '-') + btc(amount) + ' BTC',
+          fee: btc(BigInt(String(tx?.fee || '0'))) + ' BTC',
+          timestamp,
+          status: confirmed ? 'Confirmed' : 'Pending',
+          incoming,
           explorerUrl: BTC_EXPLORER[network] + hash,
         };
       }).filter((row: any) => row.hash);
       return res.status(200).json({
         chain, network, walletAddress: address, rows, limit: 50,
-        complete: rows.length < 50, source: 'alchemy-utxo-indexer',
+        complete: rows.length < 50,
+        source: 'mempool-space-esplora-indexer',
       });
     }
 
@@ -323,9 +332,7 @@ export default async function handler(req: any, res: any) {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'unknown';
     console.error('chain_history_failed', chain, network, message);
-    if (chain === 'bitcoin' && message === 'upstream_http_401') {
-      return res.status(503).json({ error: { code: 'bitcoin_utxo_access_not_enabled' } });
-    }
+
     return res.status(502).json({ error: { code: 'history_provider_unavailable' } });
   }
 }
