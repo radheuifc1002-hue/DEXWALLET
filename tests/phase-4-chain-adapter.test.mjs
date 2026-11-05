@@ -8,9 +8,9 @@ const vault=read('mobile/services/walletVaultService.ts');
 const wallet=read('mobile/services/walletService.ts');
 
 test('Phase 4: chain adapters are registered by extensible string identifier',()=>{
-  assert.match(registry,/export type ChainAdapterId = string/);
+  assert.match(registry,/export type ChainAdapterId = WalletChainId/);
   assert.match(registry,/registerChainAdapter\(adapter: ChainAdapter\)/);
-  assert.match(registry,/Map<ChainAdapterId, ChainAdapter>/);
+  assert.match(registry,/new Map<WalletChainId, ChainAdapter>/);
   assert.match(registry,/getRegisteredChainAdapters/);
   assert.match(registry,/deriveAddressForChain/);
   assert.match(registry,/A chain adapter is already registered/);
