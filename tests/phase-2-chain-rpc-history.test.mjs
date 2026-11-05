@@ -47,19 +47,17 @@ test('TRON RPC adapter routes node methods through Alchemy', () => {
 });
 
 test('Bitcoin address history uses public Mempool.space Esplora indexing', () => {
-  assert.match(history, /bitcoin-testnet4/);
-  assert.match(history, /api\/v2\/address\//);
+  assert.match(history, /mempool\\.space\\/api/);
+  assert.match(history, /mempool\\.space\\/testnet4\\/api/);
   assert.match(history, /mempool-space-esplora-indexer/);
-  assert.match(history, /details=txids/);
-  assert.match(history, /bitcoin_utxo_access_not_enabled/);
+  assert.match(history, /txs\\/chain/);
+  assert.match(history, /prevout/);
 });
 
-test('Bitcoin balance remains on the configured RPC while history uses the public Esplora indexer', () => {
+test('Bitcoin balance remains on its configured RPC while history uses Esplora', () => {
   assert.match(balances, /bitcoin-testnet4/);
-  assert.match(balances, /api\/v2\/address\//);
-  assert.match(history, /bitcoin-testnet4/);
-  assert.match(history, /api\/v2\/address\//);
-  assert.match(history, /alchemy-utxo-indexer/);
+  assert.match(balances, /api\\/v2\\/address\\//);
+  assert.match(history, /mempool-space-esplora-indexer/);
 });
 
 test('TRON uses Alchemy first for transaction details and falls back to TronGrid on failure', () => {
