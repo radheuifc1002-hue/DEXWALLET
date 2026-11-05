@@ -69,11 +69,16 @@ test('TRON uses Alchemy first for transaction details and falls back to TronGrid
   assert.match(balances, /tron-mainnet/);
   assert.match(balances, /wallet\/getaccount/);
   assert.match(history, /\/transactions\/trc20/);
-  assert.match(history, /trongrid-v1/);
+  assert.match(history, /trongrid-index/);
   assert.match(history, /tron-mainnet/);
   assert.match(history, /wallet\/gettransactionbyid/);
   assert.match(history, /walletsolidity\/gettransactioninfobyid/);
   assert.match(history, /trongrid-index\+alchemy-primary-trongrid-fallback/);
+  assert.match(history, /apilist\\.tronscanapi\\.com/);
+  assert.match(history, /nileapi\\.tronscan\\.org/);
+  assert.match(history, /api\\/token_trc20\\/transfers/);
+  assert.match(history, /tron_trongrid_indexer_failed_using_tronscan_fallback/);
+  assert.match(history, /tronscan-index-fallback/);
   assert.match(history, /tronGridPost\(network, '\/wallet\/gettransactionbyid'/);
   assert.match(history, /tronGridPost\(network, '\/walletsolidity\/gettransactioninfobyid'/);
   assert.match(history, /tron_alchemy_detail_failed_using_trongrid_fallback/);
