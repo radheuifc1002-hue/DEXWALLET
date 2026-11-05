@@ -87,6 +87,8 @@ test('Asset details enables Bitcoin and TRON history instead of displaying the d
   assert.doesNotMatch(screen, /Transaction history indexing for this chain is not enabled yet/);
   assert.match(screen, /fetchIndexedChainHistory/);
   assert.match(client, /\/api\/chain-history/);
+  assert.match(client, /bitcoin_utxo_access_not_enabled/);
+  assert.match(client, /Enable the Bitcoin UTXO API/);
 });
 
 test('Generated HD wallet setup appends to the active vault instead of silently reusing the current account', () => {
