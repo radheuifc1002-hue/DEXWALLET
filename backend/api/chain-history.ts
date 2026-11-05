@@ -157,7 +157,8 @@ export default async function handler(req: any, res: any) {
         const txid = String(tx?.txid || '');
         if (txid) seen.set(txid, tx);
       }
-      let cursor = [...seen.keys()].filter(Boolean).at(-1) || '';
+      const firstConfirmed = [...seen.values()].filter((tx: any) => tx?.status?.confirmed);
+      let cursor = String(firstConfirmed[firstConfirmed.length - 1]?.txid || '');
       for (let page = 0; page < 3 && seen.size < 50 && cursor; page++) {
         const batch = await getJson(bitcoinAddressHistoryUrl(network, address, cursor));
         if (!Array.isArray(batch) || batch.length === 0) break;
@@ -166,7 +167,8 @@ export default async function handler(req: any, res: any) {
           const txid = String(tx?.txid || '');
           if (txid) seen.set(txid, tx);
         }
-        const nextCursor = String(batch[batch.length - 1]?.txid || '');
+        const confirmedBatch = batch.filter((tx: any) => tx?.status?.confirmed);
+        const nextCursor = String(confirmedBatch[confirmedBatch.length - 1]?.txid || '');
         if (seen.size === before || !nextCursor || nextCursor === cursor) break;
         cursor = nextCursor;
       }
