@@ -76,7 +76,6 @@ export default function ImportToken() {
         found = { id: `custom-${selectedBlockchain}-${value}`, name, symbol, balance, balanceUSD: 0, contractAddress: value, decimals, blockchain: selectedBlockchain };
       } else if (isTron) {
         if (!/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(value)) throw new Error('Enter a valid TRC-20 contract address.');
-        const contractHex = tronHexAddress(value);
         const ownerHex = tronHexAddress(walletAddress);
         const [nameRaw, symbolRaw, decimalsRaw, balanceRaw] = await Promise.all([
           tronConstantCall(value, walletAddress, 'name()'),
