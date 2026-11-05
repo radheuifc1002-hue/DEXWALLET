@@ -6,9 +6,9 @@
     "orientation": "portrait",
     "scheme": "xuwallet",
     "userInterfaceStyle": "light",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/xu-icon.svg",
     "splash": {
-      "image": "./assets/splash.png",
+      "image": "./assets/xu-splash.svg",
       "resizeMode": "contain",
       "backgroundColor": "#FFFFFF"
     },
@@ -23,51 +23,33 @@
     "android": {
       "package": "com.xuwallet.app",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icon.png",
-        "backgroundColor": "#0F0E17"
+        "foregroundImage": "./assets/xu-icon.svg",
+        "backgroundColor": "#6C4CF1"
       },
       "permissions": [
         "android.permission.USE_BIOMETRIC",
         "android.permission.USE_FINGERPRINT"
       ]
     },
-    "web": {
-      "bundler": "metro",
-      "output": "static"
-    },
+    "web": { "bundler": "metro", "output": "static" },
     "plugins": [
-      [
-        "expo-router",
-        {
-          "root": "./app"
-        }
-      ],
-      [
-        "expo-splash-screen",
-        {
-          "image": "./assets/splash.png",
-          "imageWidth": 220,
-          "resizeMode": "contain",
-          "backgroundColor": "#0F0E17"
-        }
-      ],
-      [
-        "expo-local-authentication",
-        {
-          "faceIDPermission": "XU Wallet uses Face ID to unlock your wallet securely."
-        }
-      ],
+      ["expo-router", { "root": "./app" }],
+      ["expo-splash-screen", {
+        "image": "./assets/xu-splash.svg",
+        "imageWidth": 180,
+        "resizeMode": "contain",
+        "backgroundColor": "#FFFFFF"
+      }],
+      ["expo-local-authentication", {
+        "faceIDPermission": "XU Wallet uses Face ID to unlock your wallet securely."
+      }],
       "expo-secure-store",
       "expo-web-browser"
     ],
-    "experiments": {
-      "typedRoutes": true
-    },
+    "experiments": { "typedRoutes": true },
     "extra": {
       "router": {},
-      "eas": {
-        "projectId": "9e96fad3-bc39-49d9-b5a7-ae16531c425c"
-      }
+      "eas": { "projectId": "9e96fad3-bc39-49d9-b5a7-ae16531c425c" }
     }
   }
 }
