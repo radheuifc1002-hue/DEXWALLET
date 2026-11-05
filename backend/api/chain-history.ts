@@ -206,7 +206,7 @@ export default async function handler(req: any, res: any) {
     const discoveredTxids = [...new Set([
       ...(Array.isArray(nativePayload?.data) ? nativePayload.data : []).map((tx: any) => String(tx?.txID || tx?.txid || '')),
       ...(Array.isArray(tokenPayload?.data) ? tokenPayload.data : []).map((tx: any) => String(tx?.transaction_id || '')),
-    ].filter((txid: string) => /^[a-fA-F0-9]{64}$/.test(txid)))].slice(0, 50);
+    ].filter((txid: string) => /^[a-fA-F0-9]{64}$/.test(txid)))].slice(0, 10);
     const alchemyDetails = new Map<string, { transaction: any; info: any }>();
     if (alchemyBase) {
       for (let offset = 0; offset < discoveredTxids.length; offset += 5) {
