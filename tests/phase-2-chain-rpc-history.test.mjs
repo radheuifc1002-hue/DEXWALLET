@@ -47,20 +47,20 @@ test('TRON RPC adapter routes node methods through Alchemy', () => {
 });
 
 test('Bitcoin address history uses public Mempool.space Esplora indexing', () => {
-  assert.match(history, /mempool\\.space\\/api/);
-  assert.match(history, /mempool\\.space\\/testnet4\\/api/);
-  assert.match(history, /blockstream\\.info\\/api/);
-  assert.match(history, /blockstream\\.info\\/testnet4\\/api/);
+  assert.match(history, /mempool\.space\/api/);
+  assert.match(history, /mempool\.space\/testnet4\/api/);
+  assert.match(history, /blockstream\.info\/api/);
+  assert.match(history, /blockstream\.info\/testnet4\/api/);
   assert.match(history, /bitcoin_mempool_indexer_failed_using_blockstream_fallback/);
   assert.match(history, /mempool-space-esplora-indexer/);
   assert.match(history, /blockstream-esplora-fallback/);
-  assert.match(history, /txs\\/chain/);
+  assert.match(history, /txs\/chain/);
   assert.match(history, /prevout/);
 });
 
 test('Bitcoin balance remains on its configured RPC while history uses Esplora', () => {
   assert.match(balances, /bitcoin-testnet4/);
-  assert.match(balances, /api\\/v2\\/address\\//);
+  assert.match(balances, /api\/v2\/address\//);
   assert.match(history, /mempool-space-esplora-indexer/);
   assert.match(history, /blockstream-esplora-fallback/);
 });
@@ -74,9 +74,9 @@ test('TRON uses Alchemy first for transaction details and falls back to TronGrid
   assert.match(history, /wallet\/gettransactionbyid/);
   assert.match(history, /walletsolidity\/gettransactioninfobyid/);
   assert.match(history, /trongrid-index\+alchemy-primary-trongrid-fallback/);
-  assert.match(history, /apilist\\.tronscanapi\\.com/);
-  assert.match(history, /nileapi\\.tronscan\\.org/);
-  assert.match(history, /api\\/token_trc20\\/transfers/);
+  assert.match(history, /apilist\.tronscanapi\.com/);
+  assert.match(history, /nileapi\.tronscan\.org/);
+  assert.match(history, /api\/token_trc20\/transfers/);
   assert.match(history, /tron_trongrid_indexer_failed_using_tronscan_fallback/);
   assert.match(history, /tronscan-index-fallback/);
   assert.match(history, /tronGridPost\(network, '\/wallet\/gettransactionbyid'/);
