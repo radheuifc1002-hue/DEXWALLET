@@ -46,15 +46,15 @@ test('TRON RPC adapter routes node methods through Alchemy', () => {
   assert.match(health, /probeChainRpc/);
 });
 
-test('Bitcoin address history uses Alchemy indexed UTXO API', () => {
+test('Bitcoin address history uses public Mempool.space Esplora indexing', () => {
   assert.match(history, /bitcoin-testnet4/);
   assert.match(history, /api\/v2\/address\//);
-  assert.match(history, /alchemy-utxo-indexer/);
+  assert.match(history, /mempool-space-esplora-indexer/);
   assert.match(history, /details=txids/);
   assert.match(history, /bitcoin_utxo_access_not_enabled/);
 });
 
-test('Bitcoin balance and history use Alchemy UTXO indexed APIs', () => {
+test('Bitcoin balance remains on the configured RPC while history uses the public Esplora indexer', () => {
   assert.match(balances, /bitcoin-testnet4/);
   assert.match(balances, /api\/v2\/address\//);
   assert.match(history, /bitcoin-testnet4/);
@@ -92,8 +92,7 @@ test('Asset details enables Bitcoin and TRON history instead of displaying the d
   assert.doesNotMatch(screen, /Transaction history indexing for this chain is not enabled yet/);
   assert.match(screen, /fetchIndexedChainHistory/);
   assert.match(client, /\/api\/chain-history/);
-  assert.match(client, /bitcoin_utxo_access_not_enabled/);
-  assert.match(client, /Enable the Bitcoin UTXO API/);
+
 });
 
 test('Generated HD wallet setup appends to the active vault instead of silently reusing the current account', () => {
