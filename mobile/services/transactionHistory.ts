@@ -68,24 +68,72 @@ export async function fetchIndexedChainHistory(options: {
   walletAddress: string;
 }): Promise<IndexedChainHistoryResult> {
   if (!options.walletAddress) throw new Error('Wallet address is missing for this network.');
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 25000);
-  try {
-    const response = await fetch('https://dexwallet-api.vercel.app/api/chain-history', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify(options),
-      signal: controller.signal,
-    });
-    const payload = await response.json();
-    if (!response.ok) {
-      const code = String(payload?.error?.code || '');
-      if (code === 'history_provider_not_configured') throw new Error('Bitcoin history provider is not configured on the server.');
-      throw new Error('Transaction history is temporarily unavailable. Please try again.');
+
+  // Bitcoin history resolves up to 50 Alchemy transaction IDs into full UTXO
+  // records. That response can take longer than the EVM/TRON history calls,
+  // so give the Android client a wider deadline and retry transient failures.
+  const attempts = options.chain === 'bitcoin' ? 3 : 1;
+  const requestTimeoutMs = options.chain === 'bitcoin' ? 45000 : 25000;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
+    try {
+      const response = await fetch('https://dexwallet-api.vercel.app/api/chain-history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
+          chain: options.chain,
+          network: options.network,
+          walletAddress: options.walletAddress.trim(),
+        }),
+        signal: controller.signal,
+      });
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        const code = String(payload?.error?.code || '');
+        if (code === 'history_provider_not_configured') {
+          throw new Error('Bitcoin history provider is not configured on the server.');
+        }
+        const retryable = options.chain === 'bitcoin'
+          && (response.status === 408 || response.status === 425 || response.status === 429
+            || response.status === 502 || response.status === 503 || response.status === 504
+            || code === 'history_provider_unavailable');
+        if (retryable && attempt + 1 < attempts) {
+          lastError = new Error('Bitcoin history request failed temporarily (HTTP ' + response.status + ').');
+        } else {
+          throw new Error('Transaction history is temporarily unavailable. Please try again.');
+        }
+      } else {
+        if (!Array.isArray(payload?.rows)) throw new Error('The history service returned an invalid response.');
+        return {
+          rows: payload.rows as IndexedChainHistoryRow[],
+          complete: Boolean(payload.complete),
+          source: String(payload.source || ''),
+        };
+      }
+    } catch (error) {
+      lastError = error;
+      const isAbort = error instanceof Error && error.name === 'AbortError';
+      const isTransientNetworkError = !(error instanceof Error)
+        || isAbort
+        || /network request failed|fetch failed|temporarily/i.test(error.message);
+      if (options.chain !== 'bitcoin' || !isTransientNetworkError || attempt + 1 >= attempts) {
+        if (error instanceof Error && error.message !== 'Aborted') throw error;
+        throw new Error('Transaction history is temporarily unavailable. Please try again.');
+      }
+    } finally {
+      clearTimeout(timeout);
     }
-    if (!Array.isArray(payload?.rows)) throw new Error('The history service returned an invalid response.');
-    return { rows: payload.rows as IndexedChainHistoryRow[], complete: Boolean(payload.complete), source: String(payload.source || '') };
-  } finally {
-    clearTimeout(timeout);
+
+    if (attempt + 1 < attempts) {
+      await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+    }
   }
+
+  throw lastError instanceof Error
+    ? new Error('Transaction history is temporarily unavailable. Please try again.')
+    : new Error('Could not load Bitcoin transaction history. Please try again.');
 }

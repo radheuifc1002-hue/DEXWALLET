@@ -11,3 +11,17 @@ test('RPC manager retries primary HTTP authorization failures through configured
 test('send flow preserves submitted transaction hash before confirmation polling',()=>{assert.match(send,/submittedHash = txHash;/);assert.match(send,/setHash\(txHash\);/);assert.match(send,/setReview\(null\);/);assert.match(send,/Transaction was submitted, but confirmation could not be verified/);});
 test('wallet balances use central RPC for native and imported assets',()=>{assert.match(ctx,/refreshWalletTokenBalances/);assert.match(balanceService,/serverRpcRequest/);assert.doesNotMatch(balanceService,/new ethers\.JsonRpcProvider/);assert.match(balanceService,/getTokenAccountsByOwner/);});
 test('web balance service contains no direct public RPC URLs',()=>{assert.doesNotMatch(webBalance,/llamarpc|bsc-dataseed|polygon-rpc\\.com|mainnet-beta\\.solana\\.com/);});
+
+const btcHistoryClient=readFileSync(new URL('../mobile/services/transactionHistory.ts',import.meta.url),'utf8');
+const btcHistoryApi=readFileSync(new URL('../backend/api/chain-history.ts',import.meta.url),'utf8');
+test('Bitcoin history API request from Android client matches server contract and parses API response',()=>{
+  const clientCall=btcHistoryClient.slice(btcHistoryClient.indexOf('export async function fetchIndexedChainHistory'));
+  assert.match(clientCall,/fetch\('https:\/\/dexwallet-api\.vercel\.app\/api\/chain-history'/);
+  assert.match(clientCall,/method: 'POST'/);
+  assert.match(clientCall,/chain: options\.chain,[\s\S]*?network: options\.network,[\s\S]*?walletAddress: options\.walletAddress\.trim\(\)/);
+  assert.match(clientCall,/if \(!response\.ok\)/);
+  assert.match(clientCall,/if \(!Array\.isArray\(payload\?\.rows\)\)/);
+  assert.match(clientCall,/rows: payload\.rows[\s\S]*?complete: Boolean\(payload\.complete\)/);
+  assert.match(btcHistoryApi,/chain, network, walletAddress: address, rows, limit: 50,[\s\S]*?complete: rows\.length < 50, source: 'alchemy-utxo-indexer'/);
+  assert.match(btcHistoryApi,/history_provider_unavailable/);
+});
