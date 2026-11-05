@@ -62,7 +62,7 @@ test('Bitcoin balance and history use Alchemy UTXO indexed APIs', () => {
   assert.match(history, /alchemy-utxo-indexer/);
 });
 
-test('TRON node and balance use Alchemy; TronGrid discovers address history and Alchemy enriches mainnet tx details', () => {
+test('TRON uses Alchemy first for transaction details and falls back to TronGrid on failure', () => {
   assert.match(balances, /tron-mainnet/);
   assert.match(balances, /wallet\/getaccount/);
   assert.match(history, /\/transactions\/trc20/);
@@ -70,7 +70,12 @@ test('TRON node and balance use Alchemy; TronGrid discovers address history and 
   assert.match(history, /tron-mainnet/);
   assert.match(history, /wallet\/gettransactionbyid/);
   assert.match(history, /walletsolidity\/gettransactioninfobyid/);
-  assert.match(history, /trongrid-index\+alchemy-tx-detail/);
+  assert.match(history, /trongrid-index\+alchemy-primary-trongrid-fallback/);
+  assert.match(history, /tronGridPost\(network, '\/wallet\/gettransactionbyid'/);
+  assert.match(history, /tronGridPost\(network, '\/walletsolidity\/gettransactioninfobyid'/);
+  assert.match(history, /tron_alchemy_detail_failed_using_trongrid_fallback/);
+  assert.match(history, /alchemyDetailFailures/);
+  assert.match(history, /tronGridDetailFallbacks/);
   assert.match(history, /Alchemy provides TRON node RPC/);
   assert.match(rpc, /tron-mainnet/);
   assert.match(rpc, /alchemyBase\('tron',network\)/);
