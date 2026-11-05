@@ -23,6 +23,26 @@ export default function ImportToken() {
   const [token, setToken] = useState<Token | null>(null);
   const [error, setError] = useState('');
   const isSolana = selectedBlockchain === 'solana';
+  const isTron = selectedBlockchain === 'tron';
+
+  const tronHexAddress = (address: string) => {
+    const decoded = bs58.decode(address);
+    if (decoded.length !== 25) throw new Error('Enter a valid TRON address.');
+    return Buffer.from(decoded.slice(0, 21)).toString('hex');
+  };
+  const tronConstantCall = async (contractAddress: string, ownerAddress: string, selector: string, parameter = '') => {
+    const result = await serverRpcRequest<any>('tron', network, 'triggerconstantcontract', [{
+      owner_address: tronHexAddress(ownerAddress),
+      contract_address: tronHexAddress(contractAddress),
+      function_selector: selector,
+      parameter,
+      visible: false,
+    }]);
+    if (!result?.result?.result || !Array.isArray(result.constant_result) || !result.constant_result[0]) {
+      throw new Error('TRON token contract call failed. Verify the TRC-20 contract and selected network.');
+    }
+    return '0x' + result.constant_result[0];
+  };
 
   const fetchToken = async () => {
     setError('');
@@ -41,8 +61,9 @@ export default function ImportToken() {
         const mintData = Buffer.from(account.value.data[0], 'base64');
         if (mintData.length < 82) throw new Error('Invalid SPL mint account data.');
         const decimals = mintData[44];
-        const accounts=await serverRpcRequest<any>('solana',network,'getTokenAccountsByOwner',[walletAddress,{mint:value},{encoding:'jsonParsed',commitment:'confirmed'}]);
-        const balance = (accounts?.value || []).reduce((sum: number, item: any) => sum + Number(item.account.data.parsed.info.tokenAmount.uiAmountString || 0), 0);
+        const tokenAccountFilter = account.value.owner === TOKEN_2022_PROGRAM ? { programId: TOKEN_2022_PROGRAM } : { mint: value };
+        const accounts = await serverRpcRequest<any>('solana',network,'getTokenAccountsByOwner',[walletAddress,tokenAccountFilter,{encoding:'jsonParsed',commitment:'confirmed'}]);
+        const balance = (accounts?.value || []).filter((item:any)=>item?.account?.data?.parsed?.info?.mint===value).reduce((sum: number, item: any) => sum + Number(item.account.data.parsed.info.tokenAmount.uiAmountString || 0), 0);
         let name = 'Solana SPL Token';
         let symbol = `SPL-${value.slice(0, 4)}`;
         try {
@@ -54,8 +75,26 @@ export default function ImportToken() {
           }
         } catch {}
         found = { id: `custom-${selectedBlockchain}-${value}`, name, symbol, balance, balanceUSD: 0, contractAddress: value, decimals, blockchain: selectedBlockchain };
+      } else if (isTron) {
+        if (!/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(value)) throw new Error('Enter a valid TRC-20 contract address.');
+        const ownerHex = tronHexAddress(walletAddress);
+        const [nameRaw, symbolRaw, decimalsRaw, balanceRaw] = await Promise.all([
+          tronConstantCall(value, walletAddress, 'name()'),
+          tronConstantCall(value, walletAddress, 'symbol()'),
+          tronConstantCall(value, walletAddress, 'decimals()'),
+          tronConstantCall(value, walletAddress, 'balanceOf(address)', ownerHex.slice(2).padStart(64, '0')),
+        ]);
+        const abi = ethers.AbiCoder.defaultAbiCoder();
+        const decodeText = (raw: string) => { try { return String(abi.decode(['string'], raw)[0]); } catch { return String(abi.decode(['bytes32'], raw)[0]).replace(/\\0+$/, ''); } };
+        const name = decodeText(nameRaw), symbol = decodeText(symbolRaw);
+        const decimals = Number(abi.decode(['uint256'], decimalsRaw)[0]);
+        const rawBalance = abi.decode(['uint256'], balanceRaw)[0];
+        if (!name || !symbol || !Number.isInteger(decimals) || decimals < 0 || decimals > 255) throw new Error('Invalid TRC-20 token metadata.');
+        found = { id: `custom-tron-${value}`, name, symbol, balance: Number(ethers.formatUnits(rawBalance, decimals)), balanceUSD: 0, contractAddress: value, decimals, blockchain: 'tron' };
       } else {
-        const chainId=getCentralEvmChainId(selectedBlockchain,network);
+        if (!['ethereum','bnb','polygon','arbitrum'].includes(selectedBlockchain)) throw new Error('Custom token import is not supported on this chain.');
+        const evmChain = selectedBlockchain as Exclude<Blockchain,'solana'|'bitcoin'|'tron'>;
+        const chainId=getCentralEvmChainId(evmChain,network);
         if (!ethers.isAddress(value)) throw new Error('Enter a valid token contract address.');
         const checksumAddress = ethers.getAddress(value);
         const [actualChainId, bytecode] = await Promise.all([
@@ -105,11 +144,11 @@ export default function ImportToken() {
       </View>
       <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
         <Text style={s.title}>Add a custom asset</Text>
-        <Text style={s.subtitle}>{isSolana ? 'Import an SPL token using its mint address.' : `Import an ERC-20 token on ${selectedBlockchain === 'bnb' ? 'BNB Chain' : selectedBlockchain === 'polygon' ? 'Polygon' : 'Ethereum'}.`}</Text>
+        <Text style={s.subtitle}>{isSolana ? 'Import an SPL or Token-2022 asset using its mint address.' : isTron ? 'Import a TRC-20 token using its contract address.' : `Import an ERC-20 token on ${selectedBlockchain === 'bnb' ? 'BNB Chain' : selectedBlockchain === 'polygon' ? 'Polygon' : selectedBlockchain === 'arbitrum' ? 'Arbitrum' : 'Ethereum'}.`}</Text>
         <View style={s.network}><Ionicons name={'globe-outline'} size={18} color="#6C4CF1" /><Text style={s.networkText}>{selectedBlockchain.toUpperCase()} · {network.toUpperCase()}</Text></View>
-        <Text style={s.label}>{isSolana ? 'Token mint address' : 'ERC-20 contract address'}</Text>
+        <Text style={s.label}>{isSolana ? 'Token mint address' : 'Contract address'}</Text>
         <View style={s.inputCard}>
-          <TextInput value={mintOrContract} onChangeText={(v) => { setMintOrContract(v); setToken(null); setError(''); }} placeholder={isSolana ? 'Enter SPL mint address' : '0x...'} placeholderTextColor="#A09AAC" autoCapitalize="none" autoCorrect={false} style={s.input} />
+          <TextInput value={mintOrContract} onChangeText={(v) => { setMintOrContract(v); setToken(null); setError(''); }} placeholder={isSolana ? 'Enter SPL mint address' : isTron ? 'T...' : '0x...'} placeholderTextColor="#A09AAC" autoCapitalize="none" autoCorrect={false} style={s.input} />
           <TouchableOpacity onPress={async () => { const value = await Clipboard.getStringAsync(); setMintOrContract(value.trim()); setToken(null); }}><Ionicons name="clipboard-outline" size={20} color="#6C4CF1" /></TouchableOpacity>
         </View>
         <TouchableOpacity style={[s.primary, loading && s.disabled]} disabled={loading || !mintOrContract.trim()} onPress={fetchToken}>

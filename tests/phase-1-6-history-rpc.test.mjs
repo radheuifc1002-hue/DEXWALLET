@@ -9,14 +9,13 @@ const health=readFileSync(new URL('../backend/api/rpc-health.ts',import.meta.url
 const screen=readFileSync(new URL('../app/asset-details.tsx',import.meta.url),'utf8');
 const mobile=readFileSync(new URL('../mobile/services/transactionHistory.ts',import.meta.url),'utf8');
 
-test('supported networks are exactly Ethereum, BNB, Polygon and Solana with mainnet/testnet routes',()=>{
-  assert.match(rpc,/export type RpcChain = 'ethereum' \| 'bnb' \| 'polygon' \| 'solana'/);
-  assert.match(rpcRoute,/\['ethereum','bnb','polygon','solana'\]/);
-  assert.match(rpc,/eth-sepolia/);
-  assert.match(rpc,/bnb-testnet/);
-  assert.match(rpc,/polygon-amoy/);
-  assert.match(rpc,/solana-devnet/);
-  assert.doesNotMatch(rpc,/arbitrum|optimism|avalanche|linea/);
+test('supported networks include all seven enabled chains with mainnet/testnet routes',()=>{
+  assert.ok(rpc.includes("export type RpcChain = 'ethereum' | 'bnb' | 'polygon' | 'arbitrum' | 'solana' | 'bitcoin' | 'tron'"));
+  assert.ok(rpcRoute.includes("'bitcoin'"));
+  assert.ok(rpcRoute.includes("'tron'"));
+  for (const network of ['eth-sepolia','bnb-testnet','polygon-amoy','solana-devnet','arb-mainnet','bitcoin-mainnet','tron-mainnet']) {
+    assert.ok(rpc.includes(network), 'missing network route: ' + network);
+  }
 });
 
 test('Alchemy asset transfers use the documented singular category field',()=>{
@@ -62,10 +61,9 @@ test('Solana history pagination is wired to an explicit load older action',()=>{
 });
 
 test('RPC health route actively probes configured providers',()=>{
-  assert.match(rpc,/probeRpcProviders/);
-  assert.match(rpc,/method=chain==='solana'\?'getHealth':'eth_chainId'/);
-  assert.match(health,/await probeRpcProviders/);
-  assert.match(health,/status:healthy\?'healthy'/);
+  assert.ok(health.includes('probeRpcProviders'));
+  assert.ok(health.includes('probeChainRpc'));
+  assert.ok(health.includes("status:healthy?'healthy'"));
 });
 
 test('native DApp browser uses the central EVM gateway and contains no public RPC endpoints',()=>{

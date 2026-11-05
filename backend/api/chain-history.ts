@@ -2,17 +2,17 @@ import { consumeRateLimit } from './_lib/rate-limit.js';
 
 type Chain = 'bitcoin' | 'tron';
 type Network = 'mainnet' | 'testnet';
-const BTC_NETWORK: Record<Network, string> = {
-  mainnet: 'bitcoin-mainnet',
-  // Alchemy's indexed UTXO REST API supports Testnet4 (not legacy Testnet3).
-  testnet: 'bitcoin-testnet4',
+const BTC_API: Record<Network, string> = {
+  mainnet: 'https://mempool.space/api',
+  testnet: 'https://mempool.space/testnet4/api',
 };
-function alchemyBitcoinUrl(network: Network, address: string): string {
-  const scoped = process.env['ALCHEMY_BITCOIN_' + network.toUpperCase() + '_API_KEY'];
-  const key = scoped || process.env.ALCHEMY_API_KEY;
-  if (!key) throw new Error('history_provider_not_configured');
-  return 'https://' + BTC_NETWORK[network] + '.g.alchemy.com/v2/' + encodeURIComponent(key)
-    + '/api/v2/address/' + encodeURIComponent(address) + '?details=txs&page=1&pageSize=50';
+const BTC_FALLBACK_API: Record<Network, string> = {
+  mainnet: 'https://blockstream.info/api',
+  testnet: 'https://blockstream.info/testnet4/api',
+};
+function bitcoinAddressHistoryUrl(network: Network, address: string, afterTxid?: string, fallback = false): string {
+  const base = (fallback ? BTC_FALLBACK_API : BTC_API)[network] + '/address/' + encodeURIComponent(address) + '/txs';
+  return afterTxid ? base + '/chain/' + encodeURIComponent(afterTxid) : base;
 }
 const BTC_EXPLORER: Record<Network, string> = {
   mainnet: 'https://mempool.space/tx/',
@@ -22,10 +22,64 @@ const TRON_API: Record<Network, string> = {
   mainnet: 'https://api.trongrid.io',
   testnet: 'https://nile.trongrid.io',
 };
+const TRONSCAN_API: Record<Network, string> = {
+  mainnet: 'https://apilist.tronscanapi.com',
+  testnet: 'https://nileapi.tronscan.org',
+};
 const TRON_EXPLORER: Record<Network, string> = {
   mainnet: 'https://tronscan.org/#/transaction/',
   testnet: 'https://nile.tronscan.org/#/transaction/',
 };
+
+const TRON_ALCHEMY_NETWORK: Record<Network, string> = {
+  mainnet: 'tron-mainnet',
+  testnet: 'tron-testnet',
+};
+function alchemyTronBase(network: Network): string | null {
+  const scoped = process.env['ALCHEMY_TRON_' + network.toUpperCase() + '_API_KEY'];
+  const key = scoped || process.env.ALCHEMY_API_KEY;
+  // Alchemy testnet and TronGrid Nile are different networks; do not enrich Nile
+  // transaction IDs with Alchemy's Tron testnet (Shasta) endpoint.
+  if (!key || network !== 'mainnet') return null;
+  return 'https://' + TRON_ALCHEMY_NETWORK[network] + '.g.alchemy.com/v2/' + encodeURIComponent(key);
+}
+async function tronGridPost(network: Network, path: string, txid: string, headers: Record<string, string>): Promise<any> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
+  try {
+    const response = await fetch(TRON_API[network] + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...headers },
+      body: JSON.stringify({ value: txid }),
+      signal: controller.signal,
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || data?.Error || data?.error) {
+      throw new Error('trongrid_tx_http_' + response.status);
+    }
+    return data;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function alchemyTronPost(base: string, path: string, txid: string): Promise<any> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
+  try {
+    const response = await fetch(base + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ value: txid }),
+      signal: controller.signal,
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || data?.Error || data?.error) throw new Error('alchemy_tron_tx_http_' + response.status);
+    return data;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function validAddress(chain: Chain, value: string, network: Network): boolean {
   if (chain === 'tron') return /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(value);
@@ -100,58 +154,82 @@ export default async function handler(req: any, res: any) {
 
   try {
     if (chain === 'bitcoin') {
-      const indexed = await getJson(alchemyBitcoinUrl(network, address));
-      // Alchemy's address endpoint returns a numeric `txs` count and a `txids`
-      // array. Full transaction bodies must be fetched from /api/v2/tx/{txid}.
-      const txids = Array.isArray(indexed?.txids) ? indexed.txids.slice(0, 50).map(String) : [];
-      const txs: any[] = [];
-      for (let offset = 0; offset < txids.length; offset += 8) {
-        const batch = await Promise.all(txids.slice(offset, offset + 8).map(async (txid: string) => {
-          try {
-            return await getJson(alchemyBitcoinUrl(network, address).replace(
-              /\/api\/v2\/address\/[^?]+\?.*$/,
-              '/api/v2/tx/' + encodeURIComponent(txid),
-            ));
-          } catch (error) {
-            console.warn('bitcoin_history_tx_fetch_failed', txid, error instanceof Error ? error.message : 'unknown');
-            return null;
+      // Mempool.space is primary; retry the complete history read on Blockstream
+      // if any page fails so results never mix providers or pagination cursors.
+      const loadBitcoinHistory = async (fallback: boolean): Promise<any[]> => {
+        const seen = new Map<string, any>();
+        const firstPage = await getJson(bitcoinAddressHistoryUrl(network, address, undefined, fallback));
+        if (!Array.isArray(firstPage)) throw new Error('bitcoin_indexer_invalid_history_response');
+        for (const tx of firstPage) {
+          const txid = String(tx?.txid || '');
+          if (txid) seen.set(txid, tx);
+        }
+        const confirmedFirstPage = [...seen.values()].filter((tx: any) => tx?.status?.confirmed);
+        let cursor = String(confirmedFirstPage[confirmedFirstPage.length - 1]?.txid || '');
+        for (let page = 0; page < 3 && seen.size < 50 && cursor; page++) {
+          const batch = await getJson(bitcoinAddressHistoryUrl(network, address, cursor, fallback));
+          if (!Array.isArray(batch) || batch.length === 0) break;
+          const before = seen.size;
+          for (const tx of batch) {
+            const txid = String(tx?.txid || '');
+            if (txid) seen.set(txid, tx);
           }
-        }));
-        txs.push(...batch.filter(Boolean));
+          const confirmedBatch = batch.filter((tx: any) => tx?.status?.confirmed);
+          const nextCursor = String(confirmedBatch[confirmedBatch.length - 1]?.txid || '');
+          if (seen.size === before || !nextCursor || nextCursor === cursor) break;
+          cursor = nextCursor;
+        }
+        return [...seen.values()].slice(0, 50);
+      };
+      let indexer: 'mempool.space' | 'blockstream-esplora' = 'mempool.space';
+      let txs: any[];
+      try {
+        txs = await loadBitcoinHistory(false);
+      } catch (primaryError) {
+        console.warn('bitcoin_mempool_indexer_failed_using_blockstream_fallback',
+          primaryError instanceof Error ? primaryError.message : 'unknown');
+        txs = await loadBitcoinHistory(true);
+        indexer = 'blockstream-esplora';
       }
       const rows = txs.map((tx: any) => {
         const inputs = Array.isArray(tx?.vin) ? tx.vin : [];
         const outputs = Array.isArray(tx?.vout) ? tx.vout : [];
-        const addresses = (entry: any): string[] => Array.isArray(entry?.addresses)
-          ? entry.addresses.map(String) : entry?.address ? [String(entry.address)] : [];
         let sent = 0n;
         for (const input of inputs) {
-          if (addresses(input).includes(address)) sent += BigInt(String(input?.value || '0'));
+          if (String(input?.prevout?.scriptpubkey_address || '') === address) {
+            sent += BigInt(String(input?.prevout?.value || '0'));
+          }
         }
         let received = 0n;
         for (const output of outputs) {
-          if (addresses(output).includes(address)) received += BigInt(String(output?.value || '0'));
+          if (String(output?.scriptpubkey_address || '') === address) {
+            received += BigInt(String(output?.value || '0'));
+          }
         }
         const delta = received - sent;
-        const incoming = delta >= 0n;
-        const hash = String(tx?.txid || tx?.hash || '');
+        const incoming = sent === 0n || delta >= 0n;
+        const amount = incoming ? received : sent - received;
+        const hash = String(tx?.txid || '');
         const other = incoming
-          ? inputs.flatMap(addresses).find((item: string) => item !== address)
-          : outputs.flatMap(addresses).find((item: string) => item !== address);
-        const confirmed = Number(tx?.confirmations || 0) > 0 || Number(tx?.blockHeight || 0) > 0;
-        const timestamp = Number(tx?.blockTime || tx?.blocktime || tx?.time || 0);
+          ? inputs.map((input: any) => String(input?.prevout?.scriptpubkey_address || '')).find((item: string) => item && item !== address)
+          : outputs.map((output: any) => String(output?.scriptpubkey_address || '')).find((item: string) => item && item !== address);
+        const confirmed = Boolean(tx?.status?.confirmed);
+        const timestamp = confirmed ? Number(tx?.status?.block_time || 0) : 0;
         return {
-          id: hash, hash, title: incoming ? 'Received BTC' : 'Sent BTC',
-          subtitle: other ? (incoming ? 'From ' : 'To ') + short(String(other)) : 'Bitcoin transaction',
-          amount: (incoming ? '+' : '-') + btc(delta < 0n ? -delta : delta) + ' BTC',
-          timestamp: confirmed ? timestamp : 0,
-          status: confirmed ? 'Confirmed' : 'Pending', incoming,
+          id: hash, hash,
+          title: incoming ? 'Received BTC' : 'Sent BTC',
+          subtitle: other ? (incoming ? 'From ' : 'To ') + short(other) : 'Bitcoin transaction',
+          amount: (incoming ? '+' : '-') + btc(amount) + ' BTC',
+          fee: btc(BigInt(String(tx?.fee || '0'))) + ' BTC',
+          timestamp, status: confirmed ? 'Confirmed' : 'Pending', incoming,
           explorerUrl: BTC_EXPLORER[network] + hash,
         };
       }).filter((row: any) => row.hash);
       return res.status(200).json({
         chain, network, walletAddress: address, rows, limit: 50,
-        complete: rows.length < 50, source: 'alchemy-utxo-indexer',
+        complete: rows.length < 50,
+        source: indexer === 'mempool.space' ? 'mempool-space-esplora-indexer' : 'blockstream-esplora-fallback',
+        providers: { primary: 'mempool.space', fallback: 'blockstream-esplora', used: indexer },
       });
     }
 
@@ -165,9 +243,117 @@ export default async function handler(req: any, res: any) {
       + '/transactions?limit=50&order_by=block_timestamp,desc&only_confirmed=false';
     const tokenUrl = TRON_API[network] + '/v1/accounts/' + encodeURIComponent(address)
       + '/transactions/trc20?limit=50&order_by=block_timestamp,desc';
-    const [nativePayload, tokenPayload] = await Promise.all([
-      getJson(accountUrl, headers), getJson(tokenUrl, headers),
-    ]);
+    let nativePayload: any;
+    let tokenPayload: any;
+    let tronIndexer: 'trongrid' | 'tronscan' = 'trongrid';
+    try {
+      [nativePayload, tokenPayload] = await Promise.all([
+        getJson(accountUrl, headers), getJson(tokenUrl, headers),
+      ]);
+      if (!Array.isArray(nativePayload?.data) || !Array.isArray(tokenPayload?.data)) {
+        throw new Error('trongrid_invalid_history_response');
+      }
+    } catch (primaryError) {
+      console.warn('tron_trongrid_indexer_failed_using_tronscan_fallback',
+        primaryError instanceof Error ? primaryError.message : 'unknown');
+      const scanBase = TRONSCAN_API[network];
+      const scanHeaders: Record<string, string> = process.env.TRONSCAN_API_KEY
+        ? { 'TRON-PRO-API-KEY': process.env.TRONSCAN_API_KEY }
+        : {};
+      const [scanNative, scanTokens] = await Promise.all([
+        getJson(scanBase + '/api/transaction?sort=-timestamp&count=false&limit=50&start=0&address=' + encodeURIComponent(address), scanHeaders),
+        getJson(scanBase + '/api/token_trc20/transfers?limit=50&start=0&relatedAddress=' + encodeURIComponent(address), scanHeaders),
+      ]);
+      const scanNativeRows = Array.isArray(scanNative?.data) ? scanNative.data : [];
+      const scanTokenRows = Array.isArray(scanTokens?.token_transfers) ? scanTokens.token_transfers : [];
+      if (!Array.isArray(scanNative?.data) || !Array.isArray(scanTokens?.token_transfers)) {
+        throw new Error('tronscan_invalid_history_response');
+      }
+      nativePayload = {
+        data: scanNativeRows.map((tx: any) => ({
+          txID: String(tx?.hash || ''),
+          block_timestamp: Number(tx?.timestamp || 0),
+          blockNumber: Number(tx?.block || 0),
+          ret: [{ contractRet: String(tx?.contractRet || tx?.result || '') }],
+          raw_data: { contract: [{
+            type: Number(tx?.contractType) === 1 ? 'TransferContract' : String(tx?.contractType || ''),
+            parameter: { value: {
+              owner_address: /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(String(tx?.ownerAddress || '')) ? tronAddressHex(String(tx.ownerAddress)) : '',
+              to_address: /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(String(tx?.toAddress || tx?.contractData?.to_address || '')) ? tronAddressHex(String(tx.toAddress || tx.contractData.to_address)) : '',
+              amount: String(tx?.contractData?.amount ?? tx?.amount ?? '0'),
+            } },
+          }] },
+        })),
+        meta: {},
+      };
+      tokenPayload = {
+        data: scanTokenRows.map((tx: any) => ({
+          transaction_id: String(tx?.transaction_id || ''),
+          from: String(tx?.from_address || ''),
+          to: String(tx?.to_address || ''),
+          contract_address: String(tx?.contract_address || ''),
+          value: String(tx?.quant || '0'),
+          block_timestamp: Number(tx?.block_ts || 0),
+          confirmed: Boolean(tx?.confirmed),
+          token_info: {
+            symbol: String(tx?.tokenInfo?.tokenAbbr || 'TRC20'),
+            decimals: Number(tx?.tokenInfo?.tokenDecimal ?? 6),
+          },
+        })),
+        meta: {},
+      };
+      tronIndexer = 'tronscan';
+    }
+
+    // TronGrid supplies address -> txID discovery (Alchemy has no documented
+    // address-history indexer). Enrich known mainnet txIDs using Alchemy's
+    // canonical transaction and execution-info endpoints.
+    const alchemyBase = alchemyTronBase(network);
+    const discoveredTxids = [...new Set([
+      ...(Array.isArray(nativePayload?.data) ? nativePayload.data : []).map((tx: any) => String(tx?.txID || tx?.txid || '')),
+      ...(Array.isArray(tokenPayload?.data) ? tokenPayload.data : []).map((tx: any) => String(tx?.transaction_id || '')),
+    ].filter((txid: string) => /^[a-fA-F0-9]{64}$/.test(txid)))].slice(0, 10);
+    const transactionDetails = new Map<string, { transaction: any; info: any; source: 'alchemy' | 'trongrid' }>();
+    let alchemyDetailFailures = 0;
+    let tronGridDetailFallbacks = 0;
+    for (let offset = 0; offset < discoveredTxids.length; offset += 5) {
+      const batch = discoveredTxids.slice(offset, offset + 5);
+      await Promise.all(batch.map(async (txid) => {
+        // Alchemy is the preferred transaction/receipt provider. Fall back to
+        // TronGrid's node endpoints for the same txID if Alchemy is unavailable,
+        // rejects the method, times out, or returns an empty response.
+        if (alchemyBase) {
+          try {
+            const [transaction, info] = await Promise.all([
+              alchemyTronPost(alchemyBase, '/wallet/gettransactionbyid', txid),
+              alchemyTronPost(alchemyBase, '/walletsolidity/gettransactioninfobyid', txid),
+            ]);
+            if (transaction?.txID || info?.id || info?.blockNumber || info?.receipt) {
+              transactionDetails.set(txid, { transaction, info, source: 'alchemy' });
+              return;
+            }
+            throw new Error('alchemy_tron_empty_transaction_detail');
+          } catch (error) {
+            alchemyDetailFailures++;
+            console.warn('tron_alchemy_detail_failed_using_trongrid_fallback', txid,
+              error instanceof Error ? error.message : 'unknown');
+          }
+        }
+        try {
+          tronGridDetailFallbacks++;
+          const [transaction, info] = await Promise.all([
+            tronGridPost(network, '/wallet/gettransactionbyid', txid, headers),
+            tronGridPost(network, '/walletsolidity/gettransactioninfobyid', txid, headers),
+          ]);
+          if (transaction?.txID || info?.id || info?.blockNumber || info?.receipt) {
+            transactionDetails.set(txid, { transaction, info, source: 'trongrid' });
+          }
+        } catch (error) {
+          console.warn('tron_trongrid_detail_fallback_failed', txid,
+            error instanceof Error ? error.message : 'unknown');
+        }
+      }));
+    }
 
     const nativeRows = (Array.isArray(nativePayload?.data) ? nativePayload.data : []).map((tx: any) => {
       const contract = tx?.raw_data?.contract?.[0];
@@ -179,9 +365,10 @@ export default async function handler(req: any, res: any) {
       if (ownerHex !== addressHex && recipientHex !== addressHex) return null;
       const amount = BigInt(String(value?.amount || 0));
       const hash = String(tx?.txID || tx?.txid || '');
-      const timestamp = Math.floor(Number(tx?.block_timestamp || tx?.raw_data?.timestamp || 0) / 1000);
-      const confirmed = Boolean(tx?.blockNumber || tx?.block_number || (Array.isArray(tx?.ret) && tx.ret.length));
-      const success = tx?.ret?.[0]?.contractRet === 'SUCCESS';
+      const detail = transactionDetails.get(hash);
+      const timestamp = Math.floor(Number(detail?.info?.blockTimeStamp || tx?.block_timestamp || tx?.raw_data?.timestamp || 0) / 1000);
+      const confirmed = Boolean(detail?.info?.blockNumber || tx?.blockNumber || tx?.block_number || (Array.isArray(tx?.ret) && tx.ret.length));
+      const success = String(detail?.info?.receipt?.result || detail?.transaction?.ret?.[0]?.contractRet || tx?.ret?.[0]?.contractRet || '') === 'SUCCESS';
       return {
         id: hash + ':native', hash,
         title: incoming ? 'Received TRX' : 'Sent TRX',
@@ -205,8 +392,8 @@ export default async function handler(req: any, res: any) {
         title: (incoming ? 'Received ' : 'Sent ') + symbol,
         subtitle: (incoming ? 'From ' : 'To ') + short(incoming ? from : to),
         amount: (incoming ? '+' : '-') + tokenUnits(tx?.value, decimals) + ' ' + symbol,
-        timestamp: Math.floor(Number(tx?.block_timestamp || 0) / 1000),
-        status: tx?.confirmed ? 'Confirmed' : 'Pending', incoming,
+        timestamp: Math.floor(Number(transactionDetails.get(hash)?.info?.blockTimeStamp || tx?.block_timestamp || 0) / 1000),
+        status: transactionDetails.get(hash)?.info?.receipt?.result === 'SUCCESS' || tx?.confirmed ? 'Confirmed' : 'Pending', incoming,
         explorerUrl: TRON_EXPLORER[network] + hash,
       };
     }).filter((row: any) => row.hash);
@@ -216,10 +403,13 @@ export default async function handler(req: any, res: any) {
     return res.status(200).json({
       chain, network, walletAddress: address, rows, limit: 50,
       complete: !nativePayload?.meta?.fingerprint && !tokenPayload?.meta?.fingerprint,
-      source: 'trongrid-v1',
+      source: tronIndexer === 'trongrid' ? 'trongrid-index+alchemy-primary-trongrid-fallback' : 'tronscan-index-fallback',
+      providers: { indexer: tronIndexer, preferred: alchemyBase ? 'alchemy' : 'trongrid', alchemyDetailFailures, tronGridDetailFallbacks },
     });
   } catch (error) {
-    console.error('chain_history_failed', chain, network, error instanceof Error ? error.message : 'unknown');
+    const message = error instanceof Error ? error.message : 'unknown';
+    console.error('chain_history_failed', chain, network, message);
+
     return res.status(502).json({ error: { code: 'history_provider_unavailable' } });
   }
 }

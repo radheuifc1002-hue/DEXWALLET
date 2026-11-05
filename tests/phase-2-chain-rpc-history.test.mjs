@@ -46,25 +46,45 @@ test('TRON RPC adapter routes node methods through Alchemy', () => {
   assert.match(health, /probeChainRpc/);
 });
 
-test('Bitcoin address history uses Alchemy indexed UTXO API', () => {
-  assert.match(history, /bitcoin-testnet4/);
-  assert.match(history, /api\/v2\/address\//);
-  assert.match(history, /alchemy-utxo-indexer/);
+test('Bitcoin address history uses public Mempool.space Esplora indexing', () => {
+  assert.match(history, /mempool\.space\/api/);
+  assert.match(history, /mempool\.space\/testnet4\/api/);
+  assert.match(history, /blockstream\.info\/api/);
+  assert.match(history, /blockstream\.info\/testnet4\/api/);
+  assert.match(history, /bitcoin_mempool_indexer_failed_using_blockstream_fallback/);
+  assert.match(history, /mempool-space-esplora-indexer/);
+  assert.match(history, /blockstream-esplora-fallback/);
+  // The Esplora pagination path is assembled from '/txs' + '/chain/' at runtime.
+  assert.match(history, /\/txs';[\s\S]*?\/chain\//);
+  assert.match(history, /prevout/);
 });
 
-test('Bitcoin balance and history use Alchemy UTXO indexed APIs', () => {
+test('Bitcoin balance remains on its configured RPC while history uses Esplora', () => {
   assert.match(balances, /bitcoin-testnet4/);
   assert.match(balances, /api\/v2\/address\//);
-  assert.match(history, /bitcoin-testnet4/);
-  assert.match(history, /api\/v2\/address\//);
-  assert.match(history, /alchemy-utxo-indexer/);
+  assert.match(history, /mempool-space-esplora-indexer/);
+  assert.match(history, /blockstream-esplora-fallback/);
 });
 
-test('TRON node and balance use Alchemy while address history uses TronGrid indexing', () => {
+test('TRON uses Alchemy first for transaction details and falls back to TronGrid on failure', () => {
   assert.match(balances, /tron-mainnet/);
   assert.match(balances, /wallet\/getaccount/);
   assert.match(history, /\/transactions\/trc20/);
-  assert.match(history, /trongrid-v1/);
+  assert.match(history, /trongrid-index/);
+  assert.match(history, /tron-mainnet/);
+  assert.match(history, /wallet\/gettransactionbyid/);
+  assert.match(history, /walletsolidity\/gettransactioninfobyid/);
+  assert.match(history, /trongrid-index\+alchemy-primary-trongrid-fallback/);
+  assert.match(history, /apilist\.tronscanapi\.com/);
+  assert.match(history, /nileapi\.tronscan\.org/);
+  assert.match(history, /api\/token_trc20\/transfers/);
+  assert.match(history, /tron_trongrid_indexer_failed_using_tronscan_fallback/);
+  assert.match(history, /tronscan-index-fallback/);
+  assert.match(history, /tronGridPost\(network, '\/wallet\/gettransactionbyid'/);
+  assert.match(history, /tronGridPost\(network, '\/walletsolidity\/gettransactioninfobyid'/);
+  assert.match(history, /tron_alchemy_detail_failed_using_trongrid_fallback/);
+  assert.match(history, /alchemyDetailFailures/);
+  assert.match(history, /tronGridDetailFallbacks/);
   assert.match(history, /Alchemy provides TRON node RPC/);
   assert.match(rpc, /tron-mainnet/);
   assert.match(rpc, /alchemyBase\('tron',network\)/);
@@ -81,6 +101,7 @@ test('Asset details enables Bitcoin and TRON history instead of displaying the d
   assert.doesNotMatch(screen, /Transaction history indexing for this chain is not enabled yet/);
   assert.match(screen, /fetchIndexedChainHistory/);
   assert.match(client, /\/api\/chain-history/);
+
 });
 
 test('Generated HD wallet setup appends to the active vault instead of silently reusing the current account', () => {
@@ -106,4 +127,25 @@ test('Full asset page keeps every token and ranks native first then by USD value
   assert.match(assets, /tokens\.filter\(\(token\) => token\.blockchain === selectedBlockchain\)\.sort/);
   assert.match(assets, /b\.balanceUSD \|\| 0/);
   assert.doesNotMatch(assets, /visible\.slice\(0, 5\)/);
+});
+
+
+test('Token import supports ERC-20, SPL Token, Token-2022 and TRC-20 through the backend', () => {
+  const screen = read('app/import-token.tsx');
+  const rpcAdapter = read('backend/api/_lib/chain-rpc.ts');
+  const balances = read('mobile/services/balanceService.ts');
+  assert.match(screen, /TOKEN_2022_PROGRAM/);
+  assert.match(screen, /getTokenAccountsByOwner/);
+  assert.match(screen, /triggerconstantcontract/);
+  assert.match(rpcAdapter, /triggerconstantcontract/);
+  assert.match(balances, /TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb/);
+  assert.match(balances, /triggerconstantcontract/);
+  assert.match(screen, /eth_call/);
+});
+
+test('Bitcoin does not display a custom-token import action', () => {
+  const home = read('app/(tabs)/home.tsx');
+  const assets = read('app/assets.tsx');
+  assert.match(home, /selectedBlockchain !== 'bitcoin'/);
+  assert.match(assets, /selectedBlockchain !== 'bitcoin'/);
 });

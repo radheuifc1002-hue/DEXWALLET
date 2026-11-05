@@ -1,4 +1,6 @@
 import { ethers } from 'ethers';
+import bs58 from 'bs58';
+import { Buffer } from 'buffer';
 import type { Blockchain, Network, Token } from '../../context/WalletContext';
 import { serverRpcRequest, serverChainDataRequest } from './serverRpc';
 
@@ -45,18 +47,33 @@ export async function refreshWalletTokenBalances(addresses:Record<Blockchain,str
         }else if(token.blockchain==='tron'){
           const data=await serverChainDataRequest<{balanceSun:string}>('tron',network,address);
           balance=Number(ethers.formatUnits(BigInt(data.balanceSun),6));
-        }else if(token.blockchain==='bitcoin'||token.blockchain==='tron'){
-        return token;
-      }else if(token.blockchain==='solana'){
+        }else if(token.blockchain==='solana'){
           const result=await serverRpcRequest<{value:number}>('solana',network,'getBalance',[address,{commitment:'confirmed'}]);
           balance=Number(ethers.formatUnits(BigInt(result.value),9));
         }else{
           const raw=await serverRpcRequest<string>(token.blockchain,network,'eth_getBalance',[address,'latest']);
           balance=Number(ethers.formatEther(BigInt(raw)));
         }
+      }else if(token.blockchain==='bitcoin'){
+        return token;
+      }else if(token.blockchain==='tron'){
+        const decoded=bs58.decode(token.contractAddress);
+        if(decoded.length!==25)throw new Error('invalid_tron_contract');
+        const contractHex=Buffer.from(decoded.slice(0,21)).toString('hex');
+        const ownerDecoded=bs58.decode(address);
+        if(ownerDecoded.length!==25)throw new Error('invalid_tron_owner');
+        const ownerHex=Buffer.from(ownerDecoded.slice(0,21)).toString('hex');
+        const result=await serverRpcRequest<any>('tron',network,'triggerconstantcontract',[{owner_address:ownerHex,contract_address:contractHex,function_selector:'balanceOf(address)',parameter:ownerHex.slice(2).padStart(64,'0'),visible:false}]);
+        if(!result?.result?.result||!result?.constant_result?.[0])throw new Error('tron_token_balance_failed');
+        const raw=BigInt('0x'+result.constant_result[0]);
+        balance=Number(ethers.formatUnits(raw,token.decimals??0));
       }else if(token.blockchain==='solana'){
-        const result=await serverRpcRequest<any>('solana',network,'getTokenAccountsByOwner',[address,{mint:token.contractAddress},{encoding:'jsonParsed',commitment:'confirmed'}]);
-        const rows=Array.isArray(result?.value)?result.value:[];
+        const mint=await serverRpcRequest<any>('solana',network,'getAccountInfo',[token.contractAddress,{encoding:'base64',commitment:'confirmed'}]);
+        const programId=String(mint?.value?.owner||'');
+        if(!['TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA','TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb'].includes(programId))throw new Error('unsupported_spl_mint');
+        const filter=programId==='TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb'?{programId}:{mint:token.contractAddress};
+        const result=await serverRpcRequest<any>('solana',network,'getTokenAccountsByOwner',[address,filter,{encoding:'jsonParsed',commitment:'confirmed'}]);
+        const rows=(Array.isArray(result?.value)?result.value:[]).filter((row:any)=>row?.account?.data?.parsed?.info?.mint===token.contractAddress);
         const raw=rows.reduce((sum:bigint,row:any)=>sum+BigInt(row?.account?.data?.parsed?.info?.tokenAmount?.amount||'0'),0n);
         const decimals=Number(rows[0]?.account?.data?.parsed?.info?.tokenAmount?.decimals??token.decimals??0);
         balance=Number(ethers.formatUnits(raw,decimals));

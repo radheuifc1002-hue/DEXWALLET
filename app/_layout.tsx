@@ -79,6 +79,7 @@ function AppStack() {
   const { selectedBlockchain, network } = useWallet();
 
   useEffect(() => {
+    if (selectedBlockchain === 'bitcoin' || selectedBlockchain === 'tron') return;
     return startRpcHealthMonitoring(selectedBlockchain, network);
   }, [selectedBlockchain, network]);
 

@@ -3,7 +3,7 @@ name: Build standalone Android APK
 
 on:
   push:
-    branches: [main, feature/phase-1-universal-hd-engine, feature/phase-2-seven-chain-wallet]
+    branches: [main, feature/phase-1-universal-hd-engine, feature/phase-2-seven-chain-wallet, fix/alchemy-btc-tron-history]
     paths:
       - "app/**"
       - "assets/**"

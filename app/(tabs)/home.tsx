@@ -265,10 +265,10 @@ export default function Home() {
         </Modal>
         <View style={styles.assetsHeader}>
           <View><Text style={styles.sectionTitle}>Assets</Text><Text style={styles.assetsSubtitle}>{visibleTokens.length} assets on this network</Text></View>
-          <TouchableOpacity style={styles.importButton} onPress={() => router.push('/import-token')} activeOpacity={0.8}>
+          {selectedBlockchain !== 'bitcoin' ? <TouchableOpacity style={styles.importButton} onPress={() => router.push('/import-token')} activeOpacity={0.8}>
             <Ionicons name="add" size={16} color="#FFFFFF" />
             <Text style={styles.importButtonText}>Import</Text>
-          </TouchableOpacity>
+          </TouchableOpacity> : null}
         </View>
 
         {visibleTokens.length === 0 ? (
