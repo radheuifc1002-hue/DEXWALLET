@@ -12,7 +12,7 @@ function alchemyBitcoinUrl(network: Network, address: string): string {
   const key = scoped || process.env.ALCHEMY_API_KEY;
   if (!key) throw new Error('history_provider_not_configured');
   return 'https://' + BTC_NETWORK[network] + '.g.alchemy.com/v2/' + encodeURIComponent(key)
-    + '/api/v2/address/' + encodeURIComponent(address) + '?details=txs&page=1&pageSize=50';
+    + '/api/v2/address/' + encodeURIComponent(address) + '?details=txids&page=1&pageSize=50';
 }
 const BTC_EXPLORER: Record<Network, string> = {
   mainnet: 'https://mempool.space/tx/',
@@ -26,6 +26,36 @@ const TRON_EXPLORER: Record<Network, string> = {
   mainnet: 'https://tronscan.org/#/transaction/',
   testnet: 'https://nile.tronscan.org/#/transaction/',
 };
+
+const TRON_ALCHEMY_NETWORK: Record<Network, string> = {
+  mainnet: 'tron-mainnet',
+  testnet: 'tron-testnet',
+};
+function alchemyTronBase(network: Network): string | null {
+  const scoped = process.env['ALCHEMY_TRON_' + network.toUpperCase() + '_API_KEY'];
+  const key = scoped || process.env.ALCHEMY_API_KEY;
+  // Alchemy testnet and TronGrid Nile are different networks; do not enrich Nile
+  // transaction IDs with Alchemy's Tron testnet (Shasta) endpoint.
+  if (!key || network !== 'mainnet') return null;
+  return 'https://' + TRON_ALCHEMY_NETWORK[network] + '.g.alchemy.com/v2/' + encodeURIComponent(key);
+}
+async function alchemyTronPost(base: string, path: string, txid: string): Promise<any> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
+  try {
+    const response = await fetch(base + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ value: txid }),
+      signal: controller.signal,
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || data?.Error || data?.error) throw new Error('alchemy_tron_tx_http_' + response.status);
+    return data;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function validAddress(chain: Chain, value: string, network: Network): boolean {
   if (chain === 'tron') return /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(value);
@@ -169,6 +199,31 @@ export default async function handler(req: any, res: any) {
       getJson(accountUrl, headers), getJson(tokenUrl, headers),
     ]);
 
+    // TronGrid supplies address -> txID discovery (Alchemy has no documented
+    // address-history indexer). Enrich known mainnet txIDs using Alchemy's
+    // canonical transaction and execution-info endpoints.
+    const alchemyBase = alchemyTronBase(network);
+    const discoveredTxids = [...new Set([
+      ...(Array.isArray(nativePayload?.data) ? nativePayload.data : []).map((tx: any) => String(tx?.txID || tx?.txid || '')),
+      ...(Array.isArray(tokenPayload?.data) ? tokenPayload.data : []).map((tx: any) => String(tx?.transaction_id || '')),
+    ].filter((txid: string) => /^[a-fA-F0-9]{64}$/.test(txid)))].slice(0, 50);
+    const alchemyDetails = new Map<string, { transaction: any; info: any }>();
+    if (alchemyBase) {
+      for (let offset = 0; offset < discoveredTxids.length; offset += 5) {
+        const batch = await Promise.all(discoveredTxids.slice(offset, offset + 5).map(async (txid) => {
+          try {
+            const [transaction, info] = await Promise.all([
+              alchemyTronPost(alchemyBase, '/wallet/gettransactionbyid', txid),
+              alchemyTronPost(alchemyBase, '/walletsolidity/gettransactioninfobyid', txid),
+            ]);
+            alchemyDetails.set(txid, { transaction, info });
+          } catch (error) {
+            console.warn('tron_alchemy_detail_failed', txid, error instanceof Error ? error.message : 'unknown');
+          }
+        }));
+      }
+    }
+
     const nativeRows = (Array.isArray(nativePayload?.data) ? nativePayload.data : []).map((tx: any) => {
       const contract = tx?.raw_data?.contract?.[0];
       if (String(contract?.type || '') !== 'TransferContract') return null;
@@ -179,9 +234,10 @@ export default async function handler(req: any, res: any) {
       if (ownerHex !== addressHex && recipientHex !== addressHex) return null;
       const amount = BigInt(String(value?.amount || 0));
       const hash = String(tx?.txID || tx?.txid || '');
-      const timestamp = Math.floor(Number(tx?.block_timestamp || tx?.raw_data?.timestamp || 0) / 1000);
-      const confirmed = Boolean(tx?.blockNumber || tx?.block_number || (Array.isArray(tx?.ret) && tx.ret.length));
-      const success = tx?.ret?.[0]?.contractRet === 'SUCCESS';
+      const alchemy = alchemyDetails.get(hash);
+      const timestamp = Math.floor(Number(alchemy?.info?.blockTimeStamp || tx?.block_timestamp || tx?.raw_data?.timestamp || 0) / 1000);
+      const confirmed = Boolean(alchemy?.info?.blockNumber || tx?.blockNumber || tx?.block_number || (Array.isArray(tx?.ret) && tx.ret.length));
+      const success = String(alchemy?.info?.receipt?.result || alchemy?.transaction?.ret?.[0]?.contractRet || tx?.ret?.[0]?.contractRet || '') === 'SUCCESS';
       return {
         id: hash + ':native', hash,
         title: incoming ? 'Received TRX' : 'Sent TRX',
@@ -205,8 +261,8 @@ export default async function handler(req: any, res: any) {
         title: (incoming ? 'Received ' : 'Sent ') + symbol,
         subtitle: (incoming ? 'From ' : 'To ') + short(incoming ? from : to),
         amount: (incoming ? '+' : '-') + tokenUnits(tx?.value, decimals) + ' ' + symbol,
-        timestamp: Math.floor(Number(tx?.block_timestamp || 0) / 1000),
-        status: tx?.confirmed ? 'Confirmed' : 'Pending', incoming,
+        timestamp: Math.floor(Number(alchemyDetails.get(hash)?.info?.blockTimeStamp || tx?.block_timestamp || 0) / 1000),
+        status: alchemyDetails.get(hash)?.info?.receipt?.result === 'SUCCESS' || tx?.confirmed ? 'Confirmed' : 'Pending', incoming,
         explorerUrl: TRON_EXPLORER[network] + hash,
       };
     }).filter((row: any) => row.hash);
@@ -216,7 +272,7 @@ export default async function handler(req: any, res: any) {
     return res.status(200).json({
       chain, network, walletAddress: address, rows, limit: 50,
       complete: !nativePayload?.meta?.fingerprint && !tokenPayload?.meta?.fingerprint,
-      source: 'trongrid-v1',
+      source: alchemyBase ? 'trongrid-index+alchemy-tx-detail' : 'trongrid-v1',
     });
   } catch (error) {
     console.error('chain_history_failed', chain, network, error instanceof Error ? error.message : 'unknown');
