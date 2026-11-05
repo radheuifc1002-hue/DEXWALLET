@@ -5,6 +5,14 @@ const ALCHEMY_NETWORK:Record<Chain,Record<Network,string>>={
  bitcoin:{mainnet:'bitcoin-mainnet',testnet:'bitcoin-testnet4'},
  tron:{mainnet:'tron-mainnet',testnet:'tron-testnet'},
 };
+const BTC_API:Record<Network,string>={
+ mainnet:'https://mempool.space/api',
+ testnet:'https://mempool.space/testnet4/api',
+};
+const BTC_FALLBACK_API:Record<Network,string>={
+ mainnet:'https://blockstream.info/api',
+ testnet:'https://blockstream.info/testnet4/api',
+};
 function alchemyBase(chain:Chain,network:Network):string{
  const scoped=process.env['ALCHEMY_'+chain.toUpperCase()+'_'+network.toUpperCase()+'_API_KEY'];
  const key=scoped||process.env.ALCHEMY_API_KEY;
@@ -21,6 +29,23 @@ async function getJson(url:string,headers:Record<string,string>={}):Promise<any>
  try{const response=await fetch(url,{headers:{Accept:'application/json',...headers},signal:controller.signal});const data=await response.json().catch(()=>null);if(!response.ok)throw new Error('upstream_http_'+response.status);return data;}
  finally{clearTimeout(timer);}
 }
+async function bitcoinAddressBalance(network:Network,address:string):Promise<{balanceSatoshis:string;confirmedBalanceSatoshis:string;unconfirmedBalanceSatoshis:string;provider:'mempool.space'|'blockstream-esplora'}>{
+ const read=async(base:string)=>{
+  const data=await getJson(base+'/address/'+encodeURIComponent(address));
+  const confirmedFunded=BigInt(String(data?.chain_stats?.funded_txo_sum??'0'));
+  const confirmedSpent=BigInt(String(data?.chain_stats?.spent_txo_sum??'0'));
+  const pendingFunded=BigInt(String(data?.mempool_stats?.funded_txo_sum??'0'));
+  const pendingSpent=BigInt(String(data?.mempool_stats?.spent_txo_sum??'0'));
+  const confirmed=confirmedFunded-confirmedSpent;
+  const unconfirmed=pendingFunded-pendingSpent;
+  return {balanceSatoshis:(confirmed+unconfirmed).toString(),confirmedBalanceSatoshis:confirmed.toString(),unconfirmedBalanceSatoshis:unconfirmed.toString()};
+ };
+ try{return {...await read(BTC_API[network]),provider:'mempool.space'};}
+ catch(primaryError){
+  console.warn('bitcoin_mempool_balance_failed_using_blockstream_fallback',primaryError instanceof Error?primaryError.message:'unknown');
+  return {...await read(BTC_FALLBACK_API[network]),provider:'blockstream-esplora'};
+ }
+}
 export default async function handler(req:any,res:any){
  res.setHeader('Content-Type','application/json; charset=utf-8');res.setHeader('Cache-Control','no-store');res.setHeader('Access-Control-Allow-Origin','*');res.setHeader('Access-Control-Allow-Methods','GET, OPTIONS');res.setHeader('Access-Control-Allow-Headers','Content-Type, Accept');
  if(req.method==='OPTIONS')return res.status(204).end();if(req.method!=='GET'){res.setHeader('Allow','GET, OPTIONS');return res.status(405).json({error:{code:'method_not_allowed'}});}
@@ -29,10 +54,11 @@ export default async function handler(req:any,res:any){
  if(!['bitcoin','tron'].includes(chain)||!['mainnet','testnet'].includes(network)||!validAddress(chain,address,network))return res.status(400).json({error:{code:'invalid_request'}});
  try{
   if(chain==='bitcoin'){
-   const data=await getJson(alchemyBase('bitcoin',network)+'/api/v2/address/'+encodeURIComponent(address)+'?details=basic');
-   const confirmed=BigInt(String(data?.balance||'0'));
-   const pending=BigInt(String(data?.unconfirmedBalance||'0'));
-   return res.status(200).json({chain,network,address,balanceSatoshis:(confirmed+pending).toString(),confirmedBalanceSatoshis:confirmed.toString(),unconfirmedBalanceSatoshis:pending.toString()});
+   // Address balance and history both use the same public Esplora indexers.
+   // Alchemy's Bitcoin address endpoint is plan-restricted and cannot provide
+   // address-level UTXO/indexing data on the current subscription.
+   const balance=await bitcoinAddressBalance(network,address);
+   return res.status(200).json({chain,network,address,...balance});
   }
   // Alchemy's TRON account endpoint is POST-only.
   const response=await fetch(alchemyBase('tron',network)+'/wallet/getaccount',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({address,visible:true})});
