@@ -14,7 +14,7 @@ function alchemyBase(chain: Chain, network: RpcNetwork): string {
 const TRON_CHAIN_ID:Record<RpcNetwork,number>={mainnet:728126428,testnet:3448148188};
 const BTC_READ=new Set(['getblockchaininfo','getblockcount','getblockhash','getblockheader','getrawtransaction','estimatesmartfee']);
 const BTC_WRITE=new Set(['sendrawtransaction']);
-const TRON_READ=new Set(['net_version','eth_chainId','getaccount','getaccountresource','getnowblock','getblockbynum','gettransactionbyid','gettransactioninfobyid']);
+const TRON_READ=new Set(['net_version','eth_chainId','getaccount','getaccountresource','getnowblock','getblockbynum','gettransactionbyid','gettransactioninfobyid','triggerconstantcontract']);
 const TRON_WRITE=new Set(['broadcasttransaction','eth_sendRawTransaction']);
 const TRON_EVM=new Set(['eth_chainId','eth_blockNumber','eth_getBalance','eth_call','eth_getCode','eth_gasPrice','eth_estimateGas','eth_getTransactionCount','eth_getTransactionByHash','eth_getTransactionReceipt','eth_sendRawTransaction']);
 async function request(url:string,init?:RequestInit):Promise<any>{
@@ -44,7 +44,7 @@ export async function proxyChainRpc(chain:Chain,network:RpcNetwork,body:unknown)
    if(payload?.error)return failure(id,String(payload.error.message||'TRON RPC error'),Number(payload.error.code)||-32000,200);
    return {status:200,body:JSON.stringify({...payload,id}),provider:'alchemy',attempts:1,requestId:'alchemy'};
   }
-  const routes:Record<string,string>={getaccount:'/wallet/getaccount',getaccountresource:'/wallet/getaccountresource',getnowblock:'/wallet/getnowblock',getblockbynum:'/wallet/getblockbynum',gettransactionbyid:'/wallet/gettransactionbyid',gettransactioninfobyid:'/wallet/gettransactioninfobyid',broadcasttransaction:'/wallet/broadcasttransaction'};
+  const routes:Record<string,string>={triggerconstantcontract:'/wallet/triggerconstantcontract',getaccount:'/wallet/getaccount',getaccountresource:'/wallet/getaccountresource',getnowblock:'/wallet/getnowblock',getblockbynum:'/wallet/getblockbynum',gettransactionbyid:'/wallet/gettransactionbyid',gettransactioninfobyid:'/wallet/gettransactioninfobyid',broadcasttransaction:'/wallet/broadcasttransaction'};
   const payload=await request(base+routes[method],{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(params[0]??{})});
   return result(id,payload);
  }catch(error){return failure(id,error instanceof Error?error.message:'Upstream provider unavailable',-32000,502);}
