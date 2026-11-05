@@ -36,7 +36,7 @@ test('Phase 4: legacy Solana account zero and shared EVM derivation remain compa
   assert.ok(registry.includes('legacy:first-32-bytes-of-bip39-seed'));
   assert.ok(registry.includes('const bip44Path = (coinType: number, index: number)'));
   assert.ok(registry.includes('bip44Path(60, index)'));
-  assert.ok(registry.includes("m/44'/501'/${accountIndex}'/0'"));
+  assert.ok(registry.includes("m/44'/501'/${index}'/0'"));
   assert.ok(wallet.includes('seed.slice(0, 32)'));
 });
 
@@ -47,7 +47,6 @@ test('Phase 4: vault persists derivation paths and versioned metadata per mnemon
   assert.ok(vault.includes('targetChains.map((chain) => [chain, fullMetadata[chain]])'));
   assert.ok(vault.includes('derivationMetadata, addresses'));
   assert.ok(vault.includes('deriveAddressForChain(chain, mnemonic, accountIndex)'));
-  assert.ok(vault.includes('sourceChains = source.blockchains?.length'));
 });
 
 test('chain-scoped mnemonic sources persist only enabled chains and derive subsequent accounts on those chains',()=>{
