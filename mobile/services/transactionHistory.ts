@@ -81,6 +81,7 @@ export async function fetchIndexedChainHistory(options: {
     if (!response.ok) {
       const code = String(payload?.error?.code || '');
       if (code === 'history_provider_not_configured') throw new Error('Bitcoin history provider is not configured on the server.');
+      if (code === 'bitcoin_utxo_access_not_enabled') throw new Error('Bitcoin history is disabled for this Alchemy app. Enable the Bitcoin UTXO API in Alchemy Dashboard → Endpoints.');
       throw new Error('Transaction history is temporarily unavailable. Please try again.');
     }
     if (!Array.isArray(payload?.rows)) throw new Error('The history service returned an invalid response.');
