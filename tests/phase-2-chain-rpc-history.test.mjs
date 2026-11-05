@@ -59,13 +59,18 @@ test('Bitcoin address history uses public Mempool.space Esplora indexing', () =>
   assert.match(history, /prevout/);
 });
 
-test('Bitcoin balance remains on its configured RPC while history uses Esplora', () => {
-  assert.match(balances, /bitcoin-testnet4/);
-  assert.match(balances, /api\/v2\/address\//);
+test('Bitcoin balance and history both use Esplora address indexing with provider fallback', () => {
+  assert.match(balances, /mempool\\.space\\/testnet4\\/api/);
+  assert.match(balances, /blockstream\\.info\\/testnet4\\/api/);
+  assert.match(balances, /chain_stats\\?\\.funded_txo_sum/);
+  assert.match(balances, /chain_stats\\?\\.spent_txo_sum/);
+  assert.match(balances, /mempool_stats\\?\\.funded_txo_sum/);
+  assert.match(balances, /mempool_stats\\?\\.spent_txo_sum/);
+  assert.match(balances, /bitcoin_mempool_balance_failed_using_blockstream_fallback/);
+  assert.doesNotMatch(balances, /api\\/v2\\/address\\//);
   assert.match(history, /mempool-space-esplora-indexer/);
   assert.match(history, /blockstream-esplora-fallback/);
 });
-
 test('TRON uses Alchemy first for transaction details and falls back to TronGrid on failure', () => {
   assert.match(balances, /tron-mainnet/);
   assert.match(balances, /wallet\/getaccount/);
