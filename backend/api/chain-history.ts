@@ -275,7 +275,11 @@ export default async function handler(req: any, res: any) {
       source: alchemyBase ? 'trongrid-index+alchemy-tx-detail' : 'trongrid-v1',
     });
   } catch (error) {
-    console.error('chain_history_failed', chain, network, error instanceof Error ? error.message : 'unknown');
+    const message = error instanceof Error ? error.message : 'unknown';
+    console.error('chain_history_failed', chain, network, message);
+    if (chain === 'bitcoin' && message === 'upstream_http_401') {
+      return res.status(503).json({ error: { code: 'bitcoin_utxo_access_not_enabled' } });
+    }
     return res.status(502).json({ error: { code: 'history_provider_unavailable' } });
   }
 }
