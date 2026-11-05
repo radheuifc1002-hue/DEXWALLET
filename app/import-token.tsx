@@ -61,8 +61,8 @@ export default function ImportToken() {
         const mintData = Buffer.from(account.value.data[0], 'base64');
         if (mintData.length < 82) throw new Error('Invalid SPL mint account data.');
         const decimals = mintData[44];
-        const accountResults = await Promise.all([TOKEN_PROGRAM, TOKEN_2022_PROGRAM].map(programId => serverRpcRequest<any>('solana',network,'getTokenAccountsByOwner',[walletAddress,{mint:value,programId},{encoding:'jsonParsed',commitment:'confirmed'}])));
-        const balance = accountResults.flatMap(result => result?.value || []).reduce((sum: number, item: any) => sum + Number(item.account.data.parsed.info.tokenAmount.uiAmountString || 0), 0);
+        const accountResults = await Promise.all([TOKEN_PROGRAM, TOKEN_2022_PROGRAM].map(programId => serverRpcRequest<any>('solana',network,'getTokenAccountsByOwner',[walletAddress,{programId},{encoding:'jsonParsed',commitment:'confirmed'}])));
+        const balance = accountResults.flatMap(result => result?.value || []).filter((item:any)=>item?.account?.data?.parsed?.info?.mint===value).reduce((sum: number, item: any) => sum + Number(item.account.data.parsed.info.tokenAmount.uiAmountString || 0), 0);
         let name = 'Solana SPL Token';
         let symbol = `SPL-${value.slice(0, 4)}`;
         try {
