@@ -8,8 +8,6 @@
     "userInterfaceStyle": "light",
     "icon": "./assets/icon.png",
     "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
       "backgroundColor": "#FFFFFF"
     },
     "ios": {
@@ -35,9 +33,6 @@
     "plugins": [
       ["expo-router", { "root": "./app" }],
       ["expo-splash-screen", {
-        "image": "./assets/splash.png",
-        "imageWidth": 180,
-        "resizeMode": "contain",
         "backgroundColor": "#FFFFFF"
       }],
       ["expo-local-authentication", {
