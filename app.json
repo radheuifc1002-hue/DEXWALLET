@@ -6,9 +6,9 @@
     "orientation": "portrait",
     "scheme": "xuwallet",
     "userInterfaceStyle": "light",
-    "icon": "./assets/xu-icon.svg",
+    "icon": "./assets/icon.png",
     "splash": {
-      "image": "./assets/xu-splash.svg",
+      "image": "./assets/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#FFFFFF"
     },
@@ -23,7 +23,7 @@
     "android": {
       "package": "com.xuwallet.app",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/xu-icon.svg",
+        "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#6C4CF1"
       },
       "permissions": [
@@ -35,7 +35,7 @@
     "plugins": [
       ["expo-router", { "root": "./app" }],
       ["expo-splash-screen", {
-        "image": "./assets/xu-splash.svg",
+        "image": "./assets/splash.png",
         "imageWidth": 180,
         "resizeMode": "contain",
         "backgroundColor": "#FFFFFF"
